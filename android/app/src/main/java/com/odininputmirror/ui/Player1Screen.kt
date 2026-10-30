@@ -26,6 +26,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -207,7 +208,9 @@ internal fun HintBar(hints: List<HintAction>) {
     ) {
         hints.forEach { hint ->
             Row(
-                modifier = Modifier.let { m -> hint.onClick?.let { m.clickable(onClick = it) } ?: m }.padding(4.dp),
+                // Touch only: a controller has the real buttons, and a focusable hint pulled the D-pad off the list.
+                modifier = Modifier.focusProperties { canFocus = false }
+                    .let { m -> hint.onClick?.let { m.clickable(onClick = it) } ?: m }.padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(hint.glyph, color = Palette.textPrimary, fontFamily = glyphs, fontSize = 24.sp)

@@ -83,6 +83,9 @@ fun MappingEditorScreen(
     // opposite of helpful.
     var restoreTo by remember { mutableStateOf<Int?>(null) }
 
+    val groups = state.slots.map { it.group }.distinct()
+    var selectedGroup by remember { mutableStateOf(groups.firstOrNull()) }
+
     // Closing the overlay hands the row back. Also fires on the very first composition, with the
     // default of row zero, which is the initial anchor the D-pad needs.
     LaunchedEffect(state.capturing) {
@@ -91,6 +94,9 @@ fun MappingEditorScreen(
 
     LaunchedEffect(restoreTo, state.slots.size) {
         val target = restoreTo ?: return@LaunchedEffect
+        // Show the row's group first. Closing the overlay drops focus, Compose hands it to the first
+        // group row, and that switches the pane, so the row being returned to would not exist.
+        state.slots.getOrNull(target)?.let { selectedGroup = it.group }
         repeat(12) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
             val row = rowFocus.getOrNull(target)
@@ -106,9 +112,6 @@ fun MappingEditorScreen(
         }
         restoreTo = null
     }
-
-    val groups = state.slots.map { it.group }.distinct()
-    var selectedGroup by remember { mutableStateOf(groups.firstOrNull()) }
 
     Box(
         modifier = Modifier.fillMaxSize().background(Palette.screen).onPreviewKeyEvent {
@@ -139,7 +142,7 @@ fun MappingEditorScreen(
 
             Row(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
                 // Groups: moving focus here switches the rows on the right, as in Switch settings.
-                Column(Modifier.weight(0.35f).padding(vertical = 12.dp)) {
+                Column(Modifier.weight(0.45f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
                     groups.forEach { group ->
                         GroupRow(group, selected = group == selectedGroup, onFocus = { selectedGroup = group })
                     }

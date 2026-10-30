@@ -109,7 +109,14 @@ internal fun SlotRow(
 internal fun GroupRow(group: String, selected: Boolean, onFocus: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    LaunchedEffect(focused) { if (focused) onFocus() }
+    // Only focus that stays counts. Closing the capture overlay drops focus onto the first group for a
+    // frame before it returns to the row, and acting on that switched the pane out from under it.
+    LaunchedEffect(focused) {
+        if (focused) {
+            delay(150)
+            onFocus()
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()

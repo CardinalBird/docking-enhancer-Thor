@@ -47,7 +47,7 @@ static const int KEYS[] = {
     BTN_THUMBL, BTN_THUMBR,
 };
 
-static const int AXES[] = { ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ };
+static const int AXES[] = { ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ, ABS_HAT0X, ABS_HAT0Y };
 
 static int emit(int fd, unsigned short type, unsigned short code, int value) {
     struct input_event ev;
@@ -143,8 +143,10 @@ static int create_device(const char *name, int vendor, int product, int plain) {
         for (size_t i = 0; i < sizeof(AXES) / sizeof(AXES[0]); i++) {
             memset(&abs, 0, sizeof(abs));
             abs.code = (unsigned short)AXES[i];
-            abs.absinfo.minimum = -32768;
-            abs.absinfo.maximum = 32767;
+            // A D-pad hat reports -1..1, as real pads do; the sticks use the full 16-bit travel.
+            int hat = AXES[i] == ABS_HAT0X || AXES[i] == ABS_HAT0Y;
+            abs.absinfo.minimum = hat ? -1 : -32768;
+            abs.absinfo.maximum = hat ? 1 : 32767;
             abs.absinfo.value = 0;
             if (ioctl(fd, UI_ABS_SETUP, &abs) < 0) {
                 perror("vgamepad: UI_ABS_SETUP");
