@@ -56,7 +56,11 @@ internal class DefaultMappingSeeder(
             return
         }
 
-        val entry = GameControllerDb(databaseLines()).entryFor(vendor, product)
+        // The REAL pad's capabilities: the entry's indices were assigned against that device, and
+        // its /proc entry survives even while its /dev node is hidden. Read before the lookup, which
+        // uses them to choose between entries for the same pad.
+        val source = devices.sourceTraits(key) ?: return
+        val entry = GameControllerDb(databaseLines()).entryFor(vendor, product, source.keys)
         if (entry == null) {
             // The ONLY place a key is recorded as missing: this is the one answer that cannot change
             // while the app runs. Everything below reads the live device instead, where a null is a
@@ -65,9 +69,6 @@ internal class DefaultMappingSeeder(
             return
         }
 
-        // The REAL pad's capabilities: the entry's indices were assigned against that device, and
-        // its /proc entry survives even while its /dev node is hidden.
-        val source = devices.sourceTraits(key) ?: return
         val slots = mappingSlots(devices.targetTraits() ?: odinFallbackTraits())
 
         val mapping = GameControllerDb.toMapping(entry, source.keys, source.axes, slots)
