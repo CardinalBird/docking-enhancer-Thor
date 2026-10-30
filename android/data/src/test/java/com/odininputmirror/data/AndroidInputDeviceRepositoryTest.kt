@@ -479,4 +479,80 @@ class AndroidInputDeviceRepositoryTest {
     )
 
     private var entrySequence = 0
+
+    // -- identical pads ------------------------------------------------------
+
+    @Test
+    fun parseDumpsysInputPathsJoinsReaderDevicesToTheirNodes() {
+        val dump = """
+Event Hub State:
+  BuiltInKeyboardId: -2
+  Devices:
+    -1: Virtual
+      Classes: KEYBOARD
+      Path: <virtual>
+    3: 8BitDo Ultimate 2C
+      Classes: KEYBOARD | GAMEPAD | JOYSTICK
+      Path: /dev/input/event9
+    4: 8BitDo Ultimate 2C
+      Classes: KEYBOARD | GAMEPAD | JOYSTICK
+      Path: /dev/input/event11
+Input Reader State (Nums of device: 2):
+  Device 7: 8BitDo Ultimate 2C
+    EventHub Devices: [ 3 ] 
+    Generation: 12
+  Device 8: 8BitDo Ultimate 2C
+    EventHub Devices: [ 4 ] 
+Input Dispatcher State:
+  DispatchEnabled: true
+""".trimStart()
+
+        assertEquals(mapOf(7 to "/dev/input/event9", 8 to "/dev/input/event11"), parseDumpsysInputPaths(dump))
+    }
+
+    @Test
+    fun parseDumpsysInputPathsUsesTheSameIdBeforeAndroid11() {
+        val dump = """
+Event Hub State:
+  Devices:
+    5: Pad
+      Path: /dev/input/event5
+Input Reader State:
+  Device 5: Pad
+    Generation: 3
+""".trimStart()
+
+        assertEquals(mapOf(5 to "/dev/input/event5"), parseDumpsysInputPaths(dump))
+    }
+
+    @Test
+    fun knownPathKeepsIdenticallyNamedPadsOnTheirOwnNodes() {
+        fun entry(event: String) = AndroidInputDeviceRepository.ProcInputEntry(
+            name = "8BitDo Ultimate 2C",
+            handlers = listOf(event),
+            path = "/dev/input/$event",
+            eventName = event,
+            bus = 0x0005,
+            vendorId = ODIN_VENDOR,
+            productId = 0x0112,
+        )
+        val entries = listOf(entry("event9"), entry("event11"))
+        fun candidate(id: Int) = ControllerCandidate(
+            name = "8BitDo Ultimate 2C",
+            id = id,
+            vendorId = ODIN_VENDOR,
+            productId = 0x0112,
+            controllerNumber = id,
+            guid = "guid",
+        )
+
+        val first = repository.resolveControllerDevice(candidate(7), entries, emptySet(), "/dev/input/event9")
+        val second = repository.resolveControllerDevice(candidate(8), entries, emptySet(), "/dev/input/event11")
+        val unknown = repository.resolveControllerDevice(candidate(8), entries, emptySet(), null)
+
+        assertEquals("/dev/input/event9", first?.path)
+        assertEquals("/dev/input/event11", second?.path)
+        // Without the dump it falls back to today's pick: the lowest node.
+        assertEquals("/dev/input/event9", unknown?.path)
+    }
 }

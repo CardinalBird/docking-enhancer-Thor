@@ -65,12 +65,23 @@ internal class AndroidInputDeviceRepository(
 
         val mirroredNames = computeMirroredNames(procEntries)
 
-        val framework = InputDevice.getDeviceIds()
+        val candidates = InputDevice.getDeviceIds()
             .asSequence()
             .mapNotNull { id -> InputDevice.getDevice(id) }
             .filter { device -> isPhysicalGameController(device) }
             .map { it.toCandidate() }
-            .mapNotNull { candidate -> resolveControllerDevice(candidate, procEntries, mirroredNames) }
+            .toList()
+
+        // Matching by name sends two identically named pads to the same node, and the distinctBy
+        // below then drops one. Only then is the input service asked which node each device really
+        // reads, so the common case costs no extra privileged call.
+        val sharedName = candidates.groupBy { it.name.lowercase() }.any { it.value.size > 1 }
+        val knownPaths = if (sharedName) parseDumpsysInputPaths(shell.read("dumpsys input")) else emptyMap()
+
+        val framework = candidates
+            .mapNotNull { candidate ->
+                resolveControllerDevice(candidate, procEntries, mirroredNames, knownPaths[candidate.id])
+            }
             .distinctBy { it.path }
             .toList()
 
@@ -181,9 +192,12 @@ internal class AndroidInputDeviceRepository(
         candidate: ControllerCandidate,
         entries: List<ProcInputEntry>,
         mirroredNames: Set<String>,
+        // The node the input service says this device reads, when we asked. Beats any name match.
+        knownPath: String? = null,
     ): ControllerDevice? {
         val normalizedName = candidate.name.lowercase()
-        val candidates = entries.filter { entry ->
+        val exact = entries.filter { it.path == knownPath && pathExists(it.path) }
+        val candidates = exact.ifEmpty { entries }.filter { entry ->
             if (!pathExists(entry.path)) {
                 return@filter false
             }
@@ -314,6 +328,8 @@ internal class AndroidInputDeviceRepository(
 
 internal data class ControllerCandidate(
     val name: String,
+    // InputDevice.getId(), the key into parseDumpsysInputPaths.
+    val id: Int = -1,
     val vendorId: Int,
     val productId: Int,
     val controllerNumber: Int,
@@ -322,6 +338,7 @@ internal data class ControllerCandidate(
 
 private fun InputDevice.toCandidate(): ControllerCandidate = ControllerCandidate(
     name = name,
+    id = id,
     vendorId = vendorId,
     productId = productId,
     controllerNumber = controllerNumber,
@@ -335,3 +352,42 @@ private fun InputDevice.getGuid(): String = guidOf(vendorId, productId)
 internal fun guidOf(vendorId: Int, productId: Int): String = String.format("%016x%016x", productId, vendorId)
 
 private fun Int.hasSource(source: Int): Boolean = this and source == source
+
+/**
+ * Framework input device id -> the /dev node it reads, from `dumpsys input`.
+ *
+ * Two sections are joined. "Event Hub State" lists every node by EventHub id with its `Path:`;
+ * "Input Reader State" lists every framework device (`Device N:`) and, from Android 11, the EventHub
+ * ids behind it (`EventHub Devices: [ 3 ]`). Before Android 11 the two ids are the same number, so a
+ * device without that line is looked up under its own id. Anything unparseable just leaves the device
+ * out, and the caller falls back to matching by name.
+ */
+internal fun parseDumpsysInputPaths(dump: String): Map<Int, String> {
+    val hubPaths = mutableMapOf<Int, String>()
+    val readerHub = mutableMapOf<Int, Int>()
+    var section = ""
+    var hubId: Int? = null
+    var readerId: Int? = null
+    for (line in dump.lineSequence()) {
+        if (line.isNotEmpty() && !line[0].isWhitespace()) {
+            section = line.trim()
+            continue
+        }
+        if (section.startsWith("Event Hub State")) {
+            Regex("""^\s+(-?\d+): """).find(line)?.let { hubId = it.groupValues[1].toInt() }
+            Regex("""^\s+Path: (/dev/input/\S+)""").find(line)?.let { match ->
+                hubId?.let { hubPaths[it] = match.groupValues[1] }
+            }
+        } else if (section.startsWith("Input Reader State")) {
+            Regex("""^\s+Device (-?\d+): """).find(line)?.let {
+                val id = it.groupValues[1].toInt()
+                readerId = id
+                readerHub[id] = id
+            }
+            Regex("""EventHub Devices: \[\s*(-?\d+)""").find(line)?.let { match ->
+                readerId?.let { readerHub[it] = match.groupValues[1].toInt() }
+            }
+        }
+    }
+    return readerHub.mapNotNull { (reader, hub) -> hubPaths[hub]?.let { reader to it } }.toMap()
+}
