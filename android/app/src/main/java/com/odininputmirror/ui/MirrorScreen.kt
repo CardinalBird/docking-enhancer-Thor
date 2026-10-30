@@ -201,7 +201,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
             // Left: the handheld, then every pad it can see, with player 1's lamp lit.
             Column(
-                modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 16.dp, horizontal = 8.dp),
+                modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 8.dp, horizontal = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 HandheldTile(
@@ -213,7 +213,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                     },
                     onClick = if (state.busy || state.autoMirrorEnabled) null else ({ pickerOpen = true }),
                 )
-                Rule(Modifier.padding(vertical = 12.dp))
+                Rule(Modifier.padding(vertical = 4.dp))
                 if (externals.isEmpty()) {
                     Text("Connect a controller to play docked.", color = Palette.textMuted, fontSize = 14.sp)
                 } else {
@@ -229,14 +229,6 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                         repeat(4 - externals.size.coerceAtMost(4)) { Spacer(Modifier.weight(1f)) }
                     }
                 }
-                Spacer(Modifier.weight(1f))
-                Text(
-                    if (state.loading) "Scanning controllers..."
-                    else if (state.restartWaiting) "Waiting for automatic mirror start..."
-                    else state.message,
-                    color = Palette.textSecondary,
-                    fontSize = 14.sp,
-                )
             }
 
             Box(Modifier.fillMaxHeight().width(1.dp).padding(vertical = 16.dp).background(Palette.border))
@@ -315,12 +307,25 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             }
         }
 
-        HintBar(
-            hints = listOf(
-                HintAction(PromptGlyph.B, "Back", null),
-                HintAction(PromptGlyph.A, "OK", null),
-            ),
-        )
+        // Status sits in the bottom band, left of the hints, so the controller pane never runs out of room.
+        Row(Modifier.fillMaxWidth().background(Palette.band), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (state.loading) "Scanning controllers..."
+                else if (state.restartWaiting) "Waiting for automatic mirror start..."
+                else state.message,
+                color = Palette.textSecondary,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(start = 28.dp).weight(1f),
+            )
+            Box(Modifier.weight(1f)) {
+                HintBar(
+                    hints = listOf(
+                        HintAction(PromptGlyph.B, "Back", null),
+                        HintAction(PromptGlyph.A, "OK", null),
+                    ),
+                )
+            }
+        }
     }
 
     if (pickerOpen) {

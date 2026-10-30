@@ -86,14 +86,14 @@ internal fun HandheldTile(device: ControllerDevice?, hint: String, onClick: (() 
             .clip(shape)
             .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, shape)
             .let { if (onClick != null) it.clickable(interactionSource = interaction, indication = null, onClick = onClick) else it }
-            .padding(12.dp),
+            .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(width = 190.dp, height = 106.dp).clip(RoundedCornerShape(10.dp))
+            Modifier.size(width = 136.dp, height = 76.dp).clip(RoundedCornerShape(10.dp))
                 .background(Palette.band).border(4.dp, Palette.borderStrong, RoundedCornerShape(10.dp)),
         )
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(6.dp))
         Text(device?.name ?: "No built-in controller", color = Palette.textPrimary, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(hint, color = Palette.textMuted, fontSize = 12.sp)
     }
@@ -108,9 +108,9 @@ internal fun PadTile(device: ControllerDevice, player1: Boolean, locked: Boolean
                 Box(Modifier.size(9.dp).background(if (player1 && lamp == 0) Palette.custom else Palette.borderStrong))
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Text("🎮", fontSize = 40.sp)
         Spacer(Modifier.height(6.dp))
+        Text("🎮", fontSize = 30.sp)
+        Spacer(Modifier.height(2.dp))
         Text(
             device.name,
             color = if (player1) Palette.textPrimary else Palette.textSecondary,

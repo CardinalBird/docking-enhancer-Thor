@@ -84,6 +84,7 @@ internal class AndroidInputDeviceRepository(
             }
             .distinctBy { it.path }
             .toList()
+            .let(::dropForeignHideNodes)
 
         val devices = (framework + hiddenSourceDevice(framework, procEntries))
             .sortedBy { it.controllerNumber }
@@ -390,4 +391,18 @@ internal fun parseDumpsysInputPaths(dump: String): Map<Int, String> {
         }
     }
     return readerHub.mapNotNull { (reader, hub) -> hubPaths[hub]?.let { reader to it } }.toMap()
+}
+
+/**
+ * The hide node is found by name, so with two identically named pads one can be handed the other's
+ * node, and mirroring it would hide the wrong controller. A node that is another device's own path
+ * belongs to that device: drop it. The pad left without one stays visible while mirrored (a phantom
+ * player 2), which beats making a real pad vanish.
+ */
+internal fun dropForeignHideNodes(devices: List<ControllerDevice>): List<ControllerDevice> {
+    val ownPaths = devices.map { it.path }.toSet()
+    return devices.map { device ->
+        val hide = device.hideNodePath
+        if (hide != null && hide != device.path && hide in ownPaths) device.copy(hideNodePath = null) else device
+    }
 }

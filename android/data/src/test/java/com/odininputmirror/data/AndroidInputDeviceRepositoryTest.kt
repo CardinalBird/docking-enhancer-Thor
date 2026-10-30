@@ -566,4 +566,19 @@ Input Reader State:
         // Without the dump it falls back to today's pick: the lowest node.
         assertEquals("/dev/input/event9", unknown?.path)
     }
+
+    // Seen on a Thor: the firmware twins only one pad, so with two "Sim Pad"s the untwinned one was
+    // given the twinned one's node and mirroring it hid the other controller.
+    @Test
+    fun dropForeignHideNodesNeverHidesAnotherPad() {
+        val twinned = ControllerDevice("Sim Pad", "/dev/input/event12", "g", 1, hideNodePath = "/dev/input/event12")
+        val untwinned = ControllerDevice("Sim Pad", "/dev/input/event14", "g", 2, hideNodePath = "/dev/input/event12")
+        val solo = ControllerDevice("Other", "/dev/input/event15", "g", 3, hideNodePath = "/dev/input/event16")
+
+        val result = dropForeignHideNodes(listOf(twinned, untwinned, solo))
+
+        assertEquals("/dev/input/event12", result[0].hideNodePath)
+        assertNull(result[1].hideNodePath)
+        assertEquals("/dev/input/event16", result[2].hideNodePath)
+    }
 }
