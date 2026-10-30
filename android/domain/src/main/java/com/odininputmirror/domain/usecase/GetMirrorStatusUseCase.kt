@@ -1,5 +1,6 @@
 package com.odininputmirror.domain.usecase
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import com.odininputmirror.domain.model.MirrorStatus
 import com.odininputmirror.domain.repository.DockStateRepository
 import com.odininputmirror.domain.repository.MirrorProcessRepository
@@ -20,7 +21,7 @@ class GetMirrorStatusUseCase(
             target = settings.target,
             sourceGuid = settings.sourceGuid,
             targetGuid = settings.targetGuid,
-            homeAsBack = settings.homeAsBack,
+            homeMode = settings.homeMode,
             comboHoldKillApp = settings.comboHoldKillApp,
             virtualMouse = settings.virtualMouse,
             autoMirrorEnabled = settings.autoMirrorEnabled,

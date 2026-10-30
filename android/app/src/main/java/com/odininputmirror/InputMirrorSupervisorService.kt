@@ -1,5 +1,6 @@
 package com.odininputmirror
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -118,6 +119,14 @@ class InputMirrorSupervisorService : Service() {
                     MirrorStateStore.awaitNextTick(sleepMs)
                     continue
                 }
+                if (MirrorStateStore.pickingPlayer1) {
+                    if (mirrorRunning) {
+                        runCatching { graph.stopMirror() }
+                    }
+                    updateSupervisorState(SupervisorState.PickingPlayer1)
+                    MirrorStateStore.awaitNextTick(SUPERVISOR_INTERVAL_MS)
+                    continue
+                }
                 val devices = if (dockActive) allDevices else emptyList()
                 val decision = graph.resolveAutoMirrorDecision(
                     dockActive = dockActive,
@@ -234,7 +243,7 @@ class InputMirrorSupervisorService : Service() {
                 target = settings.target,
                 sourceGuid = settings.sourceGuid,
                 targetGuid = settings.targetGuid,
-                homeAsBack = settings.homeAsBack,
+                homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
                 virtualMouse = settings.virtualMouse,
                 autoMirrorEnabled = settings.autoMirrorEnabled,
@@ -327,6 +336,7 @@ class InputMirrorSupervisorService : Service() {
         // model list, so naming one handheld here would be wrong on any other that qualifies.
         WaitingForInternalController("Waiting for built-in controller"),
         WaitingForExternalController("Waiting for external controller"),
+        PickingPlayer1("Press L + R on the controller you want to use"),
         Starting("Starting dock mirror"),
         Active("Dock mirror active"),
         Restarting("Restarting dock mirror"),

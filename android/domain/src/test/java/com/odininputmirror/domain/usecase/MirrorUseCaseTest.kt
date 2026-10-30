@@ -1,5 +1,6 @@
 package com.odininputmirror.domain.usecase
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import com.odininputmirror.domain.model.CaptureKind
 import com.odininputmirror.domain.model.CaptureRead
 import com.odininputmirror.domain.model.ControllerDevice
@@ -7,6 +8,7 @@ import com.odininputmirror.domain.model.ControllerMapping
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
 import com.odininputmirror.domain.model.findSavedControllerDevice
+import com.odininputmirror.domain.model.pickExternal
 import com.odininputmirror.domain.repository.DockStateRepository
 import com.odininputmirror.domain.repository.MirrorProcessRepository
 import com.odininputmirror.domain.repository.MirrorSettingsRepository
@@ -26,7 +28,7 @@ class MirrorUseCaseTest {
             target = "/dev/input/event2",
             sourceGuid = "external-guid",
             targetGuid = "local-guid",
-            homeAsBack = true,
+            homeMode = HomeButtonMode.BACK,
             comboHoldKillApp = true,
         )
 
@@ -39,7 +41,7 @@ class MirrorUseCaseTest {
                 target = "/dev/input/event2",
                 sourceGuid = "external-guid",
                 targetGuid = "local-guid",
-                homeAsBack = true,
+                homeMode = HomeButtonMode.BACK,
                 comboHoldKillApp = true,
                 expectedRunning = true,
                 startedAt = 1234L,
@@ -85,7 +87,7 @@ class MirrorUseCaseTest {
                 target = "/dev/input/event2",
                 sourceGuid = "external-guid",
                 targetGuid = "local-guid",
-                homeAsBack = true,
+                homeMode = HomeButtonMode.BACK,
                 comboHoldKillApp = false,
                 expectedRunning = true,
             ),
@@ -99,7 +101,7 @@ class MirrorUseCaseTest {
         assertEquals("/dev/input/event2", status.target)
         assertEquals("external-guid", status.sourceGuid)
         assertEquals("local-guid", status.targetGuid)
-        assertTrue(status.homeAsBack)
+        assertEquals(HomeButtonMode.BACK, status.homeMode)
         assertFalse(status.comboHoldKillApp)
         assertTrue(status.docked)
         assertEquals(1, process.isRunningCount)
@@ -146,16 +148,27 @@ class MirrorUseCaseTest {
     }
 
     @Test
+    fun pickExternalPrefersLockedPlayer1AndFallsBackToFirst() {
+        val first = externalController(path = "/dev/input/event9").copy(name = "Xbox Wireless Controller")
+        val locked = externalController(path = "/dev/input/event11").copy(name = "8BitDo Ultimate 2C")
+        val devices = listOf(first, locked)
+
+        assertEquals(locked, devices.pickExternal(null, "8bitdo ultimate 2c"))
+        assertEquals(first, devices.pickExternal(null, "Unplugged Pad"))
+        assertEquals(first, devices.pickExternal(null, null))
+    }
+
+    @Test
     fun setMirrorOptionsPersistIndividualFlagsWithoutChangingOtherSettings() {
         val settings = FakeMirrorSettingsRepository(
             MirrorSettings(source = "/dev/input/event9", target = "/dev/input/event2", expectedRunning = true),
         )
 
-        SetHomeAsBackEnabledUseCase(settings)(true)
+        SetHomeModeUseCase(settings)(HomeButtonMode.BACK)
         SetComboHoldKillAppEnabledUseCase(settings)(true)
         SetVirtualMouseEnabledUseCase(settings)(true)
 
-        assertTrue(settings.state.homeAsBack)
+        assertEquals(HomeButtonMode.BACK, settings.state.homeMode)
         assertTrue(settings.state.comboHoldKillApp)
         assertTrue(settings.state.virtualMouse)
         assertTrue(settings.state.expectedRunning)
@@ -275,7 +288,7 @@ class MirrorUseCaseTest {
         val decision = ResolveAutoMirrorDecisionUseCase()(
             dockActive = true,
             devices = listOf(local, firstExternal, secondExternal),
-            settings = MirrorSettings(homeAsBack = true, comboHoldKillApp = true),
+            settings = MirrorSettings(homeMode = HomeButtonMode.BACK, comboHoldKillApp = true),
             mirrorRunning = false,
         )
 
@@ -286,7 +299,7 @@ class MirrorUseCaseTest {
                     target = "/dev/input/event2",
                     sourceGuid = "first-external",
                     targetGuid = "odin-internal",
-                    homeAsBack = true,
+                    homeMode = HomeButtonMode.BACK,
                     comboHoldKillApp = true,
                 )
             ),
@@ -424,7 +437,7 @@ class MirrorUseCaseTest {
                     target = "/dev/input/event4",
                     sourceGuid = "new-external",
                     targetGuid = "local-guid",
-                    homeAsBack = true,
+                    homeMode = HomeButtonMode.BACK,
                     comboHoldKillApp = true,
                 )
             ),
@@ -437,7 +450,7 @@ class MirrorUseCaseTest {
         target = "/dev/input/event2",
         sourceGuid = "external-guid",
         targetGuid = "local-guid",
-        homeAsBack = true,
+        homeMode = HomeButtonMode.BACK,
         comboHoldKillApp = true,
         expectedRunning = true,
     )
@@ -452,7 +465,7 @@ class MirrorUseCaseTest {
         target: String = "/dev/input/event2",
         sourceGuid: String? = "external-guid",
         targetGuid: String? = "local-guid",
-        homeAsBack: Boolean = false,
+        homeMode: HomeButtonMode = HomeButtonMode.HOME,
         comboHoldKillApp: Boolean = false,
         virtualMouse: Boolean = false,
     ) = MirrorStartRequest(
@@ -460,7 +473,7 @@ class MirrorUseCaseTest {
         target = target,
         sourceGuid = sourceGuid,
         targetGuid = targetGuid,
-        homeAsBack = homeAsBack,
+        homeMode = homeMode,
         comboHoldKillApp = comboHoldKillApp,
         virtualMouse = virtualMouse,
     )
@@ -567,7 +580,7 @@ private class FakeMirrorSettingsRepository(
             target = request.target,
             sourceGuid = request.sourceGuid,
             targetGuid = request.targetGuid,
-            homeAsBack = request.homeAsBack,
+            homeMode = request.homeMode,
             comboHoldKillApp = request.comboHoldKillApp,
             virtualMouse = request.virtualMouse,
             expectedRunning = true,
@@ -579,8 +592,9 @@ private class FakeMirrorSettingsRepository(
         state = state.copy(expectedRunning = expectedRunning)
     }
 
-    override fun setHomeAsBackEnabled(enabled: Boolean) {
-        state = state.copy(homeAsBack = enabled)
+    override fun setPlayer1(name: String?) = Unit
+    override fun setHomeMode(mode: HomeButtonMode) {
+        state = state.copy(homeMode = mode)
     }
 
     override fun setComboHoldKillAppEnabled(enabled: Boolean) {

@@ -1,5 +1,19 @@
 package com.odininputmirror.domain.model
 
+/**
+ * The external pad to mirror: the one locked in with L + R when it is connected, otherwise the first
+ * external. Matched by name because that is all the framework hands a key event, and the name is what
+ * survives the firmware republishing the pad under its own vendor id.
+ */
+fun List<ControllerDevice>.pickExternal(local: ControllerDevice?, player1Name: String?): ControllerDevice? {
+    val externals = filter { !it.isInternal && (local == null || !it.isSamePhysicalControllerAs(local)) }
+    return externals.firstOrNull { player1Name != null && it.name.equals(player1Name, ignoreCase = true) }
+        ?: externals.firstOrNull()
+}
+
+private fun ControllerDevice.isSamePhysicalControllerAs(other: ControllerDevice): Boolean =
+    controllerNumber > 0 && controllerNumber == other.controllerNumber
+
 data class ControllerDevice(
     val name: String,
     val path: String,

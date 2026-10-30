@@ -7,7 +7,7 @@ data class MirrorStatus(
     val target: String?,
     val sourceGuid: String?,
     val targetGuid: String?,
-    val homeAsBack: Boolean,
+    val homeMode: HomeButtonMode,
     val comboHoldKillApp: Boolean,
     val virtualMouse: Boolean,
     val autoMirrorEnabled: Boolean,

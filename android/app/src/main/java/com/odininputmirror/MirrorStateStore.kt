@@ -60,6 +60,21 @@ object MirrorStateStore {
         }
     }
 
+    // True while the Player 1 picker is open. The mirror grabs the external pad and replays it as the
+    // built-in one, so while it runs nobody can tell pads apart; the supervisor stands it down until
+    // the pick is made.
+    @Volatile
+    var pickingPlayer1: Boolean = false
+        private set
+
+    fun setPickingPlayer1(picking: Boolean) {
+        synchronized(tickMonitor) {
+            pickingPlayer1 = picking
+            pendingWake = true
+            tickMonitor.notifyAll()
+        }
+    }
+
     /** The supervisor sleeps here between ticks so [setUiVisible] can cut the wait short. Spurious
      * wakeups only cost one early tick, which is harmless. Propagates interrupts for clean shutdown. */
     fun awaitNextTick(maxSleepMs: Long) {

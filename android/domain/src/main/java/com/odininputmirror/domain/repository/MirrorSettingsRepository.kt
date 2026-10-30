@@ -1,5 +1,6 @@
 package com.odininputmirror.domain.repository
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
 
@@ -7,11 +8,12 @@ interface MirrorSettingsRepository {
     fun getSettings(): MirrorSettings
     fun saveStarted(request: MirrorStartRequest, startedAt: Long)
     fun setExpectedRunning(expectedRunning: Boolean)
-    fun setHomeAsBackEnabled(enabled: Boolean)
+    fun setHomeMode(mode: HomeButtonMode)
     fun setComboHoldKillAppEnabled(enabled: Boolean)
     fun setVirtualMouseEnabled(enabled: Boolean)
     fun setAutoMirrorEnabled(enabled: Boolean)
     fun setManualInternalController(guid: String?)
+    fun setPlayer1(name: String?)
 
     /**
      * Advance the config generation without changing a setting.

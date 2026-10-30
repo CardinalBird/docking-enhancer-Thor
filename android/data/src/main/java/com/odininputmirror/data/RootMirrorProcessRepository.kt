@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.system.Os
 import android.system.OsConstants
 import com.odininputmirror.domain.model.CaptureKind
@@ -33,7 +34,7 @@ internal class RootMirrorProcessRepository(
         files.writeConfig(
             configJson(
                 generation = mirrorSettingsRepository.getSettings().configGeneration,
-                homeAsBack = request.homeAsBack,
+                homeMode = request.homeMode,
                 comboHoldKillApp = request.comboHoldKillApp,
                 virtualMouse = request.virtualMouse,
                 mapping = request.mapping,
@@ -44,7 +45,7 @@ internal class RootMirrorProcessRepository(
         val configArg = " --config-file ${files.configFile.absolutePath.shellQuote()}"
         val controlFifoArg = " --control-fifo ${files.controlFifo.absolutePath.shellQuote()}"
         val captureArg = " --capture-file ${files.captureFile.absolutePath.shellQuote()}"
-        val homeAsBackArg = if (request.homeAsBack) " --home-as-back" else ""
+        val homeModeArg = " --home-mode ${request.homeMode.wire}"
         val comboHoldKillAppArg = if (request.comboHoldKillApp) " --combo-hold-kill-app" else ""
         val virtualMouseArg = if (request.virtualMouse) " --virtual-mouse" else ""
         val hideNodeArgs = request.hideNodes.joinToString("") { " --hide-node ${it.shellQuote()}" }
@@ -56,7 +57,7 @@ internal class RootMirrorProcessRepository(
         // so no `echo $! > pidfile` bookkeeping is needed here.
         //
         val launch =
-            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeAsBackArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
+            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeModeArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
 
         // Only skip the launch for a daemon already mirroring THESE nodes.
         //
@@ -151,7 +152,7 @@ internal class RootMirrorProcessRepository(
         files.writeConfig(
             configJson(
                 generation = settings.configGeneration,
-                homeAsBack = settings.homeAsBack,
+                homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
                 virtualMouse = settings.virtualMouse,
                 mapping = mapping,
@@ -281,14 +282,14 @@ private fun parseCaptureLine(line: String): CaptureResult? {
 // matching simplicity.
 private fun configJson(
     generation: Long,
-    homeAsBack: Boolean,
+    homeMode: HomeButtonMode,
     comboHoldKillApp: Boolean,
     virtualMouse: Boolean,
     mapping: ControllerMapping,
 ): String = """
     {
       "generation": $generation,
-      "home_as_back": $homeAsBack,
+      "home_mode": ${homeMode.wire},
       "combo_hold_kill_app": $comboHoldKillApp,
       "virtual_mouse": $virtualMouse,
       "mapping": {

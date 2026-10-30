@@ -244,7 +244,7 @@ mkfifo $FIFO 2>/dev/null
 
 generation() { sed -n 's/^generation //p' $HEART 2>/dev/null; }
 write_config() {
-    printf '{ "generation": %s, "home_as_back": %s, "combo_hold_kill_app": false, "virtual_mouse": false }\n' \
+    printf '{ "generation": %s, "home_mode": %s, "combo_hold_kill_app": false, "virtual_mouse": false }\n' \
         "$1" "$2" > $CFG.tmp
     mv $CFG.tmp $CFG
 }
@@ -259,7 +259,7 @@ press_source() { echo "key $1 1" >&3; echo "syn" >&3; echo "key $1 0" >&3; echo 
 # Un eje del pad de origen a un valor concreto. Los ejes van de -32768 a 32767 con reposo en 0.
 move_source() { echo "abs $1 $2" >&3; echo "syn" >&3; }
 
-write_config 1 false
+write_config 1 0
 start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --hidden-state-file $STATE --heartbeat-file $HEART
 PID_BEFORE=$(mirror_pid)
 if [ -z "$PID_BEFORE" ]; then
@@ -269,7 +269,7 @@ else
     G=$(generation)
     if [ "$G" = "1" ]; then ok "adopta la config del arranque"; else bad "no publico la generacion inicial [$G]"; fi
 
-    write_config 2 true
+    write_config 2 1
     poke
     sleep 1.5
     G=$(generation)
@@ -301,7 +301,7 @@ echo "=== T7: la captura reporta y no reenvia ==="
 CAPLOG=$TMP/capture.log
 rm -f $CAPLOG $CFG $FIFO
 mkfifo $FIFO 2>/dev/null
-write_config 1 false
+write_config 1 0
 
 start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --capture-file $CAPLOG --heartbeat-file $HEART
 if [ -z "$(mirror_pid)" ]; then
@@ -359,7 +359,7 @@ echo "=== T8: un mapeo en la config cambia el codigo reenviado ==="
 cat > $CFG.tmp <<'EOF'
 {
   "generation": 1,
-  "home_as_back": false,
+  "home_mode": 0,
   "combo_hold_kill_app": false,
   "virtual_mouse": false,
   "mapping": { "bindings": [[0, 304, 0, 0, 307, 0]] }
@@ -403,7 +403,7 @@ echo "=== T9: media travesia de un eje llega como boton ==="
 cat > $CFG.tmp <<'EOF'
 {
   "generation": 1,
-  "home_as_back": false,
+  "home_mode": 0,
   "combo_hold_kill_app": false,
   "virtual_mouse": false,
   "mapping": { "bindings": [[2, 2, 1, 0, 307, 0]] }
@@ -466,7 +466,7 @@ echo "=== T10: un boton llega como deflexion completa de un eje ==="
 cat > $CFG.tmp <<'EOF'
 {
   "generation": 1,
-  "home_as_back": false,
+  "home_mode": 0,
   "combo_hold_kill_app": false,
   "virtual_mouse": false,
   "mapping": { "bindings": [[0, 304, 0, 2, 3, 1]] }
@@ -510,7 +510,7 @@ echo "=== T11: una captura abandonada expira sola ==="
 # porque es lo que se esta probando; no hay forma honesta de acelerarlo.
 rm -f $CFG $FIFO
 mkfifo $FIFO 2>/dev/null
-write_config 1 false
+write_config 1 0
 
 start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --capture-file $TMP/t11.cap --heartbeat-file $HEART
 if [ -z "$(mirror_pid)" ]; then

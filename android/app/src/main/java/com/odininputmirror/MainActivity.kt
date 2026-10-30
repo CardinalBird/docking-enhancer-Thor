@@ -29,6 +29,10 @@ class MainActivity : ComponentActivity() {
     // which is why focus never landed on launch until a button press handed it out by default.
     var onWindowFocused: (() -> Unit)? = null
 
+    // Set while the Player 1 picker is open; called with the name of the pad that pressed L + R.
+    var onLPlusR: ((String) -> Unit)? = null
+    private val shouldersHeld = mutableMapOf<Int, Int>()  // deviceId -> bits: 1 = L, 2 = R
+
     private val handler = Handler(Looper.getMainLooper())
 
     private var stickY = 0f
@@ -89,6 +93,26 @@ class MainActivity : ComponentActivity() {
     //  - The RIGHT analog stick free-scrolls the page. This keeps non-focusable areas — the header
     //    and status text — reachable, and keeps the page scrollable even while the mirror locks
     //    every control except the primary button (when focus navigation has nowhere to go).
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val picker = onLPlusR
+        val bit = when (event.keyCode) {
+            KeyEvent.KEYCODE_BUTTON_L1 -> 1
+            KeyEvent.KEYCODE_BUTTON_R1 -> 2
+            else -> 0
+        }
+        if (picker == null || bit == 0) {
+            return super.dispatchKeyEvent(event)
+        }
+        // Tracked per device so L on one pad and R on another never count as a press.
+        val held = shouldersHeld[event.deviceId] ?: 0
+        val now = if (event.action == KeyEvent.ACTION_DOWN) held or bit else held and bit.inv()
+        shouldersHeld[event.deviceId] = now
+        if (now == 3 && held != 3) {
+            event.device?.name?.let(picker)
+        }
+        return true
+    }
+
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_JOYSTICK) && event.action == MotionEvent.ACTION_MOVE) {
             handleStickScroll(event.getAxisValue(MotionEvent.AXIS_RZ))

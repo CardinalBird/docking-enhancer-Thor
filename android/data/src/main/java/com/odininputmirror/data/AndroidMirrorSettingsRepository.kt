@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
@@ -14,13 +15,14 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             target = prefs.getString(KEY_TARGET, null),
             sourceGuid = prefs.getString(KEY_SOURCE_GUID, null),
             targetGuid = prefs.getString(KEY_TARGET_GUID, null),
-            homeAsBack = prefs.getBoolean(KEY_HOME_AS_BACK, false),
+            homeMode = readHomeMode(),
             comboHoldKillApp = prefs.getBoolean(KEY_COMBO_HOLD_KILL_APP, false),
             virtualMouse = prefs.getBoolean(KEY_VIRTUAL_MOUSE, false),
             autoMirrorEnabled = prefs.getBoolean(KEY_AUTO_MIRROR_ENABLED, true),
             expectedRunning = prefs.getBoolean(KEY_EXPECTED_RUNNING, false),
             startedAt = prefs.getLong(KEY_STARTED_AT, 0L),
             manualInternalGuid = prefs.getString(KEY_MANUAL_INTERNAL_GUID, null),
+            player1Name = prefs.getString(KEY_PLAYER1_NAME, null),
             configGeneration = prefs.getLong(KEY_CONFIG_GENERATION, 0L),
         )
     }
@@ -31,7 +33,7 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             .putString(KEY_TARGET, request.target)
             .putString(KEY_SOURCE_GUID, request.sourceGuid)
             .putString(KEY_TARGET_GUID, request.targetGuid)
-            .putBoolean(KEY_HOME_AS_BACK, request.homeAsBack)
+            .putString(KEY_HOME_MODE, request.homeMode.name)
             .putBoolean(KEY_COMBO_HOLD_KILL_APP, request.comboHoldKillApp)
             .putBoolean(KEY_VIRTUAL_MOUSE, request.virtualMouse)
             .putBoolean(KEY_EXPECTED_RUNNING, true)
@@ -39,11 +41,24 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             .apply()
     }
 
+    // An upstream install that had Home-as-Back on keeps Back; everything else gets the new default.
+    private fun readHomeMode(): HomeButtonMode {
+        prefs.getString(KEY_HOME_MODE, null)?.let { saved ->
+            HomeButtonMode.entries.firstOrNull { it.name == saved }?.let { return it }
+        }
+        return if (prefs.getBoolean(KEY_HOME_AS_BACK, false)) HomeButtonMode.BACK else HomeButtonMode.HOME
+    }
+
     override fun setExpectedRunning(expectedRunning: Boolean) {
         prefs.edit().putBoolean(KEY_EXPECTED_RUNNING, expectedRunning).apply()
     }
 
-    override fun setHomeAsBackEnabled(enabled: Boolean) = setLiveOption(KEY_HOME_AS_BACK, enabled)
+    override fun setHomeMode(mode: HomeButtonMode) = synchronized(generationLock) {
+        prefs.edit()
+            .putString(KEY_HOME_MODE, mode.name)
+            .putLong(KEY_CONFIG_GENERATION, prefs.getLong(KEY_CONFIG_GENERATION, 0L) + 1)
+            .apply()
+    }
 
     override fun setComboHoldKillAppEnabled(enabled: Boolean) = setLiveOption(KEY_COMBO_HOLD_KILL_APP, enabled)
 
@@ -89,5 +104,10 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
                 putString(KEY_MANUAL_INTERNAL_GUID, guid)
             }
         }.apply()
+    }
+
+    // A new source differs from the running one, so the supervisor restarts the mirror on its own.
+    override fun setPlayer1(name: String?) {
+        prefs.edit().putString(KEY_PLAYER1_NAME, name).apply()
     }
 }

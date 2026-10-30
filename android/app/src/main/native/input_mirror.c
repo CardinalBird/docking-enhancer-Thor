@@ -20,6 +20,15 @@
 
 static volatile sig_atomic_t keep_running = 1;
 static const long long COMBO_HOLD_KILL_APP_MS = 3000;
+// Holding Home this long opens Recents instead of the tap action.
+static const long long HOME_HOLD_RECENTS_MS = 500;
+
+// What a Home press on the external pad does. Values are the wire format in the config.
+enum home_mode {
+    HOME_MODE_PASS = 0,  // forward to the target untouched
+    HOME_MODE_BACK = 1,  // tap is Back, hold is Recents
+    HOME_MODE_HOME = 2,  // tap is Home, hold is Recents
+};
 static const long long HEARTBEAT_INTERVAL_MS = 1000;
 // Consecutive beats the heartbeat path may stay missing before we conclude this daemon has no owner
 // left and shut down. The app deletes that path exactly when it wants us gone (it was uninstalled,
@@ -257,14 +266,15 @@ struct mirror_state {
     int heartbeat_fd;  // held open for the whole run; rewritten in place each beat
     int heartbeat_created;  // the opening beat made the file; later reopens must never re-create it
     int heartbeat_missing_beats;  // consecutive beats the heartbeat PATH has been gone
-    int home_as_back;
+    int home_mode;
     int combo_hold_kill_app;
     int virtual_mouse;
     int swap_nintendo_layout;
-    // A Home press we swallowed and still owe a release for. Tracked so turning Home-as-Back off
+    // A Home press we swallowed and still owe a release for. Tracked so switching to pass-through
     // mid-hold keeps swallowing that press to completion instead of handing the target a release
     // for a key it never saw go down.
     int home_swallowed;
+    long long home_pressed_at_ms;
 
     // Select+Start "close app" combo.
     int select_pressed;
@@ -449,7 +459,7 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
         s->combo_pressed_at_ms = 0;
     }
 
-    s->home_as_back = next->home_as_back;
+    s->home_mode = next->home_mode;
     s->combo_hold_kill_app = next->combo_hold_kill_app;
     s->virtual_mouse = next->virtual_mouse;
     s->config_generation = next->generation;
@@ -549,24 +559,32 @@ static void update_combo_tracking(struct mirror_state *s, const struct input_eve
     }
 }
 
-// Home-as-Back: swallow the Home button entirely (press, repeat and release) so the target never
-// sees a Home-down without its up, and inject Back once, on release. Returns 1 if the event was
-// consumed (must not be forwarded).
-static int handle_home_as_back(struct mirror_state *s, const struct input_event *ev) {
+// Home mapping: swallow the Home button entirely (press, repeat and release) so the target never
+// sees a Home-down without its up, and inject one Android key on release — Recents if it was held,
+// otherwise Back or Home per the mode. Returns 1 if the event was consumed (must not be forwarded).
+static int handle_home_button(struct mirror_state *s, const struct input_event *ev) {
     if (ev->type != EV_KEY || !is_home_button(ev->code)) {
         return 0;
     }
     // Keep swallowing a press we already swallowed even if the setting was turned off mid-hold: the
     // target never saw that key go down, so letting its release through would be a release out of
     // nowhere. The press finishes under the rules it started with.
-    if (!s->home_as_back && !s->home_swallowed) {
+    if (s->home_mode == HOME_MODE_PASS && !s->home_swallowed) {
         return 0;
     }
     if (ev->value == 1) {
         s->home_swallowed = 1;
-    } else if (ev->value == 0) {
+        s->home_pressed_at_ms = now_ms();
+    } else if (ev->value == 0 && s->home_swallowed) {
         s->home_swallowed = 0;
-        run_detached("input keyevent 4");
+        // ponytail: Recents fires on release, not at the threshold; firing mid-hold needs a poll timeout.
+        if (now_ms() - s->home_pressed_at_ms >= HOME_HOLD_RECENTS_MS) {
+            run_detached("input keyevent 187");  // KEYCODE_APP_SWITCH
+        } else if (s->home_mode == HOME_MODE_HOME) {
+            run_detached("input keyevent 3");  // KEYCODE_HOME
+        } else {
+            run_detached("input keyevent 4");  // KEYCODE_BACK
+        }
     }
     return 1;
 }
@@ -648,7 +666,7 @@ int main(int argc, char **argv) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-as-back] [--combo-hold-kill-app] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
+        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -660,15 +678,15 @@ int main(int argc, char **argv) {
     const char *config_path = NULL;
     const char *control_fifo_path = NULL;
     const char *capture_file_path = NULL;
-    int home_as_back = 0;
+    int home_mode = HOME_MODE_PASS;
     int combo_hold_kill_app = 0;
     int virtual_mouse = 0;
     const char *hide_paths[MAX_HIDE_NODES];
     int hide_count = 0;
 
     for (int index = 3; index < argc; index++) {
-        if (strcmp(argv[index], "--home-as-back") == 0) {
-            home_as_back = 1;
+        if (strcmp(argv[index], "--home-mode") == 0 && index + 1 < argc) {
+            home_mode = atoi(argv[++index]);
             continue;
         }
 
@@ -737,7 +755,7 @@ int main(int argc, char **argv) {
     s.control_fd = -1;
     s.heartbeat_fd = -1;
     s.heartbeat_file_path = heartbeat_file_path;
-    s.home_as_back = home_as_back;
+    s.home_mode = home_mode;
     s.combo_hold_kill_app = combo_hold_kill_app;
     s.virtual_mouse = virtual_mouse;
     s.capture.first_axis = -1;
@@ -803,7 +821,7 @@ int main(int argc, char **argv) {
     // than with the flags of whichever launch happened to create it.
     if (config_path != NULL) {
         struct config from_flags = {
-            .home_as_back = s.home_as_back,
+            .home_mode = s.home_mode,
             .combo_hold_kill_app = s.combo_hold_kill_app,
             .virtual_mouse = s.virtual_mouse,
             .generation = 0,
@@ -912,7 +930,7 @@ int main(int argc, char **argv) {
         }
         if (command == CONTROL_RELOAD) {
             struct config running = {
-                .home_as_back = s.home_as_back,
+                .home_mode = s.home_mode,
                 .combo_hold_kill_app = s.combo_hold_kill_app,
                 .virtual_mouse = s.virtual_mouse,
                 .generation = s.config_generation,
@@ -983,7 +1001,7 @@ int main(int argc, char **argv) {
                 update_combo_tracking(&s, event);
             }
 
-            if (handle_home_as_back(&s, event)) {
+            if (handle_home_button(&s, event)) {
                 continue;
             }
 

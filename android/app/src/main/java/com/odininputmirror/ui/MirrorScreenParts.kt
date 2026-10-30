@@ -134,7 +134,7 @@ internal fun DeviceCard(
     ) {
         Text("🎮", fontSize = 36.sp)
         Spacer(Modifier.height(14.dp))
-        Text(title, color = Color(0xFFC8DCFA), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Text(title, color = Palette.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         Text(hint, color = Palette.textMuted, fontSize = 11.sp)
         Spacer(Modifier.height(12.dp))
@@ -256,10 +256,10 @@ internal fun SettingRow(
             onCheckedChange = onCheckedChange,
             enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color(0xFFD7F1FF),
-                checkedTrackColor = Color(0xFF1585C3),
-                uncheckedThumbColor = Color(0xFF7E8494),
-                uncheckedTrackColor = Color(0xFF2B2D38),
+                checkedThumbColor = Palette.textPrimary,
+                checkedTrackColor = Palette.accent,
+                uncheckedThumbColor = Palette.textMuted,
+                uncheckedTrackColor = Palette.surfaceRaised,
             ),
         )
     }
@@ -281,12 +281,12 @@ internal fun PrimaryButton(
             .heightIn(min = 52.dp)
             .focusRequester(focusRequester)
             .clip(shape)
-            .background(if (stop) Color(0xFF56232B) else Color(0xFF11486A))
+            .background(if (stop) Palette.dangerSoft else Palette.accentSoft)
             .border(
                 width = if (focused) 2.dp else 1.dp,
                 color = when {
                     focused -> Palette.focus
-                    stop -> Color(0xFF8F3F4A)
+                    stop -> Palette.danger
                     else -> Palette.borderStrong
                 },
                 shape = shape,

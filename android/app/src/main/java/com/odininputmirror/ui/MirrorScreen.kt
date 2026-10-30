@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.background
@@ -47,7 +48,7 @@ import com.odininputmirror.MainActivity
 import com.odininputmirror.ui.theme.Palette
 import kotlinx.coroutines.delay
 
-private fun Context.findMainActivity(): MainActivity? {
+internal fun Context.findMainActivity(): MainActivity? {
     var current: Context? = this
     while (current is ContextWrapper) {
         if (current is MainActivity) return current
@@ -72,6 +73,16 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             onCancelBind = { viewModel.mappingEditor.cancelBind() },
             onClearAll = { viewModel.mappingEditor.clearAll() },
             onClose = { viewModel.mappingEditor.close() },
+        )
+        return
+    }
+    if (state.pickingPlayer1) {
+        Player1Screen(
+            externals = state.devices.filter { !it.isInternal },
+            player1Name = state.player1Name,
+            onPick = viewModel::choosePlayer1,
+            onUnlock = { viewModel.setPlayer1(null) },
+            onClose = viewModel::closePlayer1Picker,
         )
         return
     }
@@ -214,11 +225,11 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                 )
                 DeviceCard(
                     modifier = Modifier.weight(1f).fillMaxHeight(),
-                    title = "External Controller",
+                    title = "Player 1",
                     device = state.externalDevice,
-                    hint = "First connected controller",
+                    hint = if (state.player1Name != null) "Locked · tap to change" else "First connected · tap to lock",
                     enabled = true,
-                    onClick = null,
+                    onClick = if (state.busy) null else viewModel::openPlayer1Picker,
                     hasCustomMapping = (state.mappedControlCount ?: 0) > 0,
                     hasSeededMapping = state.hasSeededMapping,
                     // Only offered once the controller has an identity to save a mapping against.
@@ -231,12 +242,20 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             }
 
             Spacer(Modifier.height(20.dp))
+            // ponytail: tap cycles the three modes; the Switch-style picker replaces this row.
             SettingRow(
-                title = "Home as Back",
-                description = "External controller Home button acts as Back",
-                checked = state.homeAsBack,
+                title = "Home button: " + when (state.homeMode) {
+                    HomeButtonMode.HOME -> "Home"
+                    HomeButtonMode.BACK -> "Back"
+                    HomeButtonMode.PASS_THROUGH -> "Pass through"
+                },
+                description = "Tap to change. Holding Home opens Recents unless set to Pass through.",
+                checked = state.homeMode != HomeButtonMode.PASS_THROUGH,
                 enabled = !state.busy,
-                onCheckedChange = { viewModel.toggleHomeAsBack(it) },
+                onCheckedChange = {
+                    val modes = HomeButtonMode.entries
+                    viewModel.setHomeMode(modes[(state.homeMode.ordinal + 1) % modes.size])
+                },
             )
             Spacer(Modifier.height(12.dp))
             SettingRow(
