@@ -13,7 +13,7 @@ interface MirrorSettingsRepository {
     fun setVirtualMouseEnabled(enabled: Boolean)
     fun setAutoMirrorEnabled(enabled: Boolean)
     fun setManualInternalController(guid: String?)
-    fun setPlayer1(name: String?)
+    fun setPlayer1(name: String?, path: String?)
 
     /**
      * Advance the config generation without changing a setting.

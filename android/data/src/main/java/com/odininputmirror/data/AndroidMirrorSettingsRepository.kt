@@ -23,6 +23,7 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             startedAt = prefs.getLong(KEY_STARTED_AT, 0L),
             manualInternalGuid = prefs.getString(KEY_MANUAL_INTERNAL_GUID, null),
             player1Name = prefs.getString(KEY_PLAYER1_NAME, null),
+            player1Path = prefs.getString(KEY_PLAYER1_PATH, null),
             configGeneration = prefs.getLong(KEY_CONFIG_GENERATION, 0L),
         )
     }
@@ -107,7 +108,7 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
     }
 
     // A new source differs from the running one, so the supervisor restarts the mirror on its own.
-    override fun setPlayer1(name: String?) {
-        prefs.edit().putString(KEY_PLAYER1_NAME, name).apply()
+    override fun setPlayer1(name: String?, path: String?) {
+        prefs.edit().putString(KEY_PLAYER1_NAME, name).putString(KEY_PLAYER1_PATH, path).apply()
     }
 }

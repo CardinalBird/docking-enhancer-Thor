@@ -340,7 +340,7 @@ private class FakeSettingsRepository(
         state = state.copy(expectedRunning = expectedRunning)
     }
 
-    override fun setPlayer1(name: String?) = Unit
+    override fun setPlayer1(name: String?, path: String?) = Unit
     override fun setHomeMode(mode: HomeButtonMode) {
         state = state.copy(homeMode = mode)
     }

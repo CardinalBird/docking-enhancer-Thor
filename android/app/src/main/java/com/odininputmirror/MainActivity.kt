@@ -29,8 +29,8 @@ class MainActivity : ComponentActivity() {
     // which is why focus never landed on launch until a button press handed it out by default.
     var onWindowFocused: (() -> Unit)? = null
 
-    // Set while the Player 1 picker is open; called with the name of the pad that pressed L + R.
-    var onLPlusR: ((String) -> Unit)? = null
+    // Set while the Player 1 picker is open; called with the pad that pressed L + R.
+    var onLPlusR: ((InputDevice) -> Unit)? = null
     private val shouldersHeld = mutableMapOf<Int, Int>()  // deviceId -> bits: 1 = L, 2 = R
 
     private val handler = Handler(Looper.getMainLooper())
@@ -108,7 +108,7 @@ class MainActivity : ComponentActivity() {
         val now = if (event.action == KeyEvent.ACTION_DOWN) held or bit else held and bit.inv()
         shouldersHeld[event.deviceId] = now
         if (now == 3 && held != 3) {
-            event.device?.name?.let(picker)
+            event.device?.let(picker)
         }
         return true
     }

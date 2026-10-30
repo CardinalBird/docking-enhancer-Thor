@@ -2,6 +2,7 @@ package com.odininputmirror.ui
 
 import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
+import android.view.InputDevice
 import android.content.Intent
 import android.os.Build
 import androidx.lifecycle.ViewModel
@@ -50,6 +51,7 @@ data class MirrorUiState(
     val virtualMouse: Boolean = false,
     // The pad locked in as player 1 with L + R, or null for "first connected".
     val player1Name: String? = null,
+    val player1Path: String? = null,
     val pickingPlayer1: Boolean = false,
 ) {
     // On a recognised handheld (e.g. Odin) the native layer flags the internal controller by
@@ -105,8 +107,8 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 return@launch
             }
 
-            val player1 = withContext(Dispatchers.IO) { graph.settingsRepository.getSettings().player1Name }
-            _state.update { it.copy(player1Name = player1) }
+            val saved = withContext(Dispatchers.IO) { graph.settingsRepository.getSettings() }
+            _state.update { it.copy(player1Name = saved.player1Name, player1Path = saved.player1Path) }
             startSupervisor()
             // Cold start: the supervisor may not have published a snapshot yet, so read once
             // directly to fill the screen immediately. Then observe the shared snapshot the
@@ -156,7 +158,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
 
     private fun applyStatus(status: MirrorStatus, available: List<ControllerDevice>) {
         val autoLocal = available.firstOrNull { it.isInternal }
-        val autoExternal = available.pickExternal(autoLocal, _state.value.player1Name)
+        val autoExternal = available.pickExternal(autoLocal, _state.value.player1Name, _state.value.player1Path)
         val savedExternalIsLocal =
             autoLocal != null && savedIdentityMatches(status.source, status.sourceGuid, autoLocal)
 
@@ -289,15 +291,21 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         _state.update { it.copy(pickingPlayer1 = false) }
     }
 
-    /** A pad pressed L + R. The built-in pad can't be its own source, so its press is ignored. */
-    fun choosePlayer1(name: String) {
-        if (name.equals(_state.value.localDevice?.name, ignoreCase = true)) return
-        setPlayer1(name)
+    /**
+     * A pad pressed L + R. Matched to its device by Android's player number, which is per pad, so two
+     * identical pads stay apart; a pad without a number (0) falls back to its name alone. The built-in
+     * pad can't be its own source, so its press is ignored.
+     */
+    fun choosePlayer1(pad: InputDevice) {
+        val current = _state.value
+        val device = current.devices.firstOrNull { pad.controllerNumber > 0 && it.controllerNumber == pad.controllerNumber }
+        if (device?.isInternal == true || pad.name.equals(current.localDevice?.name, ignoreCase = true)) return
+        setPlayer1(device?.name ?: pad.name, device?.path)
     }
 
-    fun setPlayer1(name: String?) {
-        _state.update { it.copy(player1Name = name) }
-        viewModelScope.launch(Dispatchers.IO) { graph.settingsRepository.setPlayer1(name) }
+    fun setPlayer1(name: String?, path: String? = null) {
+        _state.update { it.copy(player1Name = name, player1Path = path) }
+        viewModelScope.launch(Dispatchers.IO) { graph.settingsRepository.setPlayer1(name, path) }
     }
 
     // A ViewModel torn down mid-pick must not leave the supervisor holding the mirror off.

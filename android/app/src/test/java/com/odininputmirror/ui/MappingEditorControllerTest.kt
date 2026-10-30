@@ -221,7 +221,7 @@ class MappingEditorControllerTest {
         override fun getSettings() = MirrorSettings()
         override fun saveStarted(request: MirrorStartRequest, startedAt: Long) = Unit
         override fun setExpectedRunning(expectedRunning: Boolean) = Unit
-        override fun setPlayer1(name: String?) = Unit
+        override fun setPlayer1(name: String?, path: String?) = Unit
         override fun setHomeMode(mode: HomeButtonMode) = Unit
         override fun setComboHoldKillAppEnabled(enabled: Boolean) = Unit
         override fun setVirtualMouseEnabled(enabled: Boolean) = Unit

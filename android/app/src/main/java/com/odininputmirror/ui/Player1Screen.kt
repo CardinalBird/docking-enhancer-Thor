@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import android.view.InputDevice
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +41,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.odininputmirror.domain.model.ControllerDevice
+import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.ui.theme.Palette
 
 /**
@@ -53,7 +55,8 @@ import com.odininputmirror.ui.theme.Palette
 fun Player1Screen(
     externals: List<ControllerDevice>,
     player1Name: String?,
-    onPick: (String) -> Unit,
+    player1Path: String?,
+    onPick: (InputDevice) -> Unit,
     onUnlock: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -73,7 +76,8 @@ fun Player1Screen(
     }
 
     // Locked pad first so it sits in the P1 tile, then the rest; four tiles like the Switch screen.
-    val ordered = externals.sortedByDescending { it.name.equals(player1Name, ignoreCase = true) }
+    val locked = externals.lockedPlayer1(player1Name, player1Path)
+    val ordered = externals.sortedByDescending { it == locked }
     val glyphs = promptFontFamily()
 
     Column(
@@ -114,7 +118,7 @@ fun Player1Screen(
                     PlayerTile(
                         slot = slot,
                         device = ordered.getOrNull(slot),
-                        locked = slot == 0 && ordered.firstOrNull()?.name.equals(player1Name, ignoreCase = true),
+                        locked = locked != null && ordered.getOrNull(slot) == locked,
                         modifier = Modifier.weight(1f),
                     )
                 }

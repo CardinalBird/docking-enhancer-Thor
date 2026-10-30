@@ -45,6 +45,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.odininputmirror.MainActivity
+import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.ui.theme.Palette
 import kotlinx.coroutines.delay
 
@@ -80,6 +81,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         Player1Screen(
             externals = state.devices.filter { !it.isInternal },
             player1Name = state.player1Name,
+            player1Path = state.player1Path,
             onPick = viewModel::choosePlayer1,
             onUnlock = { viewModel.setPlayer1(null) },
             onClose = viewModel::closePlayer1Picker,
@@ -176,6 +178,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     }
 
     val externals = state.devices.filter { !it.isInternal }
+    val lockedPad = externals.lockedPlayer1(state.player1Name, state.player1Path)
     val homeModes = HomeButtonMode.entries
     fun cycleHome(step: Int) {
         viewModel.setHomeMode(homeModes[(state.homeMode.ordinal + step + homeModes.size) % homeModes.size])
@@ -219,7 +222,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                             PadTile(
                                 device = pad,
                                 player1 = pad.path == state.externalDevice?.path,
-                                locked = pad.name.equals(state.player1Name, ignoreCase = true),
+                                locked = pad == lockedPad,
                                 modifier = Modifier.weight(1f),
                             )
                         }

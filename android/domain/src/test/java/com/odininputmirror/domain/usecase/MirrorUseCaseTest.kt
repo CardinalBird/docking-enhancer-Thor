@@ -159,6 +159,17 @@ class MirrorUseCaseTest {
     }
 
     @Test
+    fun pickExternalTellsIdenticalPadsApartByPickedPath() {
+        val padA = externalController(path = "/dev/input/event9").copy(name = "8BitDo Ultimate 2C")
+        val padB = externalController(path = "/dev/input/event11").copy(name = "8BitDo Ultimate 2C")
+        val devices = listOf(padA, padB)
+
+        assertEquals(padB, devices.pickExternal(null, "8BitDo Ultimate 2C", "/dev/input/event11"))
+        // After a reconnect the picked node is gone: the name still finds one of them.
+        assertEquals(padA, devices.pickExternal(null, "8BitDo Ultimate 2C", "/dev/input/event4"))
+    }
+
+    @Test
     fun setMirrorOptionsPersistIndividualFlagsWithoutChangingOtherSettings() {
         val settings = FakeMirrorSettingsRepository(
             MirrorSettings(source = "/dev/input/event9", target = "/dev/input/event2", expectedRunning = true),
@@ -592,7 +603,7 @@ private class FakeMirrorSettingsRepository(
         state = state.copy(expectedRunning = expectedRunning)
     }
 
-    override fun setPlayer1(name: String?) = Unit
+    override fun setPlayer1(name: String?, path: String?) = Unit
     override fun setHomeMode(mode: HomeButtonMode) {
         state = state.copy(homeMode = mode)
     }

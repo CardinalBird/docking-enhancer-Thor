@@ -23,7 +23,7 @@ class ResolveAutoMirrorDecisionUseCase {
 
         val local = devices.firstOrNull { it.isInternal }
             ?: return AutoMirrorDecision.WaitingForInternalController
-        val external = devices.pickExternal(local, settings.player1Name)
+        val external = devices.pickExternal(local, settings.player1Name, settings.player1Path)
             ?: return AutoMirrorDecision.WaitingForExternalController
 
         if (local.path == external.path) {
