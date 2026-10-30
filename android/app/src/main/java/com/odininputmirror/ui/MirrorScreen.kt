@@ -3,6 +3,11 @@ package com.odininputmirror.ui
 import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
+import com.odininputmirror.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,6 +53,19 @@ import com.odininputmirror.MainActivity
 import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.ui.theme.Palette
 import kotlinx.coroutines.delay
+
+private fun Context.canPinShortcut(): Boolean =
+    getSystemService(ShortcutManager::class.java)?.isRequestPinShortcutSupported == true
+
+// The home app answers with its own confirmation; there is nothing to do with its answer here.
+private fun Context.pinToHome() {
+    val shortcut = ShortcutInfo.Builder(this, "open")
+        .setShortLabel(getString(R.string.app_name))
+        .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
+        .setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+        .build()
+    getSystemService(ShortcutManager::class.java)?.requestPinShortcut(shortcut, null)
+}
 
 internal fun Context.findMainActivity(): MainActivity? {
     var current: Context? = this
@@ -290,6 +308,11 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                     onClick = if (state.busy) null else ({ viewModel.toggleVirtualMouse(!state.virtualMouse) }),
                 ) {
                     RowSwitch(state.virtualMouse, !state.busy) { viewModel.toggleVirtualMouse(it) }
+                }
+                // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
+                // can ask to be pinned itself. Shown only when the home app takes pin requests.
+                if (context.canPinShortcut()) {
+                    MenuRow(title = "Add to home screen", subtitle = "Pin this app to your launcher", onClick = { context.pinToHome() })
                 }
                 Spacer(Modifier.height(16.dp))
                 PrimaryButton(
