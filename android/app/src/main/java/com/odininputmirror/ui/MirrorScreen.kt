@@ -7,7 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -37,7 +38,6 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -175,7 +175,13 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         anchorFocus()
     }
 
-    Box(
+    val externals = state.devices.filter { !it.isInternal }
+    val homeModes = HomeButtonMode.entries
+    fun cycleHome(step: Int) {
+        viewModel.setHomeMode(homeModes[(state.homeMode.ordinal + step + homeModes.size) % homeModes.size])
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Palette.screen)
@@ -183,131 +189,135 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             // so one modifier on the root answers a question no FocusRequester can: requestFocus()
             // reports success as soon as its node exists, which is not the same as the node having
             // taken focus.
-            .onFocusChanged { screenHasFocus = it.hasFocus },
+            .onFocusChanged { screenHasFocus = it.hasFocus }
+            .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .verticalScroll(scrollState)
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-        ) {
-            Header(enabled = state.enabled, docked = state.docked, loading = state.loading)
+        Header(enabled = state.enabled, docked = state.docked, loading = state.loading)
+        Rule(Modifier.padding(horizontal = 28.dp))
 
-            Spacer(Modifier.height(24.dp))
-            Text("Automatic Dock Mirror", color = Palette.textPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Controllers are selected automatically while dock mode is active.",
-                color = Palette.textSecondary,
-                fontSize = 14.sp,
-            )
-
-            Spacer(Modifier.height(16.dp))
-            // Equal heights: the row takes the tallest card's intrinsic height and both fill it. The
-            // external card carries a mapping line and a button the local one does not, and without
-            // this it simply grows past its neighbour.
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
+            // Left: the handheld, then every pad it can see, with player 1's lamp lit.
+            Column(
+                modifier = Modifier.weight(1.4f).fillMaxHeight().padding(vertical = 16.dp, horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                DeviceCard(
-                    modifier = Modifier.weight(1f).fillMaxHeight().focusRequester(topFocus),
-                    title = "Local Controller",
+                HandheldTile(
                     device = state.localDevice,
                     hint = when {
-                        state.autoMirrorEnabled -> "Locked while mirror is on"
-                        state.hasKnownInternalProfile -> "Auto-detected · tap to change"
-                        else -> "Tap to select internal"
+                        state.autoMirrorEnabled -> "Built-in · locked while mirror is on"
+                        state.hasKnownInternalProfile -> "Built-in · auto-detected"
+                        else -> "Built-in · tap to change"
                     },
-                    enabled = !state.autoMirrorEnabled,
                     onClick = if (state.busy || state.autoMirrorEnabled) null else ({ pickerOpen = true }),
                 )
-                DeviceCard(
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    title = "Player 1",
-                    device = state.externalDevice,
-                    hint = if (state.player1Name != null) "Locked · tap to change" else "First connected · tap to lock",
-                    enabled = true,
-                    onClick = if (state.busy) null else viewModel::openPlayer1Picker,
-                    hasCustomMapping = (state.mappedControlCount ?: 0) > 0,
-                    hasSeededMapping = state.hasSeededMapping,
-                    // Only offered once the controller has an identity to save a mapping against.
-                    onEditMapping = if (state.externalDevice?.mappingKey != null) {
-                        { viewModel.openMappingEditor() }
-                    } else {
-                        null
-                    },
-                )
-            }
-
-            Spacer(Modifier.height(20.dp))
-            // ponytail: tap cycles the three modes; the Switch-style picker replaces this row.
-            SettingRow(
-                title = "Home button: " + when (state.homeMode) {
-                    HomeButtonMode.HOME -> "Home"
-                    HomeButtonMode.BACK -> "Back"
-                    HomeButtonMode.PASS_THROUGH -> "Pass through"
-                },
-                description = "Tap to change. Holding Home opens Recents unless set to Pass through.",
-                checked = state.homeMode != HomeButtonMode.PASS_THROUGH,
-                enabled = !state.busy,
-                onCheckedChange = {
-                    val modes = HomeButtonMode.entries
-                    viewModel.setHomeMode(modes[(state.homeMode.ordinal + 1) % modes.size])
-                },
-            )
-            Spacer(Modifier.height(12.dp))
-            SettingRow(
-                title = "Select + Start closes app",
-                description = "Hold Select and Start for 3 seconds to close the current app",
-                checked = state.comboHoldKillApp,
-                enabled = !state.busy,
-                onCheckedChange = { viewModel.toggleComboHoldKillApp(it) },
-            )
-
-            Spacer(Modifier.height(12.dp))
-            SettingRow(
-                title = "Virtual mouse",
-                description = "Turn the external controller into a mouse. Hold Select + right-stick (R3) to switch in or out. " +
-                    "Left stick moves the pointer, right stick scrolls, A left-clicks, B right-clicks, " +
-                    "R1 opens/closes the notification shade.",
-                checked = state.virtualMouse,
-                enabled = !state.busy,
-                onCheckedChange = { viewModel.toggleVirtualMouse(it) },
-            )
-
-            Spacer(Modifier.height(16.dp))
-            Text(
-                if (state.loading) "Scanning controllers..."
-                else if (state.restartWaiting) "Waiting for automatic mirror start..."
-                else state.message,
-                color = Palette.textSecondary,
-                fontSize = 14.sp,
-            )
-            if (!state.loading && !state.enabled && state.autoMirrorEnabled) {
-                Spacer(Modifier.height(6.dp))
+                Rule(Modifier.padding(vertical = 12.dp))
+                if (externals.isEmpty()) {
+                    Text("Connect a controller to play docked.", color = Palette.textMuted, fontSize = 14.sp)
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+                        externals.take(4).forEach { pad ->
+                            PadTile(
+                                device = pad,
+                                player1 = pad.path == state.externalDevice?.path,
+                                locked = pad.name.equals(state.player1Name, ignoreCase = true),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        repeat(4 - externals.size.coerceAtMost(4)) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                Spacer(Modifier.weight(1f))
                 Text(
-                    "The mirror starts automatically when the internal controller and an external controller are available.",
-                    color = Palette.textMuted,
-                    fontSize = 12.sp,
+                    if (state.loading) "Scanning controllers..."
+                    else if (state.restartWaiting) "Waiting for automatic mirror start..."
+                    else state.message,
+                    color = Palette.textSecondary,
+                    fontSize = 14.sp,
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-            PrimaryButton(
-                text = when {
-                    state.busy -> "Processing..."
-                    state.autoMirrorEnabled -> "Turn Off Automatic Mirror"
-                    else -> "Turn On Automatic Mirror"
-                },
-                stop = state.autoMirrorEnabled,
-                focusRequester = primaryFocus,
-                // The ViewModel ignores presses while busy, so the button can stay focusable
-                // (a disabled control would drop D-pad focus mid-toggle).
-                onClick = { viewModel.toggleAutoMirrorEnabled(!state.autoMirrorEnabled) },
-            )
+            Box(Modifier.fillMaxHeight().width(1.dp).padding(vertical = 16.dp).background(Palette.border))
+
+            // Right: the menu.
+            Column(
+                modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(scrollState)
+                    .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
+            ) {
+                MenuRow(
+                    title = "Player 1 controller",
+                    subtitle = "Press L + R on the pad you want",
+                    onClick = if (state.busy) null else viewModel::openPlayer1Picker,
+                    modifier = Modifier.focusRequester(topFocus),
+                ) {
+                    RowValue(if (state.player1Name != null) "Locked" else "First connected", accent = state.player1Name != null)
+                }
+                MenuRow(
+                    title = "Button mapping",
+                    subtitle = state.externalDevice?.name,
+                    // Only offered once the controller has an identity to save a mapping against.
+                    onClick = if (state.externalDevice?.mappingKey != null) viewModel::openMappingEditor else null,
+                ) {
+                    RowValue(
+                        when {
+                            (state.mappedControlCount ?: 0) > 0 -> "${state.mappedControlCount} custom"
+                            state.hasSeededMapping -> "Profile"
+                            else -> "As reported"
+                        },
+                        accent = (state.mappedControlCount ?: 0) > 0,
+                    )
+                }
+                MenuRow(
+                    title = "Home button",
+                    subtitle = if (state.homeMode == HomeButtonMode.PASS_THROUGH) "Sent to games" else "Hold for Recents",
+                    onClick = if (state.busy) null else ({ cycleHome(1) }),
+                    onLeft = { cycleHome(-1) },
+                    onRight = { cycleHome(1) },
+                ) {
+                    RowValue(
+                        "‹  " + when (state.homeMode) {
+                            HomeButtonMode.HOME -> "Home"
+                            HomeButtonMode.BACK -> "Back"
+                            HomeButtonMode.PASS_THROUGH -> "Pass through"
+                        } + "  ›",
+                        accent = true,
+                    )
+                }
+                MenuRow(
+                    title = "Select + Start closes app",
+                    subtitle = "Hold both for 3 seconds",
+                    onClick = if (state.busy) null else ({ viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) }),
+                ) {
+                    RowSwitch(state.comboHoldKillApp, !state.busy) { viewModel.toggleComboHoldKillApp(it) }
+                }
+                MenuRow(
+                    title = "Virtual mouse",
+                    subtitle = "Select + R3 toggles · A click · B right-click · R1 shade",
+                    onClick = if (state.busy) null else ({ viewModel.toggleVirtualMouse(!state.virtualMouse) }),
+                ) {
+                    RowSwitch(state.virtualMouse, !state.busy) { viewModel.toggleVirtualMouse(it) }
+                }
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton(
+                    text = when {
+                        state.busy -> "Processing..."
+                        state.autoMirrorEnabled -> "Turn off automatic mirror"
+                        else -> "Turn on automatic mirror"
+                    },
+                    stop = state.autoMirrorEnabled,
+                    focusRequester = primaryFocus,
+                    // The ViewModel ignores presses while busy, so the button can stay focusable
+                    // (a disabled control would drop D-pad focus mid-toggle).
+                    onClick = { viewModel.toggleAutoMirrorEnabled(!state.autoMirrorEnabled) },
+                )
+            }
         }
+
+        HintBar(
+            hints = listOf(
+                HintAction(PromptGlyph.B, "Back", null),
+                HintAction(PromptGlyph.A, "OK", null),
+            ),
+        )
     }
 
     if (pickerOpen) {

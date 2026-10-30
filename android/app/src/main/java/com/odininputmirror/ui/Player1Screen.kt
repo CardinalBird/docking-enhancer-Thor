@@ -190,7 +190,7 @@ private fun ButtonChip(glyph: String, glyphs: androidx.compose.ui.text.font.Font
     }
 }
 
-internal data class HintAction(val glyph: String, val label: String, val onClick: () -> Unit)
+internal data class HintAction(val glyph: String, val label: String, val onClick: (() -> Unit)?)
 
 /** The Switch-style strip along the bottom: which pad button does what. Tappable too. */
 @Composable
@@ -203,7 +203,7 @@ internal fun HintBar(hints: List<HintAction>) {
     ) {
         hints.forEach { hint ->
             Row(
-                modifier = Modifier.clickable(onClick = hint.onClick).padding(4.dp),
+                modifier = Modifier.let { m -> hint.onClick?.let { m.clickable(onClick = it) } ?: m }.padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(hint.glyph, color = Palette.textPrimary, fontFamily = glyphs, fontSize = 24.sp)

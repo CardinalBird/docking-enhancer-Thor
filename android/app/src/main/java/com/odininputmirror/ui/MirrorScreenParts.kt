@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,239 +29,169 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.ui.theme.Palette
 
-// The pieces MirrorScreen lays out: status furniture, the two controller cards, a settings row,
-// and the one button that starts or stops everything.
+// The pieces MirrorScreen lays out, Switch "Controllers" style: a title band, the handheld and its
+// pads on the left, a menu of rows on the right, and the start/stop button.
 
 @Composable
 internal fun Header(enabled: Boolean, docked: Boolean, loading: Boolean) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Docking Enhancer", color = Palette.textPrimary, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("Docking Enhancer", color = Palette.textPrimary, fontSize = 26.sp)
             if (loading) {
                 CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Palette.accent, strokeWidth = 2.dp)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusPill(if (enabled) "ACTIVE" else "INACTIVE", enabled)
-            StatusPill(if (docked) "DOCKED" else "UNDOCKED", docked)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(if (enabled) Palette.custom else Palette.textMuted))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                (if (enabled) "Mirroring" else "Not mirroring") + " · " + (if (docked) "Docked" else "Handheld"),
+                color = Palette.textSecondary,
+                fontSize = 15.sp,
+            )
         }
     }
 }
 
 @Composable
-internal fun StatusPill(text: String, on: Boolean) {
-    Text(
-        text = text,
-        color = if (on) Palette.accent else Palette.danger,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.ExtraBold,
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(if (on) Palette.accentSoft else Palette.dangerSoft)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    )
+internal fun Rule(modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().height(1.dp).background(Palette.border))
 }
 
+/** The handheld, drawn as its screen. Tappable only when [onClick] is given (mirror off). */
 @Composable
-internal fun DeviceCard(
-    modifier: Modifier,
-    title: String,
-    device: ControllerDevice?,
-    hint: String,
-    enabled: Boolean,
-    onClick: (() -> Unit)?,
-    // True when the user has captured a mapping for THIS controller. Drives the green outline and
-    // the badge — the card says so at a glance instead of spelling it out in a line of text.
-    hasCustomMapping: Boolean = false,
-    // True when the controller carries an untouched database default instead: badge only, no green.
-    hasSeededMapping: Boolean = false,
-    onEditMapping: (() -> Unit)? = null,
-) {
-    val selected = device != null
+internal fun HandheldTile(device: ControllerDevice?, hint: String, onClick: (() -> Unit)?, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(14.dp)
-    // Box only so the badge can sit over the corner; the card itself is still the Column below.
-    Box(modifier = modifier) {
+    val shape = RoundedCornerShape(12.dp)
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight()
-            .heightIn(min = 164.dp)
+        modifier = modifier
             .clip(shape)
-            .background(
-                when {
-                    focused -> Palette.focusBg
-                    selected -> Palette.surfaceRaised
-                    else -> Palette.surface
-                },
-            )
-            .border(
-                // Focus still wins: it is transient and tells you where you are, while the mapping
-                // outline is a standing property of the controller.
-                width = if (focused || hasCustomMapping) 2.dp else 1.dp,
-                color = when {
-                    focused -> Palette.focus
-                    hasCustomMapping -> Palette.custom
-                    selected -> Palette.borderStrong
-                    else -> Palette.border
-                },
-                shape = shape,
-            )
-            .let {
-                if (onClick != null) {
-                    it.clickable(interactionSource = interaction, indication = null, enabled = enabled) { onClick() }
-                } else {
-                    it
-                }
-            }
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, shape)
+            .let { if (onClick != null) it.clickable(interactionSource = interaction, indication = null, onClick = onClick) else it }
+            .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
-        Text("🎮", fontSize = 36.sp)
-        Spacer(Modifier.height(14.dp))
-        Text(title, color = Palette.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        Text(hint, color = Palette.textMuted, fontSize = 11.sp)
-        Spacer(Modifier.height(12.dp))
+        Box(
+            Modifier.size(width = 190.dp, height = 106.dp).clip(RoundedCornerShape(10.dp))
+                .background(Palette.band).border(4.dp, Palette.borderStrong, RoundedCornerShape(10.dp)),
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(device?.name ?: "No built-in controller", color = Palette.textPrimary, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(hint, color = Palette.textMuted, fontSize = 12.sp)
+    }
+}
+
+/** One connected pad: player lamps, the pad, its name. Lamp 1 lights on the pad being mirrored. */
+@Composable
+internal fun PadTile(device: ControllerDevice, player1: Boolean, locked: Boolean, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+            repeat(4) { lamp ->
+                Box(Modifier.size(9.dp).background(if (player1 && lamp == 0) Palette.custom else Palette.borderStrong))
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("🎮", fontSize = 40.sp)
+        Spacer(Modifier.height(6.dp))
         Text(
-            text = device?.name ?: "No device",
-            color = if (selected) Palette.textPrimary else Palette.textMuted,
+            device.name,
+            color = if (player1) Palette.textPrimary else Palette.textSecondary,
             fontSize = 12.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            maxLines = 1,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-
-        if (onEditMapping != null && selected) {
-            Spacer(Modifier.height(12.dp))
-            // Its own focus source, separate from the card's: this is the only way into the wizard,
-            // so the D-pad has to be able to land on it and show that it has.
-            val mappingInteraction = remember { MutableInteractionSource() }
-            val mappingFocused by mappingInteraction.collectIsFocusedAsState()
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(
-                        when {
-                            mappingFocused -> Palette.focusBg
-                            hasCustomMapping -> Palette.customSoft
-                            else -> Palette.surface
-                        },
-                    )
-                    .border(
-                        width = if (mappingFocused) 2.dp else 1.dp,
-                        color = when {
-                            mappingFocused -> Palette.focus
-                            hasCustomMapping -> Palette.custom
-                            else -> Palette.border
-                        },
-                        shape = RoundedCornerShape(8.dp),
-                    )
-                    .clickable(interactionSource = mappingInteraction, indication = null) { onEditMapping() }
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = if (hasCustomMapping) "Edit mapping" else "Map controls",
-                    color = Palette.textPrimary,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-    }
-
-        // Mutually exclusive by construction: seeded means untouched, and the first edit converts it
-        // to custom. Green says "yours", the accent blue says "came with the controller".
-        when {
-            hasCustomMapping ->
-                MappingBadge("CUSTOM MAPPING", Palette.custom, Palette.customSoft, Modifier.align(Alignment.TopEnd))
-            hasSeededMapping ->
-                MappingBadge("DEFAULT", Palette.accent, Palette.accentSoft, Modifier.align(Alignment.TopEnd))
+        if (locked) {
+            Text("LOCKED", color = Palette.accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
 
-// Floats over the card's top-right corner rather than sitting in its flow, so a controller that
-// carries a custom mapping is legible before reading a word of the card — and so the badge costs the
-// card no height. Inset from the corner rather than flush against it: a pill hard up against a
-// rounded border reads as a rendering mistake.
+/**
+ * One menu row: label left, its state right, a rule below. Focus is the accent outline. [onLeft] and
+ * [onRight] let a row take the D-pad sideways (the ‹ value › rows).
+ */
 @Composable
-internal fun MappingBadge(text: String, ink: Color, fill: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .padding(10.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(fill)
-            .border(1.dp, ink, RoundedCornerShape(8.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-    ) {
-        Text(
-            text,
-            color = ink,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-@Composable
-internal fun SettingRow(
+internal fun MenuRow(
     title: String,
-    description: String,
-    checked: Boolean,
-    enabled: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    onLeft: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null,
+    trailing: @Composable () -> Unit = {},
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(14.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 74.dp)
-            .clip(shape)
-            .background(if (focused) Palette.focusBg else Palette.surface)
-            .border(
-                width = if (focused) 2.dp else 1.dp,
-                color = if (focused) Palette.focus else Palette.border,
-                shape = shape,
-            )
-            .clickable(interactionSource = interaction, indication = null, enabled = enabled) { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-            Text(title, color = Palette.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
-            Spacer(Modifier.height(4.dp))
-            Text(description, color = Palette.textSecondary, fontSize = 12.sp)
+    val shape = RoundedCornerShape(8.dp)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .clip(shape)
+                .background(if (focused) Palette.focusBg else Palette.screen)
+                .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, shape)
+                .onPreviewKeyEvent {
+                    if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    when {
+                        it.key == Key.DirectionLeft && onLeft != null -> { onLeft(); true }
+                        it.key == Key.DirectionRight && onRight != null -> { onRight(); true }
+                        else -> false
+                    }
+                }
+                .clickable(interactionSource = interaction, indication = null, enabled = onClick != null) { onClick?.invoke() }
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = if (onClick != null) Palette.textPrimary else Palette.textMuted, fontSize = 18.sp)
+                if (subtitle != null) {
+                    Text(subtitle, color = Palette.textMuted, fontSize = 12.sp)
+                }
+            }
+            trailing()
         }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Palette.textPrimary,
-                checkedTrackColor = Palette.accent,
-                uncheckedThumbColor = Palette.textMuted,
-                uncheckedTrackColor = Palette.surfaceRaised,
-            ),
-        )
+        Rule(Modifier.padding(horizontal = 12.dp))
     }
+}
+
+@Composable
+internal fun RowValue(text: String, accent: Boolean = false) {
+    Text(text, color = if (accent) Palette.accent else Palette.textSecondary, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+@Composable
+internal fun RowSwitch(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Palette.textPrimary,
+            checkedTrackColor = Palette.accent,
+            uncheckedThumbColor = Palette.textMuted,
+            uncheckedTrackColor = Palette.surfaceRaised,
+        ),
+    )
 }
 
 @Composable
@@ -283,7 +212,7 @@ internal fun PrimaryButton(
             .clip(shape)
             .background(if (stop) Palette.dangerSoft else Palette.accentSoft)
             .border(
-                width = if (focused) 2.dp else 1.dp,
+                width = if (focused) 3.dp else 1.dp,
                 color = when {
                     focused -> Palette.focus
                     stop -> Palette.danger
@@ -295,6 +224,6 @@ internal fun PrimaryButton(
             .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = Palette.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text, color = Palette.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }

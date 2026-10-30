@@ -13,7 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,8 +30,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalInputModeManager
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.odininputmirror.domain.model.MappingSlot
@@ -102,89 +107,92 @@ fun MappingEditorScreen(
         restoreTo = null
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Palette.screen)) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 28.dp, vertical = 20.dp),
-        ) {
-            Text(
-                "Controller mapping",
-                color = Palette.textPrimary,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (state.seeded) {
-                    // A known pad arrives already mapped from its profile; the editor's job then is
-                    // adjustment, and saying so stops "why is everything filled in?" cold.
-                    "${state.controllerName} — mapped from its profile. Change anything that feels wrong."
-                } else {
-                    "${state.controllerName} — anything without a binding is forwarded as the pad reports it."
-                },
-                color = Palette.textSecondary,
-                fontSize = 14.sp,
-            )
+    val groups = state.slots.map { it.group }.distinct()
+    var selectedGroup by remember { mutableStateOf(groups.firstOrNull()) }
 
-            Spacer(Modifier.height(16.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(listScroll),
-            ) {
-                var lastGroup: String? = null
-                state.slots.forEachIndexed { index, slot ->
-                    if (slot.group != lastGroup) {
-                        lastGroup = slot.group
-                        Spacer(Modifier.height(if (index == 0) 0.dp else 14.dp))
-                        Text(
-                            slot.group.uppercase(),
-                            color = Palette.textMuted,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 6.dp),
+    Box(
+        modifier = Modifier.fillMaxSize().background(Palette.screen).onPreviewKeyEvent {
+            if (it.type == KeyEventType.KeyUp && it.key == Key.ButtonY && state.capturing == null) {
+                onClearAll()
+                true
+            } else {
+                false
+            }
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Column(Modifier.padding(horizontal = 28.dp, vertical = 16.dp)) {
+                Text("Button mapping", color = Palette.textPrimary, fontSize = 26.sp)
+                Text(
+                    if (state.seeded) {
+                        // A known pad arrives already mapped from its profile; the editor's job then is
+                        // adjustment, and saying so stops "why is everything filled in?" cold.
+                        "${state.controllerName} — mapped from its profile. Change anything that feels wrong."
+                    } else {
+                        "${state.controllerName} — anything without a binding is forwarded as the pad reports it."
+                    },
+                    color = Palette.textSecondary,
+                    fontSize = 14.sp,
+                )
+            }
+            Rule(Modifier.padding(horizontal = 28.dp))
+
+            Row(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
+                // Groups: moving focus here switches the rows on the right, as in Switch settings.
+                Column(Modifier.weight(0.35f).padding(vertical = 12.dp)) {
+                    groups.forEach { group ->
+                        GroupRow(group, selected = group == selectedGroup, onFocus = { selectedGroup = group })
+                    }
+                }
+                Box(Modifier.fillMaxHeight().width(1.dp).padding(vertical = 12.dp).background(Palette.border))
+                Column(
+                    modifier = Modifier.weight(1f).verticalScroll(listScroll).padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
+                ) {
+                    state.slots.forEachIndexed { index, slot ->
+                        if (slot.group != selectedGroup) return@forEachIndexed
+                        SlotRow(
+                            slot = slot,
+                            source = state.bindings[slot.target],
+                            onBind = {
+                                focusedRow = index
+                                // Recorded HERE, which is the whole trick: by the time the overlay closes
+                                // the list has already been scrolled by the focus move, so the position
+                                // worth returning to is the one from the instant before it opened.
+                                scrollWhenOpened = listScroll.value
+                                onBind(slot)
+                            },
+                            onClear = {
+                                focusedRow = index
+                                scrollWhenOpened = listScroll.value
+                                onClear(slot)
+                                restoreTo = index
+                            },
+                            modifier = Modifier.focusRequester(rowFocus[index]),
                         )
                     }
-                    SlotRow(
-                        slot = slot,
-                        source = state.bindings[slot.target],
-                        onBind = {
-                            focusedRow = index
-                            // Recorded HERE, which is the whole trick: by the time the overlay closes
-                            // the list has already been scrolled by the focus move, so the position
-                            // worth returning to is the one from the instant before it opened.
-                            scrollWhenOpened = listScroll.value
-                            onBind(slot)
-                        },
-                        onClear = {
-                            focusedRow = index
-                            scrollWhenOpened = listScroll.value
-                            onClear(slot)
-                            restoreTo = index
-                        },
-                        modifier = Modifier.focusRequester(rowFocus[index]),
-                    )
                 }
             }
 
-            Spacer(Modifier.height(14.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth().background(Palette.band),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    if (state.boundCount == 0) {
-                        "Nothing bound yet."
-                    } else {
-                        "${state.boundCount} bound — applied when you press Done."
-                    },
+                    if (state.boundCount == 0) "Nothing bound yet." else "${state.boundCount} bound — applied when you leave.",
                     color = Palette.textMuted,
                     fontSize = 13.sp,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.padding(start = 28.dp).weight(1f),
                 )
-                EditorButton("Clear all", Palette.dangerSoft, onClearAll)
-                EditorButton("Done", Palette.accentSoft, onClose)
+                Box(Modifier.weight(2f)) {
+                    HintBar(
+                        hints = listOf(
+                            HintAction(PromptGlyph.A, "Rebind", null),
+                            HintAction(PromptGlyph.X, "Clear", null),
+                            HintAction(PromptGlyph.Y, "Clear all", onClearAll),
+                            HintAction(PromptGlyph.B, "Done", onClose),
+                        ),
+                    )
+                }
             }
         }
 
