@@ -2,21 +2,29 @@
 
 <img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="88" alt="Docking Enhancer icon">
 
-# Docking Enhancer
+# Docking Enhancer for AYN Thor
 
 **Play docked with the controller in your hands — no remapping, no root.**
 
 ![Android](https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white)
 ![License](https://img.shields.io/badge/license-GPL--2.0-blue)
 ![Root](https://img.shields.io/badge/root-not%20required-brightgreen)
+![Device](https://img.shields.io/badge/AYN%20Thor-tested-FF8A1F)
+
+A fork of [Ezequiel-CE/Docking-Enhancer](https://github.com/Ezequiel-CE/Docking-Enhancer), the Odin 2
+app, retargeted to the AYN Thor.
 
 <br>
 
-<img src="docking-enhancer-ui.png" alt="Docking Enhancer" width="820">
+<img src="docking-enhancer-ui.png" alt="Main screen: the Thor's built-in controller, a locked Switch Pro Controller mirrored as player 1, and the settings menu" width="820">
 
 <br><br>
 
-<img src="docking-enhancer-ui-2.png" alt="Controller mapping editor, showing a pad mapped from its bundled profile" width="820">
+<img src="docking-enhancer-ui-3.png" alt="Player 1 picker: press L + R on the controller you want to use" width="820">
+
+<br><br>
+
+<img src="docking-enhancer-ui-2.png" alt="Button mapping editor: groups on the left, the D-pad group's slots on the right" width="820">
 
 </div>
 
@@ -32,37 +40,63 @@ It runs without root, using a privileged service the stock firmware already ship
 ## Features
 
 - **Automatic** — starts on its own while docked, and survives reboots
+- **Player 1 lock** — press **L + R** on the controller you want, Switch-style, and it's the one
+  mirrored whenever it's connected. Identical pads are told apart while connected
+- **Home button that goes Home** — the external pad's Home/Guide button goes to the launcher, or
+  Back, or passes through to games. Hold it for **Recents**
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Per-controller button mapping** — press a control to bind it; triggers and stick halves can fill
   button slots, and untouched controls keep working. Pads the bundled
-  [SDL database](third-party/gamecontrollerdb/NOTICE.md) knows arrive already mapped
+  [SDL database](third-party/gamecontrollerdb/NOTICE.md) knows arrive already mapped, using the
+  entry that fits the pad's driver
 - **Virtual mouse** — Select + R3 turns the pad into a pointer for tapping through Android UI
-- **Home as Back**, and **Select + Start** (3s) to close the current app
-- **Nintendo layout aware** — swaps A/B and X/Y when targeting the Odin's Nintendo profile
-- **Gamepad-navigable UI** — set it up without touching the screen
-- **~0.04 ms of added latency** — a fraction of one 60Hz frame ([measured](docs/TECHNICAL.md#latency))
+- **Select + Start** (3s) closes the current app
+- **Nintendo layout aware** — swaps A/B and X/Y when the built-in pad is in its Nintendo profile
+- **Controller-first UI** — Switch-style screens with a button-hint bar; set it up without touching
+  the screen
+- **Add to home screen** — for game frontends like Cocoon Shell that hide the Android app list
+- **~0.04 ms of added latency** (median) — a fraction of one 60Hz frame
+  ([measured](docs/TECHNICAL.md#latency); re-measured on a Thor, see [Building](#building))
 
 ## Install
 
-1. Download the APK from [Releases](../../releases) and install it (allow "unknown sources" if
-   prompted). It installs over any older version.
-2. Open it once. Check that **Local Controller** shows your handheld's built-in pad — tap the card
-   to fix it if not — then tap **Turn On Automatic Mirror** and allow notifications.
-3. Connect a controller and dock. It takes over on its own.
-
-That's the whole setup, and you only do it once.
+1. Install the APK (allow "unknown sources" if prompted). Until this fork publishes releases, build
+   it yourself — see [Building](#building). Upstream's releases don't include the Thor changes.
+2. Open it once. Check that the built-in controller ("Odin Controller" on the Thor) shows on the
+   left — tap it to fix it if not — then turn on **Automatic Mirror** and allow notifications.
+3. Pair a controller and dock. It takes over on its own.
+4. Optional: with more than one pad, open **Player 1 controller** and press **L + R** on yours.
+   On a frontend launcher, use **Add to home screen** to pin the app.
 
 ## Supported devices
 
 | Device | Status |
 | --- | --- |
-| **AYN Odin 2 / Portal** | Tested, primary target |
-| **AYN Odin 2 Mini** | Not supported — [ships the service but it doesn't respond](docs/TECHNICAL.md#the-odin-2-mini) |
+| **AYN Thor** | Tested (Android 13, firmware `Thor_V1.0.0.377`) — primary target of this fork |
+| AYN Odin 2 / Portal | Upstream's target; not re-tested with this fork's changes |
+| AYN Odin 2 Mini | Not supported — [ships the service but it doesn't respond](docs/TECHNICAL.md#the-odin-2-mini) |
 | Other handhelds with `PServerBinder` | Likely work, untested |
 
 Support is decided at runtime by whether the firmware's service actually answers — not by a model
 list — so any handheld with a working one has a good chance. Devices without it are told so instead
 of silently doing nothing.
+
+## On the Thor
+
+What's different from the Odin, all found on a real device:
+
+- **The bottom screen isn't a dock.** It's a second, always-on display, so it's ignored when
+  deciding whether you're docked; only an external display counts.
+- **The built-in pad** reports as "Odin Controller" (`2020:0111`), so it's detected automatically.
+- **Only one external pad is taken over by the firmware.** The Thor re-registers one connected pad
+  under its own ID; that's the one the app can hide. If your locked player 1 is a *second* pad, the
+  first stays visible to games as player 2 while mirroring.
+- **Locks are remembered by name across reconnects.** Two identical pads (two Pro Controllers) are
+  told apart while connected; after both reconnect, the lock may land on either. The Pro
+  Controller doesn't expose its Bluetooth address to the system.
+- **Recents** opens when Home is released after a long hold, not at the moment the hold counts.
+
+Tested with a Nintendo Switch Pro Controller over Bluetooth. Not yet tested: a real HDMI dock.
 
 ## How it works
 
@@ -75,14 +109,51 @@ transaction — the same no-root technique used by ClusterTune and PULSE.
 
 Details, design notes and the build instructions live in **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
 
+## Building
+
+Needs JDK 21 for Gradle (the project compiles for Java 17), the Android SDK (compile SDK 35) and an
+NDK (26.3 used here). On macOS or Linux:
+
+```sh
+# Native daemon -> android/app/src/main/assets/input_mirror/ (commit it with its source)
+ANDROID_NDK_HOME=/path/to/ndk scripts/build-input-mirror.sh
+
+# Unit tests and a debug APK
+cd android
+./gradlew :domain:test :data:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+On Windows, use `scripts/build-input-mirror.ps1` and `gradlew.bat`. Debug builds act as if always
+docked (`FORCE_DOCK_MODE_FOR_DEV` in `android/app/build.gradle`) so the mirror can be tested at a
+desk; release builds use real dock detection. Debug and release are signed differently, so
+switching between them means an uninstall, which resets the app's settings.
+
+On-device tests drive synthetic controllers, so no physical pad is needed:
+
+```sh
+ANDROID_NDK_HOME=/path/to/ndk .claude/skills/mirror-e2e/scripts/build-harness.sh
+adb shell sh /data/local/tmp/e2e.sh
+adb shell sh /data/local/tmp/latency.sh 300
+```
+
+The Thor has no root shell, so the three assertions that unlink device nodes directly fail there by
+design; the app itself does that step through `PServerBinder`. On a Thor the rest of the suite
+passes (46 of 49), and the latency run gives a median of ~0.04 ms added (65 µs mirrored against
+22 µs without the daemon). Its slowest 5% are higher (~0.4 ms) because the test daemon runs at
+normal priority; the app's runs at high priority.
+
 ## Credits
+
+This is a fork of [**Docking Enhancer**](https://github.com/Ezequiel-CE/Docking-Enhancer) by
+Ezequiel-CE, which did the hard part: the daemon, the no-root plumbing and the mapping system.
 
 The no-root PServer technique comes from [**ClusterTune**](https://github.com/AurelioB/ClusterTune),
 and the `PServerBinder` access code is adapted from [**PULSE**](https://github.com/keiretrogaming/pulse).
 Full third-party notices in [NOTICE.md](NOTICE.md).
 
 Built with heavy help from an AI coding assistant (Anthropic's Claude), always directed and reviewed
-by the maintainer — every change compiled, unit-tested and confirmed on a real handheld before
+by the maintainers — every change compiled, unit-tested and confirmed on a real handheld before
 shipping. Spelled out here for transparency.
 
 Not affiliated with AYN.

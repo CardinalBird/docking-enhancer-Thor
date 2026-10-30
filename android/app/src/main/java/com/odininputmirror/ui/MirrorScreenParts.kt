@@ -116,7 +116,7 @@ internal fun PadTile(device: ControllerDevice, player1: Boolean, locked: Boolean
             color = if (player1) Palette.textPrimary else Palette.textSecondary,
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
         if (locked) {
