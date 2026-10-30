@@ -201,7 +201,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
             // Left: the handheld, then every pad it can see, with player 1's lamp lit.
             Column(
-                modifier = Modifier.weight(1.4f).fillMaxHeight().padding(vertical = 16.dp, horizontal = 8.dp),
+                modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 16.dp, horizontal = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 HandheldTile(
@@ -248,7 +248,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             ) {
                 MenuRow(
                     title = "Player 1 controller",
-                    subtitle = "Press L + R on the pad you want",
+                    subtitle = "Pick with L + R",
                     onClick = if (state.busy) null else viewModel::openPlayer1Picker,
                     modifier = Modifier.focusRequester(topFocus),
                 ) {

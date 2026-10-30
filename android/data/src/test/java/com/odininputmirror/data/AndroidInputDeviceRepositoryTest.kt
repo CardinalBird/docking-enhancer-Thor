@@ -510,6 +510,17 @@ Input Dispatcher State:
         assertEquals(mapOf(7 to "/dev/input/event9", 8 to "/dev/input/event11"), parseDumpsysInputPaths(dump))
     }
 
+    // Captured from an AYN Thor (Android 13): framework id 10 reads EventHub device 9.
+    @Test
+    fun parseDumpsysInputPathsReadsARealThorDump() {
+        val dump = javaClass.classLoader!!.getResource("dumpsys-input-thor.txt")!!.readText()
+
+        val paths = parseDumpsysInputPaths(dump)
+
+        assertEquals("/dev/input/event9", paths[10])
+        assertTrue(paths.values.all { it.startsWith("/dev/input/event") })
+    }
+
     @Test
     fun parseDumpsysInputPathsUsesTheSameIdBeforeAndroid11() {
         val dump = """

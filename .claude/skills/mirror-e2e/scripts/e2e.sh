@@ -38,10 +38,18 @@ wait_for_gone() {
 }
 
 mirror_pid() { pidof input_mirror 2>/dev/null; }
+# Root when the firmware has su (Odin). The Thor ships none: the shell user is in the input group, so
+# everything but unlinking /dev/input nodes (T2, T3, T5) still runs, and those report it.
+if command -v su >/dev/null 2>&1; then
+    as_root() { su -c "$1"; }
+else
+    as_root() { sh -c "$1"; }
+    echo "  NOTE: no su on this device; hide/restore tests need root and will fail"
+fi
 
 stop_mirror() {
     P=$(mirror_pid)
-    [ -n "$P" ] && su -c "kill -KILL $P" 2>/dev/null
+    [ -n "$P" ] && as_root "kill -KILL $P" 2>/dev/null
     i=0
     while [ -n "$(mirror_pid)" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
 }
@@ -49,7 +57,7 @@ stop_mirror() {
 # Start the daemon as root, detached. Root is test scaffolding only — the product itself reaches the
 # same binary through PServerBinder with no root at all.
 start_mirror() {
-    su -c "$MIRROR $* > $LOG 2>&1 &"
+    as_root "$MIRROR $* > $LOG 2>&1 &"
     i=0
     while [ -z "$(mirror_pid)" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
 }
@@ -66,11 +74,13 @@ rm -rf $TMP
 mkdir -p $TMP
 
 # Test the binary the app actually ships, not a rebuild that might drift from it.
-if ! su -c "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null; then
+# Without su the app's private copy is unreadable; build-harness.sh pushes the same committed binary.
+if ! as_root "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
+    ! [ -x $MIRROR ]; then
     echo "  ABORT: no pude copiar el binario del daemon (esta instalada la app?)"
     exit 1
 fi
-echo "  daemon: $(su -c "$MIRROR" 2>&1 | head -n 1 | cut -c1-40)..."
+echo "  daemon: $(as_root "$MIRROR" 2>&1 | head -n 1 | cut -c1-40)..."
 
 SRCFIFO=$TMP/src.fifo
 DSTFIFO=$TMP/dst.fifo
@@ -143,7 +153,7 @@ else
     expect_exists  "$STATE" "queda registro de lo ocultado"
 
     # SIGTERM is the product's own stop signal; it must take the clean path that restores.
-    su -c "kill -TERM $(mirror_pid)" 2>/dev/null
+    as_root "kill -TERM $(mirror_pid)" 2>/dev/null
     stop_mirror
     sleep 0.5
 
@@ -161,13 +171,13 @@ if [ -z "$(mirror_pid)" ]; then
     bad "el daemon arranco para el test de huerfano"
 else
     sleep 0.5
-    su -c "kill -KILL $(mirror_pid)" 2>/dev/null
+    as_root "kill -KILL $(mirror_pid)" 2>/dev/null
     sleep 0.5
 
     expect_missing "$SRC" "SIGKILL deja el nodo oculto (sin cleanup)"
     expect_exists  "$STATE" "el registro sobrevive para poder sanar"
 
-    su -c "$MIRROR --heal --hidden-state-file $STATE" 2>/dev/null
+    as_root "$MIRROR --heal --hidden-state-file $STATE" 2>/dev/null
     sleep 0.3
 
     expect_exists  "$SRC" "--heal devuelve el nodo huerfano"
@@ -188,7 +198,7 @@ else
 
     # Deleting the heartbeat is how the app signals "you have no owner": uninstalled, data cleared,
     # or a duplicate launch it abandoned.
-    su -c "rm -f $HEART"
+    as_root "rm -f $HEART"
     wait_for_gone "/proc/$(mirror_pid)" 80
 
     if [ -z "$(mirror_pid)" ]; then
@@ -667,7 +677,7 @@ stop_mirror
 exec 3>&-
 exec 4>&-
 sleep 0.5
-su -c "rm -rf $TMP $MIRROR" 2>/dev/null
+as_root "rm -rf $TMP $MIRROR" 2>/dev/null
 echo "  limpio"
 
 echo ""
