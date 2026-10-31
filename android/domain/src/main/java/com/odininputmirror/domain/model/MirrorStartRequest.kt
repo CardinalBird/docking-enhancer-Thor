@@ -5,7 +5,6 @@ data class MirrorStartRequest(
     val target: String,
     val homeMode: HomeButtonMode,
     val comboHoldKillApp: Boolean,
-    val comboTapHome: Boolean = false,
     val sourceGuid: String? = null,
     val targetGuid: String? = null,
     val virtualMouse: Boolean = false,

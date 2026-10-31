@@ -60,7 +60,6 @@ data class MirrorUiState(
     // The pad that pressed L + R on the picker, waiting for A. Nothing is saved until then.
     val pendingPlayer1Name: String? = null,
     val pendingPlayer1Path: String? = null,
-    val comboTapHome: Boolean = false,
     // Mirror handheld too, not only when docked.
     val mirrorWhenHandheld: Boolean = false,
 ) {
@@ -194,7 +193,6 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 homeMode = saved.homeMode,
                 comboHoldKillApp = saved.comboHoldKillApp,
                 virtualMouse = saved.virtualMouse,
-                comboTapHome = saved.comboTapHome,
                 mirrorWhenHandheld = saved.mirrorWhenHandheld,
                 autoMirrorEnabled = status.autoMirrorEnabled,
                 restartWaiting = status.expectedRunning && !status.running,
@@ -400,19 +398,6 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 MirrorStateStore.wake()
             } catch (error: Exception) {
                 _state.update { it.copy(virtualMouse = !nextValue, message = error.message ?: error.toString()) }
-            }
-        }
-    }
-
-    fun toggleComboTapHome(nextValue: Boolean) {
-        if (_state.value.busy) return
-        _state.update { it.copy(comboTapHome = nextValue) }
-        viewModelScope.launch {
-            try {
-                withContext(Dispatchers.IO) { graph.settingsRepository.setComboTapHome(nextValue) }
-                MirrorStateStore.wake()
-            } catch (error: Exception) {
-                _state.update { it.copy(comboTapHome = !nextValue, message = error.message ?: error.toString()) }
             }
         }
     }

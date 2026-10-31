@@ -312,7 +312,7 @@ class MirrorUseCaseTest {
         val decision = ResolveAutoMirrorDecisionUseCase()(
             dockActive = true,
             devices = listOf(local, firstExternal, secondExternal),
-            settings = MirrorSettings(homeMode = HomeButtonMode.BACK, comboHoldKillApp = true, comboTapHome = true),
+            settings = MirrorSettings(homeMode = HomeButtonMode.BACK, comboHoldKillApp = true),
             mirrorRunning = false,
         )
 
@@ -325,7 +325,6 @@ class MirrorUseCaseTest {
                     targetGuid = "odin-internal",
                     homeMode = HomeButtonMode.BACK,
                     comboHoldKillApp = true,
-                    comboTapHome = true,
                 )
             ),
             decision,
@@ -492,7 +491,6 @@ class MirrorUseCaseTest {
         targetGuid: String? = "local-guid",
         homeMode: HomeButtonMode = HomeButtonMode.HOME,
         comboHoldKillApp: Boolean = false,
-        comboTapHome: Boolean = false,
         virtualMouse: Boolean = false,
     ) = MirrorStartRequest(
         source = source,
@@ -501,7 +499,6 @@ class MirrorUseCaseTest {
         targetGuid = targetGuid,
         homeMode = homeMode,
         comboHoldKillApp = comboHoldKillApp,
-        comboTapHome = comboTapHome,
         virtualMouse = virtualMouse,
     )
 
@@ -642,10 +639,6 @@ private class FakeMirrorSettingsRepository(
 
     override fun setMirrorWhenHandheld(enabled: Boolean) {
         state = state.copy(mirrorWhenHandheld = enabled)
-    }
-
-    override fun setComboTapHome(enabled: Boolean) {
-        state = state.copy(comboTapHome = enabled)
     }
 
     override fun setManualInternalController(guid: String?) {

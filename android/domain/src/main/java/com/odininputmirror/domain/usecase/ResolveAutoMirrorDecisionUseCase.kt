@@ -38,7 +38,6 @@ class ResolveAutoMirrorDecisionUseCase {
             targetGuid = local.guid,
             homeMode = settings.homeMode,
             comboHoldKillApp = settings.comboHoldKillApp,
-            comboTapHome = settings.comboTapHome,
             virtualMouse = settings.virtualMouse,
             hideNodes = listOfNotNull(external.hideNodePath),
         )
