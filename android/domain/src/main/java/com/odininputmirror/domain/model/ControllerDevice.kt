@@ -1,14 +1,16 @@
 package com.odininputmirror.domain.model
 
 /**
- * The pad locked in with L + R, if it is here. The exact node it was picked on wins, which is what
- * keeps two identical pads apart; the name is the fallback once a reconnect has moved it to a new
- * node, and the name is what survives the firmware republishing the pad under its own vendor id.
+ * The pad locked in with L + R, if it is here. The name is what identifies it: it survives the
+ * firmware republishing the pad under its own vendor id, and a reconnect moving it to a new node.
+ * Among pads with that name, the node it was picked on wins, which keeps two identical pads apart.
+ * The node alone never does: event numbers are recycled, so a different pad plugged in later can
+ * land on the picked one and would otherwise take the slot.
  */
 fun List<ControllerDevice>.lockedPlayer1(name: String?, path: String?): ControllerDevice? {
     if (name == null) return null
-    return firstOrNull { path != null && it.path == path }
-        ?: firstOrNull { it.name.equals(name, ignoreCase = true) }
+    val named = filter { it.name.equals(name, ignoreCase = true) }
+    return named.firstOrNull { path != null && it.path == path } ?: named.firstOrNull()
 }
 
 /**
