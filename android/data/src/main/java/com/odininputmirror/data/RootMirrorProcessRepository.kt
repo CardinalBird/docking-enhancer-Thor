@@ -73,15 +73,17 @@ internal class RootMirrorProcessRepository(
         // worked. Matching on the argument list makes "already running" mean what it should, and
         // stops the stale one so its replacement can take the grab.
         val command = buildString {
-            append("for p in \$(pidof input_mirror 2>/dev/null); do ")
+            append("keep=; for p in \$(pidof input_mirror 2>/dev/null); do ")
             // The daemon's own argv, where $1 is the binary and $2/$3 are the source and target it
             // opened. Compared exactly rather than by pattern: a substring match would call a daemon
             // on /dev/input/event1 a match for a request for event10.
             append("set -- \$(tr '\\0' ' ' < /proc/\$p/cmdline 2>/dev/null); ")
-            append("[ \"\$2\" = ${request.source.shellQuote()} ] && ")
-            append("[ \"\$3\" = ${request.target.shellQuote()} ] && exit 0; ")
-            append("kill -TERM \$p 2>/dev/null; ")
+            append("if [ \"\$2\" = ${request.source.shellQuote()} ] && [ \"\$3\" = ${request.target.shellQuote()} ]; ")
+            append("then keep=1; else kill -TERM \$p 2>/dev/null; fi; ")
             append("done; ")
+            // Decided after the loop. Exiting on the first match left every stale daemon behind it
+            // alive, each holding its own grab or hidden node.
+            append("[ -n \"\$keep\" ] && exit 0; ")
             // Give a daemon we just signalled time to restore what it hid and drop its grab, or the
             // replacement races it for the EVIOCGRAB and loses.
             append("i=0; while pidof input_mirror >/dev/null 2>&1 && [ \$i -lt 20 ]; do sleep 0.1; i=\$((i+1)); done; ")

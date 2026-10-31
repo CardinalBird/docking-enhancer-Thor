@@ -5,7 +5,7 @@ import android.util.Log
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
+import java.util.concurrent.TimeUnit
 
 /**
  * [MirrorShell] backed by the stock firmware's PServerBinder service — root without su.
@@ -86,10 +86,21 @@ internal class PServerShell(
     }
 
     // True when the transact reached the service (delivery only — PServer exposes no exit code).
-    private fun transact(command: String): Boolean = lock.withLock {
-        pserver.executeAsRoot(command)
-            .onFailure { Log.w(TAG, "PServer transact failed", it) }
-            .isSuccess
+    private fun transact(command: String): Boolean {
+        // Bounded wait: a transact that hangs (a service that stops answering) used to hold this lock
+        // for good, and every reader on every thread queued behind it forever. A caller that cannot
+        // get in reports "not delivered", which is what they already handle.
+        if (!lock.tryLock(LOCK_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            Log.w(TAG, "PServer busy for ${LOCK_TIMEOUT_MS}ms; dropping transact")
+            return false
+        }
+        try {
+            return pserver.executeAsRoot(command)
+                .onFailure { Log.w(TAG, "PServer transact failed", it) }
+                .isSuccess
+        } finally {
+            lock.unlock()
+        }
     }
 
     private companion object {
@@ -97,6 +108,8 @@ internal class PServerShell(
         const val DAEMON_SCRIPT = "pserver_daemon.sh"
         // PServerBinder cannot handle concurrent transacts; serialize all callers process-wide.
         val lock = ReentrantLock()
+        // Longer than anything legitimate (dumpsys ~2s, a stop's 0.5s sleep, a few of them queued).
+        const val LOCK_TIMEOUT_MS = 10_000L
         // Monotonic suffix for per-call read staging files (unique within the process).
         val readSeq = AtomicLong(0)
     }

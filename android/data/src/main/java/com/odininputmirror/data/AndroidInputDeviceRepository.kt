@@ -57,11 +57,13 @@ internal class AndroidInputDeviceRepository(
     // The real pad keeps its /proc entry — bitmasks included — even while its /dev node is hidden,
     // which is exactly when seeding runs.
     override fun sourceTraits(key: MappingKey): TargetTraits? {
-        val entry = readProcEntries().firstOrNull {
+        // The node with the most keys: a pad's motion-sensor/IMU node carries the same vendor:product
+        // and no buttons, and whichever registered first used to win, seeding an empty button set.
+        val entry = readProcEntries().filter {
             it.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&
                 it.vendorId != 0 &&
                 MappingKey.of(it.vendorId, it.productId) == key
-        } ?: return null
+        }.maxByOrNull { it.keyBits.size } ?: return null
         if (entry.keyBits.isEmpty() && entry.absBits.isEmpty()) {
             return null
         }
@@ -153,7 +155,7 @@ internal class AndroidInputDeviceRepository(
                 isKnownInternal = false,
                 hideNodePath = entry.path,
                 // The mirror is running, so this is the path the wizard sees the pad through.
-                mappingKey = resolveMappingKey(entry.name, procEntries),
+                mappingKey = resolveMappingKey(entry, procEntries),
             ),
         )
     }
@@ -217,11 +219,17 @@ internal class AndroidInputDeviceRepository(
      * true vendor:product. Returns null when no such entry exists, which is the normal case for the
      * internal controller.
      */
-    internal fun resolveMappingKey(name: String, entries: List<ProcInputEntry>): MappingKey? {
+    internal fun resolveMappingKey(resolved: ProcInputEntry, entries: List<ProcInputEntry>): MappingKey? {
+        // A pad the firmware did NOT twin is already its own real entry. Looking it up by name would
+        // hand a same-named clone (a DS4 and a third-party "Wireless Controller") the other pad's key,
+        // so it would mirror with and edit the wrong mapping.
+        if (resolved.vendorId !in MIRRORING_QUIRK_VENDOR_IDS && resolved.vendorId != 0) {
+            return MappingKey.of(resolved.vendorId, resolved.productId)
+        }
         val real = entries.firstOrNull { entry ->
             entry.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&
                 entry.vendorId != 0 &&
-                entry.name.lowercase() == name.lowercase()
+                entry.name.lowercase() == resolved.name.lowercase()
         } ?: return null
         return MappingKey.of(real.vendorId, real.productId)
     }
@@ -279,7 +287,7 @@ internal class AndroidInputDeviceRepository(
                     hideNodePath = resolveHideNodePath(isInternal, normalizedName, entries),
                     // Only an external controller gets one: the internal pad IS the quirk vendor, so
                     // it has no separate real entry to point at, and it is never the one remapped.
-                    mappingKey = if (isInternal) null else resolveMappingKey(entry.name, entries),
+                    mappingKey = if (isInternal) null else resolveMappingKey(entry, entries),
                 )
             }
     }
