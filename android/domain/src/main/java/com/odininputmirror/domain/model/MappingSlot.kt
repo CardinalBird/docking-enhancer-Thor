@@ -29,6 +29,8 @@ enum class SlotIcon {
     LEFT_STICK_UP, LEFT_STICK_DOWN, LEFT_STICK_LEFT, LEFT_STICK_RIGHT, LEFT_STICK_CLICK,
     RIGHT_STICK_UP, RIGHT_STICK_DOWN, RIGHT_STICK_LEFT, RIGHT_STICK_RIGHT, RIGHT_STICK_CLICK,
     VIEW, MENU,
+    /** The handheld's own Home and Back actions, as targets for a pad button. */
+    HOME, BACK,
 }
 
 /**
@@ -67,6 +69,10 @@ private const val BTN_DPAD_UP = 0x220
 private const val BTN_DPAD_DOWN = 0x221
 private const val BTN_DPAD_LEFT = 0x222
 private const val BTN_DPAD_RIGHT = 0x223
+// Linux KEY_HOME / KEY_BACK. The daemon turns a binding aimed at these into the Android action
+// rather than writing them to the target pad.
+const val KEY_HOME = 0x66
+const val KEY_BACK = 0x9e
 
 private const val ABS_X = 0x00
 private const val ABS_Y = 0x01
@@ -219,6 +225,9 @@ fun mappingSlots(traits: TargetTraits): List<MappingSlot> {
     labelled("BUTTON_THUMBR", BTN_THUMBR)?.let {
         slots += MappingSlot("Right stick click", OTHER, ControlRef.button(it), SlotIcon.RIGHT_STICK_CLICK)
     }
+    // Always offered: these never reach the target node, so what it declares is irrelevant.
+    slots += MappingSlot("Home", OTHER, ControlRef.button(KEY_HOME), SlotIcon.HOME)
+    slots += MappingSlot("Back", OTHER, ControlRef.button(KEY_BACK), SlotIcon.BACK)
 
     return slots
 }

@@ -148,13 +148,14 @@ class MirrorUseCaseTest {
     }
 
     @Test
-    fun pickExternalPrefersLockedPlayer1AndFallsBackToFirst() {
+    fun pickExternalMirrorsOnlyTheLockedPlayer1() {
         val first = externalController(path = "/dev/input/event9").copy(name = "Xbox Wireless Controller")
         val locked = externalController(path = "/dev/input/event11").copy(name = "8BitDo Ultimate 2C")
         val devices = listOf(first, locked)
 
         assertEquals(locked, devices.pickExternal(null, "8bitdo ultimate 2c"))
-        assertEquals(first, devices.pickExternal(null, "Unplugged Pad"))
+        // Locked but absent: nothing, so a stray pad cannot take the slot.
+        assertNull(devices.pickExternal(null, "Unplugged Pad"))
         assertEquals(first, devices.pickExternal(null, null))
     }
 
@@ -245,6 +246,18 @@ class MirrorUseCaseTest {
         )
 
         assertEquals(AutoMirrorDecision.StopForDock, decision)
+    }
+
+    @Test
+    fun autoMirrorRunsHandheldWhenAllowed() {
+        val decision = ResolveAutoMirrorDecisionUseCase()(
+            dockActive = false,
+            devices = reconnectedControllers(),
+            settings = MirrorSettings(mirrorWhenHandheld = true),
+            mirrorRunning = false,
+        )
+
+        assertTrue(decision is AutoMirrorDecision.Start)
     }
 
     @Test
@@ -622,6 +635,14 @@ private class FakeMirrorSettingsRepository(
 
     override fun setAutoMirrorEnabled(enabled: Boolean) {
         state = state.copy(autoMirrorEnabled = enabled)
+    }
+
+    override fun setMirrorWhenHandheld(enabled: Boolean) {
+        state = state.copy(mirrorWhenHandheld = enabled)
+    }
+
+    override fun setComboTapHome(enabled: Boolean) {
+        state = state.copy(comboTapHome = enabled)
     }
 
     override fun setManualInternalController(guid: String?) {

@@ -51,6 +51,8 @@ internal const val KEY_PLAYER1_PATH = "player1_path"
 internal const val KEY_COMBO_HOLD_KILL_APP = "combo_hold_kill_app"
 internal const val KEY_VIRTUAL_MOUSE = "virtual_mouse"
 internal const val KEY_AUTO_MIRROR_ENABLED = "auto_mirror_enabled"
+internal const val KEY_MIRROR_WHEN_HANDHELD = "mirror_when_handheld"
+internal const val KEY_COMBO_TAP_HOME = "combo_tap_home"
 // Generation of the live options (see MirrorSettings.configGeneration docs).
 internal const val KEY_CONFIG_GENERATION = "config_generation"
 internal const val KEY_EXPECTED_RUNNING = "expected_running"

@@ -226,6 +226,8 @@ class MappingEditorControllerTest {
         override fun setComboHoldKillAppEnabled(enabled: Boolean) = Unit
         override fun setVirtualMouseEnabled(enabled: Boolean) = Unit
         override fun setAutoMirrorEnabled(enabled: Boolean) = Unit
+        override fun setMirrorWhenHandheld(enabled: Boolean) = Unit
+        override fun setComboTapHome(enabled: Boolean) = Unit
         override fun setManualInternalController(guid: String?) = Unit
         override fun bumpConfigGeneration() {
             bumps++

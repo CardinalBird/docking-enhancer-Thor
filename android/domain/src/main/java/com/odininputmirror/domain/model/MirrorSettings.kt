@@ -9,6 +9,11 @@ data class MirrorSettings(
     val comboHoldKillApp: Boolean = false,
     val virtualMouse: Boolean = false,
     val autoMirrorEnabled: Boolean = true,
+    // Mirror whenever an external pad is connected, docked or not. Off means docked only.
+    val mirrorWhenHandheld: Boolean = false,
+    // A short Select + Start press sends Home (for pads without a Guide button). Independent of the
+    // 3 s hold that closes the app.
+    val comboTapHome: Boolean = false,
     val expectedRunning: Boolean = false,
     val startedAt: Long = 0L,
     val manualInternalGuid: String? = null,

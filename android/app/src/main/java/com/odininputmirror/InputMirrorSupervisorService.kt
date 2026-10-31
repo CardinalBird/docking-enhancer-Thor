@@ -116,12 +116,13 @@ class InputMirrorSupervisorService : Service() {
                 val now = System.currentTimeMillis()
                 val settings = graph.settingsRepository.getSettings()
                 val dockActive = graph.dockStateRepository.isDockActive()
+                val mirrorAllowed = dockActive || settings.mirrorWhenHandheld
                 // Enumerate controllers only when the result is actually consumed: docked (the
                 // auto-mirror decision below reads the list) or the UI is on-screen (it renders the
                 // list for setup). Undocked with the UI hidden, this is the one privileged PServer
                 // call per tick that nobody reads — skip it so a pocketed handheld isn't spawning a
                 // subprocess every idle tick. The undocked decision uses an empty list regardless.
-                val allDevices = if (dockActive || MirrorStateStore.uiVisible) {
+                val allDevices = if (mirrorAllowed || MirrorStateStore.uiVisible) {
                     graph.inputDeviceRepository.getConnectedControllers()
                 } else {
                     emptyList()
@@ -152,7 +153,7 @@ class InputMirrorSupervisorService : Service() {
                     MirrorStateStore.awaitNextTick(SUPERVISOR_INTERVAL_MS)
                     continue
                 }
-                val devices = if (dockActive) allDevices else emptyList()
+                val devices = if (mirrorAllowed) allDevices else emptyList()
                 val decision = graph.resolveAutoMirrorDecision(
                     dockActive = dockActive,
                     devices = devices,

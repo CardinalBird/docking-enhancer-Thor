@@ -19,6 +19,8 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             comboHoldKillApp = prefs.getBoolean(KEY_COMBO_HOLD_KILL_APP, false),
             virtualMouse = prefs.getBoolean(KEY_VIRTUAL_MOUSE, false),
             autoMirrorEnabled = prefs.getBoolean(KEY_AUTO_MIRROR_ENABLED, true),
+            mirrorWhenHandheld = prefs.getBoolean(KEY_MIRROR_WHEN_HANDHELD, false),
+            comboTapHome = prefs.getBoolean(KEY_COMBO_TAP_HOME, false),
             expectedRunning = prefs.getBoolean(KEY_EXPECTED_RUNNING, false),
             startedAt = prefs.getLong(KEY_STARTED_AT, 0L),
             manualInternalGuid = prefs.getString(KEY_MANUAL_INTERNAL_GUID, null),
@@ -64,6 +66,8 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
 
     override fun setVirtualMouseEnabled(enabled: Boolean) = setLiveOption(KEY_VIRTUAL_MOUSE, enabled)
 
+    override fun setComboTapHome(enabled: Boolean) = setLiveOption(KEY_COMBO_TAP_HOME, enabled)
+
     // Options the running daemon can adopt without being restarted. The generation advances in the
     // same commit as the value: it is the number the daemon acknowledges once it has adopted the
     // change, so a value stored without advancing it would be a change nobody ever asks it to make.
@@ -94,6 +98,11 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
 
     override fun setAutoMirrorEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_MIRROR_ENABLED, enabled).apply()
+    }
+
+    // Not a live option: the supervisor, not the daemon, acts on it.
+    override fun setMirrorWhenHandheld(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_MIRROR_WHEN_HANDHELD, enabled).apply()
     }
 
     override fun setManualInternalController(guid: String?) {

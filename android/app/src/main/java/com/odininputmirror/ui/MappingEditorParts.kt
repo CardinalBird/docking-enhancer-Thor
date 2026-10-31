@@ -168,7 +168,11 @@ internal fun SlotGlyph(slot: MappingSlot) {
         SlotIcon.RIGHT_STICK_CLICK -> PromptGlyph.RIGHT_STICK_CLICK
         SlotIcon.VIEW -> PromptGlyph.VIEW
         SlotIcon.MENU -> PromptGlyph.MENU
+        SlotIcon.HOME -> "⌂"
+        SlotIcon.BACK -> "↩"
     }
+    // Plain characters, not PromptFont remaps: the font would turn these into unrelated arrows.
+    val plainText = slot.icon == SlotIcon.HOME || slot.icon == SlotIcon.BACK
     // The face buttons keep the colours they are printed in — on an Xbox pad "the green one" is as
     // much the button's name as the letter is. Everything else is one ink, because it is on the pad.
     val colour = when (slot.icon) {
@@ -179,7 +183,7 @@ internal fun SlotGlyph(slot: MappingSlot) {
         else -> Palette.textSecondary
     }
     Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-        Text(glyph, color = colour, fontFamily = promptFontFamily(), fontSize = 26.sp)
+        Text(glyph, color = colour, fontFamily = if (plainText) null else promptFontFamily(), fontSize = 26.sp)
     }
 }
 
