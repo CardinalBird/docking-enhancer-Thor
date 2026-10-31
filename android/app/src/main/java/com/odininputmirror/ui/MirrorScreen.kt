@@ -130,6 +130,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                 onCancelBind = { viewModel.mappingEditor.cancelBind() },
                 onClearAll = { viewModel.mappingEditor.clearAll() },
                 onClose = { viewModel.mappingEditor.close() },
+                controller = viewModel.mappingEditor,
             )
             Page.Player1 -> Player1Screen(
                 externals = state.devices.filter { !it.isInternal },
