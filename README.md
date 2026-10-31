@@ -18,15 +18,33 @@ app, retargeted to the AYN Thor and renamed Control Switch.
 
 <img src="control-switch-ui.png" alt="Main screen: the Thor and its battery, the mirrored controller as player 1, and the four menu rows" width="820">
 
-<br><br>
-
-<img src="control-switch-ui-3.png" alt="Change Input Order: press L + R on the controller you would like to use" width="820">
-
-<br><br>
-
-<img src="control-switch-ui-2.png" alt="Button mapping: auto-map presets, then every button with a readable name" width="820">
+<table>
+<tr>
+<td><img src="control-switch-ui-3.png" alt="Change Input Order: press L + R on the controller you would like to use, then A"></td>
+<td><img src="control-switch-ui-2.png" alt="Button mapping in Switch icons, with Home bound to Minus + Plus held together"></td>
+</tr>
+<tr>
+<td align="center">Press <b>L + R</b> to pick player 1</td>
+<td align="center">Bind any button, or a combination</td>
+</tr>
+<tr>
+<td><img src="control-switch-ui-chord.png" alt="Binding a combination: the held buttons appear live as icons"></td>
+<td><img src="control-switch-ui-light.png" alt="Additional Settings in the Light theme"></td>
+</tr>
+<tr>
+<td align="center">Hold buttons together, then let go</td>
+<td align="center">Dark, Super dark or Light</td>
+</tr>
+</table>
 
 </div>
+
+## New in 0.4.0
+
+- **Button combinations** — bind Home, Back or any button to 2–4 controller buttons held together
+- **Themes** — Dark, Super dark and Light, with a teal focus outline you can follow from the couch
+- **Console-matched button prompts** — Xbox icons, or Switch icons once you pick the Nintendo layout
+- **New app icon**
 
 ## What it does
 
@@ -46,10 +64,14 @@ It runs without root, using a privileged service the stock firmware already ship
   that pad is mirrored, whenever it's connected. Identical pads are told apart while connected
 - **Home button that goes Home** — the external pad's Home/Guide button goes to the launcher, or
   Back, or passes through to games. Hold it for **Recents**
-- **Home and Back on any button** — bind either to a pad button in the mapping editor
+- **Home and Back on any button** — bind either to a pad button, or to a combination, in the
+  mapping editor
+- **Button combinations** — any button, Home and Back included, can be bound to 2–4 buttons held
+  together. Hold them, let go, done; the held buttons show as icons while you do it. When a
+  combination fires, its buttons don't also reach the game
 - **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
-- **Guided button mapping** — the app asks for each button in turn and you press it; or pick
+- **Guided button mapping** — press a button for each row, or let **Map all** walk the list; or pick
   **Nintendo** or **Xbox** layout to map in one go. Triggers and stick halves can fill button
   slots, and untouched controls keep working. Pads the bundled
   [SDL database](third-party/gamecontrollerdb/NOTICE.md) knows arrive already mapped, using the
@@ -58,11 +80,16 @@ It runs without root, using a privileged service the stock firmware already ship
 - **Nintendo layout aware** — swaps A/B and X/Y when the built-in pad is in its Nintendo profile
 - **Controller-first UI** — Switch-style screens with a button-hint bar; set it up without touching
   the screen
+- **Themes** — Dark, Super dark or Light, in Additional Settings
+- **Button prompts that match your pad** — Xbox Series icons by default, Nintendo Switch 2 icons
+  once you apply the Nintendo layout
 - **Add to home screen** — for game frontends like Cocoon Shell that hide the Android app list
 - **~0.04 ms of added latency** (median) — a fraction of one 60Hz frame
   ([measured](docs/TECHNICAL.md#latency); re-measured on a Thor, see [Building](#building))
 
 ## Install
+
+Updating from Control Switch 0.3.0? Just install over it; settings and mappings carry over.
 
 Coming from Docking Enhancer v0.2.0? Uninstall it first. The app id changed (now
 `com.controlswitch`), so the new version installs as a separate app instead of upgrading, and two
@@ -71,12 +98,11 @@ copies would fight over the controller. Settings don't carry over.
 1. Install the APK from this fork's [Releases](https://github.com/CardinalBird/docking-enhancer-Thor/releases)
    (allow "unknown sources" if prompted), or build it yourself — see [Building](#building).
    Upstream's releases don't include the Thor changes.
-2. Open it once. Check that the built-in controller ("Odin Controller" on the Thor) shows on the
-   left — tap it to fix it if not — then turn on **Automatic Mirror**, choose **Only when docked** or **Always when a controller is
-   connected**, and allow notifications.
+2. Open it once and allow notifications. Under **Additional Settings → Allow mirroring**, choose
+   **Only when docked** or **Always** (whenever a controller is connected).
 3. Pair a controller (and dock, if you chose docked only). It takes over on its own.
-4. Optional: with more than one pad, open **Player 1 controller** and press **L + R** on yours.
-   On a frontend launcher, use **Add to home screen** to pin the app.
+4. Optional: with more than one pad, open **Change Input Order** and press **L + R** on yours,
+   then **A**. On a frontend launcher, use **Add to home screen** to pin the app.
 
 ## Supported devices
 
@@ -106,7 +132,8 @@ What's different from the Odin, all found on a real device:
   Controller doesn't expose its Bluetooth address to the system.
 - **Recents** opens when Home is released after a long hold, not at the moment the hold counts.
 
-Tested with a Nintendo Switch Pro Controller over Bluetooth. Not yet tested: a real HDMI dock.
+Tested with a Nintendo Switch Pro Controller and an 8BitDo Ultimate 2 (Switch mode) over
+Bluetooth. Not yet tested: a real HDMI dock.
 
 ## How it works
 
@@ -149,7 +176,7 @@ adb shell sh /data/local/tmp/latency.sh 300
 
 The Thor has no root shell, so the three assertions that unlink device nodes directly fail there by
 design; the app itself does that step through `PServerBinder`. On a Thor the rest of the suite
-passes (46 of 49), and the latency run gives a median of ~0.04 ms added (65 µs mirrored against
+passes (81 of 84), and the latency run gives a median of ~0.04 ms added (65 µs mirrored against
 22 µs without the daemon). Its slowest 5% are higher (~0.4 ms) because the test daemon runs at
 normal priority; the app's runs at high priority.
 
@@ -160,6 +187,7 @@ Ezequiel-CE, which did the hard part: the daemon, the no-root plumbing and the m
 
 The no-root PServer technique comes from [**ClusterTune**](https://github.com/AurelioB/ClusterTune),
 and the `PServerBinder` access code is adapted from [**PULSE**](https://github.com/keiretrogaming/pulse).
+Button prompts are [Kenney Input Prompts](https://kenney.nl/assets/input-prompts) (CC0).
 Full third-party notices in [NOTICE.md](NOTICE.md).
 
 Built with heavy help from an AI coding assistant (Anthropic's Claude), always directed and reviewed
