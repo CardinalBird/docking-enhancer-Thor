@@ -88,7 +88,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     fun openMappingEditor() {
         val device = _state.value.externalDevice ?: return
         val key = device.mappingKey ?: return
-        mappingEditor.open(device.name, key)
+        mappingEditor.open(device.name, key, _state.value.localDevice?.name)
     }
 
     init {

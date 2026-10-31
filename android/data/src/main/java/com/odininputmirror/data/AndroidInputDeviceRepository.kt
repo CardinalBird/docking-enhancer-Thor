@@ -70,6 +70,9 @@ internal class AndroidInputDeviceRepository(
         return TargetTraits(keys = entry.keyBits, axes = entry.absBits)
     }
 
+    override fun axisLabels(vendorId: Int, productId: Int): Map<Int, String> =
+        keyLayouts.resolve(vendorId, productId).axisLabels
+
     private fun readProcEntries(): List<ProcInputEntry> =
         shell.read("cat /proc/bus/input/devices")
             .split(PROC_BLOCK_SEPARATOR)

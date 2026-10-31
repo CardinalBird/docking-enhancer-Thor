@@ -82,7 +82,7 @@ class MappingSlotTest {
     fun eachStickDirectionTakesADistinctHalfOfItsAxis() {
         // The pair that has to be right for a stick to work at all: up and down are the two halves of
         // one axis, and giving them the same half leaves the stick able to move only one way.
-        val left = mappingSlots(odinFallbackTraits()).filter { it.group == "Left stick" }
+        val left = mappingSlots(odinFallbackTraits()).filter { it.label.startsWith("Left stick") && it.icon != SlotIcon.LEFT_STICK_CLICK }
 
         assertEquals(4, left.size)
         assertTrue(left.all { it.target.kind == ControlKind.HALF_AXIS })
@@ -95,12 +95,73 @@ class MappingSlotTest {
     }
 
     @Test
-    fun aBoundControlIsNamedByItsRawCode() {
-        // The source is whatever the external pad chose to report; dressing 0x130 up as "A" would be
-        // a guess of exactly the kind the user came here to correct.
-        assertEquals("Button 304", describeSource(ControlRef.button(304)))
-        assertEquals("+Axis 2", describeSource(ControlRef.half(2, 1)))
-        assertEquals("−Axis 2", describeSource(ControlRef.half(2, -1)))
+    fun aBoundControlIsNamedByItsStandardMeaning() {
+        assertEquals("A / South", describeSource(ControlRef.button(0x130)))
+        assertEquals("B / East", describeSource(ControlRef.button(0x131)))
+        assertEquals("Select", describeSource(ControlRef.button(0x13a)))
+        assertEquals("D-pad right", describeSource(ControlRef.button(0x223)))
+        assertEquals("Left stick up", describeSource(ControlRef.half(0x01, -1)))
+        assertEquals("Right stick right", describeSource(ControlRef.half(0x02, 1)))
+        assertEquals("D-pad up", describeSource(ControlRef.half(0x11, -1)))
+        assertEquals("+L2", describeSource(ControlRef.half(0x0a, 1)))
+        assertEquals("+R2", describeSource(ControlRef.half(0x09, 1)))
+        // No standard meaning: the number is all we honestly know.
+        assertEquals("Button 400", describeSource(ControlRef.button(400)))
+        assertEquals("+Axis 40", describeSource(ControlRef.half(40, 1)))
         assertEquals("Axis 0 (inverted)", describeSource(ControlRef.axis(0, -1)))
+    }
+
+    @Test
+    fun presetsMakeThePrintedLetterProduceThatAndroidButtonOnTheThor() {
+        // The Thor target's layout puts BUTTON_A..Y on 0x130/0x131/0x133/0x134, and a bound event
+        // skips the daemon's Nintendo swap, so slot target == what Android reads.
+        val slots = mappingSlots(odinFallbackTraits())
+        val target = slots.associate { it.label to it.target }
+        val xbox = presetBindings(PadLayout.XBOX, slots, null)
+        val nintendo = presetBindings(PadLayout.NINTENDO, slots, null)
+
+        fun source(map: Map<ControlRef, ControlRef>, label: String) = map[target.getValue(label)]
+
+        assertEquals(ControlRef.button(0x130), source(xbox, "A"))
+        assertEquals(ControlRef.button(0x131), source(xbox, "B"))
+        assertEquals(ControlRef.button(0x133), source(xbox, "X"))
+        assertEquals(ControlRef.button(0x134), source(xbox, "Y"))
+        // hid-nintendo reports by position: printed A is East, printed X sits where Xbox's Y does.
+        assertEquals(ControlRef.button(0x131), source(nintendo, "A"))
+        assertEquals(ControlRef.button(0x130), source(nintendo, "B"))
+        assertEquals(ControlRef.button(0x134), source(nintendo, "X"))
+        assertEquals(ControlRef.button(0x133), source(nintendo, "Y"))
+
+        for (preset in listOf(xbox, nintendo)) {
+            assertEquals(ControlRef.button(0x136), source(preset, "Left bumper"))
+            assertEquals(ControlRef.half(0x0a, 1), source(preset, "Left trigger"))
+            assertEquals(ControlRef.half(0x09, 1), source(preset, "Right trigger"))
+            assertEquals(ControlRef.half(0x11, -1), source(preset, "D-pad up"))
+            assertEquals(ControlRef.half(0x05, -1), source(preset, "Right stick up"))
+            assertEquals(ControlRef.button(0x13b), source(preset, "Menu"))
+            assertEquals(null, source(preset, "Home"))
+            assertEquals(null, source(preset, "Back"))
+            // Every slot but Home and Back, and no control driving two slots.
+            assertEquals(slots.size - 2, preset.size)
+            assertEquals(preset.size, preset.values.toSet().size)
+        }
+    }
+
+    @Test
+    fun presetsReadTheSourcePadsOwnCodes() {
+        // A Switch Pro on the Thor: d-pad as keys, digital ZL/ZR, right stick on RX/RY.
+        val switchPro = TargetTraits(
+            keys = setOf(0x130, 0x131, 0x133, 0x134, 0x136, 0x137, 0x138, 0x139, 0x13a, 0x13b, 0x13c,
+                0x13d, 0x13e, 0x220, 0x221, 0x222, 0x223),
+            axes = setOf(0x00, 0x01, 0x03, 0x04),
+        )
+        val slots = mappingSlots(odinFallbackTraits())
+        val target = slots.associate { it.label to it.target }
+        val preset = presetBindings(PadLayout.NINTENDO, slots, switchPro)
+
+        assertEquals(ControlRef.button(0x131), preset[target.getValue("A")])
+        assertEquals(ControlRef.button(0x220), preset[target.getValue("D-pad up")])
+        assertEquals(ControlRef.button(0x138), preset[target.getValue("Left trigger")])
+        assertEquals(ControlRef.half(0x04, -1), preset[target.getValue("Right stick up")])
     }
 }
