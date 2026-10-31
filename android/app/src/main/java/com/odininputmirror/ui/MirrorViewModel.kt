@@ -1,8 +1,9 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
+import android.view.InputDevice
 import android.content.Intent
-import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -14,6 +15,7 @@ import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.domain.model.MappingKey
 import com.odininputmirror.domain.model.MirrorStatus
 import com.odininputmirror.domain.model.findSavedControllerDevice
+import com.odininputmirror.domain.model.pickExternal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +32,7 @@ data class MirrorUiState(
     val loading: Boolean = true,
     val busy: Boolean = false,
     val message: String = "",
-    val homeAsBack: Boolean = false,
+    val homeMode: HomeButtonMode = HomeButtonMode.HOME,
     val comboHoldKillApp: Boolean = false,
     val autoMirrorEnabled: Boolean = true,
     val restartWaiting: Boolean = false,
@@ -46,6 +48,10 @@ data class MirrorUiState(
     // telling that owner their device "doesn't have it" would be flatly wrong.
     val serviceUnresponsive: Boolean = false,
     val virtualMouse: Boolean = false,
+    // The pad locked in as player 1 with L + R, or null for "first connected".
+    val player1Name: String? = null,
+    val player1Path: String? = null,
+    val pickingPlayer1: Boolean = false,
 ) {
     // On a recognised handheld (e.g. Odin) the native layer flags the internal controller by
     // hardware signature and locks it. Otherwise the internal defaults to the first detected
@@ -100,6 +106,8 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 return@launch
             }
 
+            val saved = withContext(Dispatchers.IO) { graph.settingsRepository.getSettings() }
+            _state.update { it.copy(player1Name = saved.player1Name, player1Path = saved.player1Path) }
             startSupervisor()
             // Cold start: the supervisor may not have published a snapshot yet, so read once
             // directly to fill the screen immediately. Then observe the shared snapshot the
@@ -148,8 +156,9 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     }
 
     private fun applyStatus(status: MirrorStatus, available: List<ControllerDevice>) {
+        val saved = graph.settingsRepository.getSettings()
         val autoLocal = available.firstOrNull { it.isInternal }
-        val autoExternal = available.firstOrNull { !it.isInternal }
+        val autoExternal = available.pickExternal(autoLocal, _state.value.player1Name, _state.value.player1Path)
         val savedExternalIsLocal =
             autoLocal != null && savedIdentityMatches(status.source, status.sourceGuid, autoLocal)
 
@@ -168,9 +177,12 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 localDevice = localDevice,
                 externalDevice = externalDevice,
                 enabled = status.running,
-                homeAsBack = status.homeAsBack,
-                comboHoldKillApp = status.comboHoldKillApp,
-                virtualMouse = status.virtualMouse,
+                // The options come straight from the stored settings (in memory, so cheap). The
+                // snapshot was read on the supervisor's last tick and can predate a toggle the user
+                // just made, which briefly flipped the switch back.
+                homeMode = saved.homeMode,
+                comboHoldKillApp = saved.comboHoldKillApp,
+                virtualMouse = saved.virtualMouse,
                 autoMirrorEnabled = status.autoMirrorEnabled,
                 restartWaiting = status.expectedRunning && !status.running,
                 docked = status.docked,
@@ -216,15 +228,17 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
 
     // Option toggles only persist the setting; if the mirror is running with different flags the
     // supervisor notices (started* snapshot vs current settings) and restarts it automatically.
-    fun toggleHomeAsBack(nextValue: Boolean) {
+    fun setHomeMode(nextValue: HomeButtonMode) {
         val current = _state.value
         if (current.busy) return
-        _state.update { it.copy(homeAsBack = nextValue) }
+        val previous = current.homeMode
+        _state.update { it.copy(homeMode = nextValue) }
         viewModelScope.launch {
             try {
-                withContext(Dispatchers.IO) { graph.setHomeAsBackEnabled(nextValue) }
+                withContext(Dispatchers.IO) { graph.setHomeMode(nextValue) }
+                MirrorStateStore.wake()
             } catch (error: Exception) {
-                _state.update { it.copy(homeAsBack = !nextValue, message = error.message ?: error.toString()) }
+                _state.update { it.copy(homeMode = previous, message = error.message ?: error.toString()) }
             }
         }
     }
@@ -236,6 +250,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setComboHoldKillAppEnabled(nextValue) }
+                MirrorStateStore.wake()
             } catch (error: Exception) {
                 _state.update { it.copy(comboHoldKillApp = !nextValue, message = error.message ?: error.toString()) }
             }
@@ -249,6 +264,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
             try {
                 withContext(Dispatchers.IO) {
                     graph.setAutoMirrorEnabled(nextValue)
+                    MirrorStateStore.wake()
                     if (!nextValue) {
                         // Best-effort: the setting is already persisted and the supervisor also
                         // stops the mirror, so a stop hiccup (e.g. nothing was running) must not
@@ -271,12 +287,53 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         }
     }
 
+    fun openPlayer1Picker() {
+        MirrorStateStore.setPickingPlayer1(true)
+        _state.update { it.copy(pickingPlayer1 = true) }
+    }
+
+    fun closePlayer1Picker() {
+        MirrorStateStore.setPickingPlayer1(false)
+        _state.update { it.copy(pickingPlayer1 = false) }
+    }
+
+    /**
+     * A pad pressed L + R. Matched to its device by Android's player number, which is per pad, so two
+     * identical pads stay apart; a pad without a number (0) falls back to its name alone. The built-in
+     * pad can't be its own source, so its press is ignored.
+     */
+    fun choosePlayer1(pad: InputDevice) {
+        val name = pad.name
+        val number = pad.controllerNumber
+        fun List<ControllerDevice>.byNumber() = firstOrNull { number > 0 && it.controllerNumber == number }
+        viewModelScope.launch {
+            // The list on screen can be from before the picker paused the mirror (up to a tick old),
+            // when this pad had a different number or wasn't listed at all. Then the lock lost its
+            // node and fell back to the name, so look again rather than settle for that.
+            val device = _state.value.devices.byNumber()
+                ?: runCatching { withContext(Dispatchers.IO) { graph.getConnectedDevices() } }.getOrNull()?.byNumber()
+            if (device?.isInternal == true || name.equals(_state.value.localDevice?.name, ignoreCase = true)) return@launch
+            setPlayer1(device?.name ?: name, device?.path)
+        }
+    }
+
+    fun setPlayer1(name: String?, path: String? = null) {
+        _state.update { it.copy(player1Name = name, player1Path = path) }
+        viewModelScope.launch(Dispatchers.IO) { graph.settingsRepository.setPlayer1(name, path) }
+    }
+
+    // A ViewModel torn down mid-pick must not leave the supervisor holding the mirror off.
+    override fun onCleared() {
+        MirrorStateStore.setPickingPlayer1(false)
+    }
+
     fun selectInternalController(guid: String?) {
         if (_state.value.busy) return
         _state.update { it.copy(busy = true) }
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setManualInternalController(guid) }
+                MirrorStateStore.wake()
                 _state.update { it.copy(manualInternalGuid = guid) }
                 refresh()
             } catch (error: Exception) {
@@ -294,18 +351,20 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setVirtualMouseEnabled(nextValue) }
+                MirrorStateStore.wake()
             } catch (error: Exception) {
                 _state.update { it.copy(virtualMouse = !nextValue, message = error.message ?: error.toString()) }
             }
         }
     }
 
+    // Guarded like MainApplication's: this runs after an IO hop, and if the app went to the
+    // background meanwhile the framework refuses a foreground start with an exception that would
+    // otherwise take the whole process down. The next time the screen opens, it tries again.
     private fun startSupervisor() {
-        val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        runCatching {
+            val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
             appContext.startForegroundService(intent)
-        } else {
-            appContext.startService(intent)
         }
     }
 

@@ -3,12 +3,13 @@ package com.odininputmirror
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 
 class InputMirrorBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) {
+        // An update kills the supervisor but not the daemon it started, which then runs unwatched
+        // until the app is next opened; restarting here puts it back under supervision.
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED && intent?.action != Intent.ACTION_MY_PACKAGE_REPLACED) {
             return
         }
         // No PServerBinder probe here: onReceive runs on the main thread, the probe blocks on a
@@ -16,11 +17,7 @@ class InputMirrorBootReceiver : BroadcastReceiver() {
         // on its own worker and stops itself when the service is missing.
         runCatching {
             val serviceIntent = Intent(context, InputMirrorSupervisorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
+            context.startForegroundService(serviceIntent)
         }.onFailure { Log.w("InputMirrorBootReceiver", "Could not start supervisor on boot", it) }
     }
 }

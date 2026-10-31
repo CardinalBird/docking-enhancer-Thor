@@ -25,8 +25,9 @@ int count_active_hidden(const struct hidden_node *nodes, int count);
 // fd on it. Refuses to unlink anything whose EVIOCGID vendor is not `expected_vendor`: event numbers
 // are recycled across reconnects, so a path resolved a moment ago may point at a different device by
 // the time we act on it. The caller owns that policy — this module does not know one vendor from
-// another.
-void hide_node(const char *path, struct hidden_node *slot, unsigned short expected_vendor);
+// another. Also refuses the node whose device number is `target_rdev`, the mirror's own target.
+void hide_node(const char *path, struct hidden_node *slot, unsigned short expected_vendor,
+               dev_t target_rdev);
 
 // Recreate the nodes hidden by hide_node so the framework re-enumerates them when the mirror stops.
 void restore_hidden_nodes(struct hidden_node *nodes, int count);

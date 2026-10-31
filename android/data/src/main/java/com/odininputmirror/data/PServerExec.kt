@@ -69,8 +69,10 @@ internal class PServerExec : PServerTransactor {
                 return false
             }
             respondsToTransactions?.let { return it }
-            // Cheapest command there is; only whether the transaction lands matters.
-            return executeAsRoot("true").isSuccess.also { respondsToTransactions = it }
+            // Cheapest command there is; only whether the transaction lands matters. Only a yes is
+            // remembered: at boot the service can be registered before it answers, and a cached no
+            // left the app "unsupported" until the process died.
+            return executeAsRoot("true").isSuccess.also { if (it) respondsToTransactions = true }
         }
 
     /** True when the service exists but refuses to answer — the Odin 2 Mini case. */

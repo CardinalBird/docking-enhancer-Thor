@@ -194,6 +194,49 @@ static int apply_binding(struct mapping_table *table,
     return 1;
 }
 
+// One side of rest onto the same side of the target's rest, so rest lands on rest and each limit on
+// the matching limit even when the two controllers centre their axes at different points of their
+// ranges (a 0..255 stick resting at 127 into a -32768..32767 one resting at 0, say).
+static int rescale_side(long value, long from_rest, long from_end, long to_rest, long to_end) {
+    long span = from_end - from_rest;
+    if (span == 0) {
+        return (int)to_rest;
+    }
+    long travelled = value - from_rest;
+    // Past the declared limit is a noisy sensor, not more travel than the target can show.
+    if ((span > 0 && travelled > span) || (span < 0 && travelled < span)) {
+        travelled = span;
+    }
+    return (int)(to_rest + travelled * (to_end - to_rest) / span);
+}
+
+/*
+ * An event no binding claims, on its way through untouched. An axis still has to be rescaled when the
+ * two controllers disagree about its range, or a pad reporting 0..255 drives a target expecting
+ * -32768..32767 between "barely left of centre" and "barely right". Left exactly as it came when
+ * either side does not declare the axis, or both declare the same range.
+ */
+static void pass_through(const struct axis_range *source,
+                         const struct axis_range *target,
+                         const struct input_event *in,
+                         struct input_event *out) {
+    *out = *in;
+    if (in->type != EV_ABS || in->code >= ABS_CNT) {
+        return;
+    }
+    const struct axis_range *from = &source[in->code];
+    const struct axis_range *to = &target[in->code];
+    if (!from->present || !to->present ||
+        (from->minimum == to->minimum && from->maximum == to->maximum)) {
+        return;
+    }
+    if (in->value >= from->rest) {
+        out->value = rescale_side(in->value, from->rest, from->maximum, to->rest, to->maximum);
+    } else {
+        out->value = rescale_side(in->value, from->rest, from->minimum, to->rest, to->minimum);
+    }
+}
+
 int mapping_apply(struct mapping_table *table,
                   const struct axis_range *source,
                   const struct axis_range *target,
@@ -208,7 +251,7 @@ int mapping_apply(struct mapping_table *table,
         return 0;
     }
     if (table->count == 0 || (in->type != EV_KEY && in->type != EV_ABS)) {
-        out[0] = *in;
+        pass_through(source, target, in, &out[0]);
         return 1;
     }
 
@@ -225,7 +268,7 @@ int mapping_apply(struct mapping_table *table,
     // Untouched is the default on purpose: it is what makes a control the user skipped in the wizard
     // go on working exactly as it did, instead of going dead because nobody named it.
     if (!matched) {
-        out[0] = *in;
+        pass_through(source, target, in, &out[0]);
         return 1;
     }
     if (bound != NULL) {

@@ -2,7 +2,6 @@ package com.odininputmirror
 
 import android.app.Application
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 
 class MainApplication : Application() {
@@ -22,11 +21,7 @@ class MainApplication : Application() {
         // start throws — never crash the whole app over it, the next foreground entry retries.
         runCatching {
             val intent = Intent(this, InputMirrorSupervisorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(intent)
-            } else {
-                startService(intent)
-            }
+            startForegroundService(intent)
         }.onFailure { Log.w(TAG, "Could not start supervisor from Application.onCreate", it) }
     }
 

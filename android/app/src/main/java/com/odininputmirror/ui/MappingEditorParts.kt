@@ -1,6 +1,10 @@
 package com.odininputmirror.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,6 +35,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -67,38 +76,63 @@ internal fun SlotRow(
     // Making the whole row clickable is what put Clear inside an already-focusable node, where the
     // D-pad could never reach it — focus stopped at the parent and the child was never a stop of its
     // own.
-    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (focused) Palette.focusBg else Palette.surface)
-                .border(
-                    width = if (focused) 2.dp else 1.dp,
-                    color = if (focused) Palette.focus else Palette.border,
-                    shape = RoundedCornerShape(10.dp),
-                )
-                .clickable(interactionSource = interaction, indication = null) { onBind() }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SlotGlyph(slot)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(slot.label, color = Palette.textPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                Text(
-                    source?.let(::describeSource) ?: "No binding",
-                    color = if (source == null) Palette.textMuted else Palette.accent,
-                    fontSize = 12.sp,
-                )
+    // One focus target per row; X clears it (the hint bar says so), replacing a Clear button per row.
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (focused) Palette.focusBg else Palette.screen)
+            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
+            .onPreviewKeyEvent {
+                // Both halves, even on an unbound row: Android turns an unhandled X press into a
+                // select, which opened a capture on the row instead of doing nothing.
+                if (it.key != Key.ButtonX) return@onPreviewKeyEvent false
+                if (it.type == KeyEventType.KeyUp && source != null) onClear()
+                true
             }
-        }
-        if (source != null) {
-            Spacer(Modifier.width(8.dp))
-            EditorButton("Clear", Palette.dangerSoft, onClear)
-        }
+            .clickable(interactionSource = interaction, indication = null) { onBind() }
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SlotGlyph(slot)
+        Spacer(Modifier.width(14.dp))
+        Text(slot.label, color = Palette.textPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        Text(
+            source?.let(::describeSource) ?: "Not bound",
+            color = if (source == null) Palette.textMuted else Palette.accent,
+            fontSize = 14.sp,
+        )
     }
-    Spacer(Modifier.height(6.dp))
+    Rule(Modifier.padding(horizontal = 8.dp))
+}
+
+/** A group in the left pane. Focusing it is selecting it. */
+@Composable
+internal fun GroupRow(group: String, selected: Boolean, onFocus: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    // Immediate, so a quick Down then Right lands in the group passed through; the screen ignores the
+    // passing focus the overlay's closing causes.
+    LaunchedEffect(focused) {
+        if (focused) onFocus()
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (focused) Palette.focusBg else Palette.screen)
+            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
+            .clickable(interactionSource = interaction, indication = null, onClick = onFocus)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The Switch's selection bar: a stripe beside the group whose rows are showing.
+        Box(Modifier.width(4.dp).height(26.dp).background(if (selected) Palette.accent else Palette.screen))
+        Spacer(Modifier.width(12.dp))
+        Text(group, color = if (selected) Palette.textPrimary else Palette.textSecondary, fontSize = 17.sp)
+    }
 }
 
 /**
@@ -176,12 +210,19 @@ internal fun CaptureOverlay(
         }
     }
 
+    // A trap on purpose: focus that wandered to a row behind and pressed A re-bound a different
+    // slot, and so did a tap through the scrim.
     Box(
-        modifier = Modifier.fillMaxSize().background(Palette.scrim),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Palette.scrim)
+            .pointerInput(Unit) { detectTapGestures { } },
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
+                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusGroup()
                 .widthIn(max = 460.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Palette.surface)

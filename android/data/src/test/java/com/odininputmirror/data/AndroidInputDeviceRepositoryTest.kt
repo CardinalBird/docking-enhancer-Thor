@@ -421,6 +421,31 @@ class AndroidInputDeviceRepositoryTest {
     )
 
     @Test
+    fun sourceTraitsPreferThePadNodeOverItsSensorNode() {
+        val proc = """
+I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
+N: Name="DualSense Wireless Controller Motion Sensors"
+H: Handlers=event12
+B: KEY=
+B: ABS=3f
+
+I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
+N: Name="DualSense Wireless Controller"
+H: Handlers=event11 js0
+B: KEY=7fdb000000000000 0 0 0 0
+B: ABS=3003f
+""".trimStart()
+        val shell = object : MirrorShell by UnavailableShell {
+            override fun read(command: String): String = proc
+        }
+        val repository = AndroidInputDeviceRepository(shell = shell, pathExists = { true })
+
+        val traits = repository.sourceTraits(MappingKey.of(0x054c, 0x0ce6))!!
+
+        assertTrue(traits.keys.isNotEmpty())
+    }
+
+    @Test
     fun mappingKeyComesFromTheRealDeviceNotTheFirmwaresTwin() {
         // The firmware republishes the pad as a 0x2020 twin and deletes the original node. Both
         // entries carry the same name; only the real one carries an identity worth keying on.
@@ -431,8 +456,20 @@ class AndroidInputDeviceRepositoryTest {
 
         assertEquals(
             MappingKey("2dc8:301b"),
-            repository.resolveMappingKey("8BitDo Ultimate 2C Wireless", entries),
+            repository.resolveMappingKey(entries[1], entries),
         )
+    }
+
+    @Test
+    fun anUntwinnedPadKeepsItsOwnKeyEvenBesideASameNamedPad() {
+        // A DS4 and a third-party clone both enumerate as "Wireless Controller". The clone is not
+        // twinned, so it resolves to its own entry; a name lookup used to hand it the DS4's key.
+        val entries = listOf(
+            procEntry("Wireless Controller", BUS_BLUETOOTH, 0x054c, 0x09cc),
+            procEntry("Wireless Controller", BUS_BLUETOOTH, 0x1234, 0x5678),
+        )
+
+        assertEquals(MappingKey("1234:5678"), repository.resolveMappingKey(entries[1], entries))
     }
 
     @Test
@@ -446,8 +483,8 @@ class AndroidInputDeviceRepositoryTest {
             procEntry("Xbox Wireless Controller", BUS_USB, 0x2020, 0x0111),
         )
 
-        val first = repository.resolveMappingKey("8BitDo Ultimate 2C Wireless", entries)
-        val second = repository.resolveMappingKey("Xbox Wireless Controller", entries)
+        val first = repository.resolveMappingKey(entries[1], entries)
+        val second = repository.resolveMappingKey(entries[3], entries)
 
         assertEquals(MappingKey("2dc8:301b"), first)
         assertEquals(MappingKey("045e:0b13"), second)
@@ -459,7 +496,7 @@ class AndroidInputDeviceRepositoryTest {
         // and it is never the controller being remapped.
         val entries = listOf(procEntry("Xbox Wireless Controller", BUS_USB, 0x2020, 0x0112))
 
-        assertNull(repository.resolveMappingKey("Xbox Wireless Controller", entries))
+        assertNull(repository.resolveMappingKey(entries[0], entries))
     }
 
     private fun procEntry(
@@ -479,4 +516,152 @@ class AndroidInputDeviceRepositoryTest {
     )
 
     private var entrySequence = 0
+
+    // -- identical pads ------------------------------------------------------
+
+    @Test
+    fun parseDumpsysInputPathsJoinsReaderDevicesToTheirNodes() {
+        val dump = """
+Event Hub State:
+  BuiltInKeyboardId: -2
+  Devices:
+    -1: Virtual
+      Classes: KEYBOARD
+      Path: <virtual>
+    3: 8BitDo Ultimate 2C
+      Classes: KEYBOARD | GAMEPAD | JOYSTICK
+      Path: /dev/input/event9
+    4: 8BitDo Ultimate 2C
+      Classes: KEYBOARD | GAMEPAD | JOYSTICK
+      Path: /dev/input/event11
+Input Reader State (Nums of device: 2):
+  Device 7: 8BitDo Ultimate 2C
+    EventHub Devices: [ 3 ] 
+    Generation: 12
+  Device 8: 8BitDo Ultimate 2C
+    EventHub Devices: [ 4 ] 
+Input Dispatcher State:
+  DispatchEnabled: true
+""".trimStart()
+
+        assertEquals(mapOf(7 to "/dev/input/event9", 8 to "/dev/input/event11"), parseDumpsysInputPaths(dump))
+    }
+
+    // Captured from an AYN Thor (Android 13): framework id 10 reads EventHub device 9.
+    @Test
+    fun parseDumpsysInputPathsReadsARealThorDump() {
+        val dump = javaClass.classLoader!!.getResource("dumpsys-input-thor.txt")!!.readText()
+
+        val paths = parseDumpsysInputPaths(dump)
+
+        assertEquals("/dev/input/event9", paths[10])
+        assertTrue(paths.values.all { it.startsWith("/dev/input/event") })
+    }
+
+    @Test
+    fun knownPathsReadDumpsysOnceUntilTheDeviceSetChanges() {
+        var reads = 0
+        val shell = object : MirrorShell by UnavailableShell {
+            override fun read(command: String): String {
+                reads++
+                return """
+Event Hub State:
+  Devices:
+    5: Pad
+      Path: /dev/input/event5
+    6: Pad
+      Path: /dev/input/event6
+Input Reader State:
+  Device 5: Pad
+  Device 6: Pad
+""".trimStart()
+            }
+        }
+        val repository = AndroidInputDeviceRepository(shell = shell, pathExists = { true })
+
+        assertEquals("/dev/input/event5", repository.knownPathsFor(listOf(6, 5))[5])
+        repository.knownPathsFor(listOf(5, 6))
+        assertEquals(1, reads)
+
+        // A reconnected pad gets a new framework id: that is the one thing that must re-read.
+        repository.knownPathsFor(listOf(5, 7))
+        assertEquals(2, reads)
+        // An id the dump could not resolve is never cached as a miss.
+        repository.knownPathsFor(listOf(5, 7))
+        assertEquals(3, reads)
+    }
+
+    @Test
+    fun parseDumpsysInputPathsUsesTheSameIdBeforeAndroid11() {
+        val dump = """
+Event Hub State:
+  Devices:
+    5: Pad
+      Path: /dev/input/event5
+Input Reader State:
+  Device 5: Pad
+    Generation: 3
+""".trimStart()
+
+        assertEquals(mapOf(5 to "/dev/input/event5"), parseDumpsysInputPaths(dump))
+    }
+
+    @Test
+    fun knownPathKeepsIdenticallyNamedPadsOnTheirOwnNodes() {
+        fun entry(event: String) = AndroidInputDeviceRepository.ProcInputEntry(
+            name = "8BitDo Ultimate 2C",
+            handlers = listOf(event),
+            path = "/dev/input/$event",
+            eventName = event,
+            bus = 0x0005,
+            vendorId = ODIN_VENDOR,
+            productId = 0x0112,
+        )
+        val entries = listOf(entry("event9"), entry("event11"))
+        fun candidate(id: Int) = ControllerCandidate(
+            name = "8BitDo Ultimate 2C",
+            id = id,
+            vendorId = ODIN_VENDOR,
+            productId = 0x0112,
+            controllerNumber = id,
+            guid = "guid",
+        )
+
+        val first = repository.resolveControllerDevice(candidate(7), entries, emptySet(), "/dev/input/event9")
+        val second = repository.resolveControllerDevice(candidate(8), entries, emptySet(), "/dev/input/event11")
+        val unknown = repository.resolveControllerDevice(candidate(8), entries, emptySet(), null)
+
+        assertEquals("/dev/input/event9", first?.path)
+        assertEquals("/dev/input/event11", second?.path)
+        // Without the dump it falls back to today's pick: the lowest node.
+        assertEquals("/dev/input/event9", unknown?.path)
+    }
+
+    // Seen on a Thor: the firmware twins only one pad, so with two "Sim Pad"s the untwinned one was
+    // given the twinned one's node and mirroring it hid the other controller.
+    @Test
+    fun dropForeignHideNodesNeverHidesAnotherPad() {
+        val twinned = ControllerDevice("Sim Pad", "/dev/input/event12", "g", 1, hideNodePath = "/dev/input/event12")
+        val untwinned = ControllerDevice("Sim Pad", "/dev/input/event14", "g", 2, hideNodePath = "/dev/input/event12")
+        val solo = ControllerDevice("Other", "/dev/input/event15", "g", 3, hideNodePath = "/dev/input/event16")
+
+        val result = dropForeignHideNodes(listOf(twinned, untwinned, solo))
+
+        assertEquals("/dev/input/event12", result[0].hideNodePath)
+        assertNull(result[1].hideNodePath)
+        assertEquals("/dev/input/event16", result[2].hideNodePath)
+    }
+
+    // On a Thor the built-in pad and the external pad's twin are both 2020:0111, so they share a
+    // guid. A manual pick of that guid must land on the built-in one.
+    @Test
+    fun manualPickOfASharedGuidPrefersTheRecognisedBuiltInPad() {
+        val twin = ControllerDevice("Pro Controller", "/dev/input/event12", "shared", 0)
+        val builtIn = ControllerDevice("Odin Controller", "/dev/input/event9", "shared", 1, isKnownInternal = true)
+
+        val result = repository.resolveInternalController(listOf(twin, builtIn), manualGuid = "shared")
+
+        assertTrue(result.single { it.path == "/dev/input/event9" }.isInternal)
+        assertFalse(result.single { it.path == "/dev/input/event12" }.isInternal)
+    }
 }

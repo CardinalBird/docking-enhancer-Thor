@@ -12,11 +12,15 @@ VPAD=/data/local/tmp/vgamepad
 TMP=/data/local/tmp/lat
 
 rm -rf $TMP; mkdir -p $TMP
+# Root when the firmware has su (Odin); the Thor ships none and the shell user is enough here.
+if command -v su >/dev/null 2>&1; then as_root() { su -c "$1"; }; else as_root() { sh -c "$1"; }; fi
 am force-stop com.odininputmirror 2>/dev/null
-P=$(pidof input_mirror); [ -n "$P" ] && su -c "kill -KILL $P" 2>/dev/null
+P=$(pidof input_mirror); [ -n "$P" ] && as_root "kill -KILL $P" 2>/dev/null
 sleep 0.5
 
-if ! su -c "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null; then
+# Without su the app's private copy is unreadable; build-harness.sh pushes the same committed binary.
+if ! as_root "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
+    ! [ -x $MIRROR ]; then
     echo "ABORT: no pude copiar el daemon (esta instalada la app?)"
     exit 1
 fi
@@ -45,7 +49,7 @@ echo "measure $SRC $SAMPLES" >&3
 sleep $(( SAMPLES / 100 + 6 ))
 
 # No --hide-node here: hiding is irrelevant to forwarding cost and would only add a variable.
-su -c "$MIRROR $SRC $DST --heartbeat-file $TMP/hb > $TMP/log 2>&1 &"
+as_root "$MIRROR $SRC $DST --heartbeat-file $TMP/hb > $TMP/log 2>&1 &"
 i=0
 while [ -z "$(pidof input_mirror)" ] && [ $i -lt 30 ]; do sleep 0.1; i=$((i+1)); done
 if [ -z "$(pidof input_mirror)" ]; then echo "ABORT: el daemon no arranco"; cat $TMP/log; exit 1; fi
@@ -57,9 +61,9 @@ echo "=== latencia agregada por el mirror (ida y vuelta) ==="
 echo "measure $DST $SAMPLES" >&3
 sleep $(( SAMPLES / 100 + 6 ))
 
-P=$(pidof input_mirror); [ -n "$P" ] && su -c "kill -TERM $P" 2>/dev/null
+P=$(pidof input_mirror); [ -n "$P" ] && as_root "kill -TERM $P" 2>/dev/null
 sleep 0.5
 exec 3>&-
 exec 4>&-
 sleep 0.3
-su -c "rm -rf $TMP $MIRROR" 2>/dev/null
+as_root "rm -rf $TMP $MIRROR" 2>/dev/null

@@ -1,8 +1,10 @@
 package com.odininputmirror.domain.usecase
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
+import com.odininputmirror.domain.model.pickExternal
 
 class ResolveAutoMirrorDecisionUseCase {
     operator fun invoke(
@@ -21,7 +23,7 @@ class ResolveAutoMirrorDecisionUseCase {
 
         val local = devices.firstOrNull { it.isInternal }
             ?: return AutoMirrorDecision.WaitingForInternalController
-        val external = devices.firstOrNull { !it.isInternal && !it.isSamePhysicalControllerAs(local) }
+        val external = devices.pickExternal(local, settings.player1Name, settings.player1Path)
             ?: return AutoMirrorDecision.WaitingForExternalController
 
         if (local.path == external.path) {
@@ -34,7 +36,7 @@ class ResolveAutoMirrorDecisionUseCase {
             target = local.path,
             sourceGuid = external.guid,
             targetGuid = local.guid,
-            homeAsBack = settings.homeAsBack,
+            homeMode = settings.homeMode,
             comboHoldKillApp = settings.comboHoldKillApp,
             virtualMouse = settings.virtualMouse,
             hideNodes = listOfNotNull(external.hideNodePath),
@@ -66,10 +68,6 @@ class ResolveAutoMirrorDecisionUseCase {
             AutoMirrorDecision.Start(request)
         }
     }
-}
-
-private fun ControllerDevice.isSamePhysicalControllerAs(other: ControllerDevice): Boolean {
-    return controllerNumber > 0 && controllerNumber == other.controllerNumber
 }
 
 sealed class AutoMirrorDecision {

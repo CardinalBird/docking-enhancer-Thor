@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import com.odininputmirror.domain.repository.DockStateRepository
 import com.odininputmirror.domain.repository.InputDeviceRepository
@@ -11,7 +12,7 @@ import com.odininputmirror.domain.usecase.GetMirrorStatusUseCase
 import com.odininputmirror.domain.usecase.ResolveAutoMirrorDecisionUseCase
 import com.odininputmirror.domain.usecase.SetAutoMirrorEnabledUseCase
 import com.odininputmirror.domain.usecase.SetComboHoldKillAppEnabledUseCase
-import com.odininputmirror.domain.usecase.SetHomeAsBackEnabledUseCase
+import com.odininputmirror.domain.usecase.SetHomeModeUseCase
 import com.odininputmirror.domain.usecase.SetManualInternalControllerUseCase
 import com.odininputmirror.domain.usecase.SetVirtualMouseEnabledUseCase
 import com.odininputmirror.domain.usecase.StartMirrorUseCase
@@ -65,7 +66,7 @@ class InputMirrorGraph private constructor(context: Context, forceDockMode: Bool
     val startMirror = StartMirrorUseCase(processRepository, settingsRepository)
     val stopMirror = StopMirrorUseCase(processRepository, settingsRepository)
     val getMirrorStatus = GetMirrorStatusUseCase(processRepository, settingsRepository, dockStateRepository)
-    val setHomeAsBackEnabled = SetHomeAsBackEnabledUseCase(settingsRepository)
+    val setHomeMode = SetHomeModeUseCase(settingsRepository)
     val setComboHoldKillAppEnabled = SetComboHoldKillAppEnabledUseCase(settingsRepository)
     val setVirtualMouseEnabled = SetVirtualMouseEnabledUseCase(settingsRepository)
     val setAutoMirrorEnabled = SetAutoMirrorEnabledUseCase(settingsRepository)

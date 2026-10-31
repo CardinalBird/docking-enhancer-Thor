@@ -38,10 +38,18 @@ wait_for_gone() {
 }
 
 mirror_pid() { pidof input_mirror 2>/dev/null; }
+# Root when the firmware has su (Odin). The Thor ships none: the shell user is in the input group, so
+# everything but unlinking /dev/input nodes (T2, T3, T5) still runs, and those report it.
+if command -v su >/dev/null 2>&1; then
+    as_root() { su -c "$1"; }
+else
+    as_root() { sh -c "$1"; }
+    echo "  NOTE: no su on this device; hide/restore tests need root and will fail"
+fi
 
 stop_mirror() {
     P=$(mirror_pid)
-    [ -n "$P" ] && su -c "kill -KILL $P" 2>/dev/null
+    [ -n "$P" ] && as_root "kill -KILL $P" 2>/dev/null
     i=0
     while [ -n "$(mirror_pid)" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
 }
@@ -49,7 +57,7 @@ stop_mirror() {
 # Start the daemon as root, detached. Root is test scaffolding only — the product itself reaches the
 # same binary through PServerBinder with no root at all.
 start_mirror() {
-    su -c "$MIRROR $* > $LOG 2>&1 &"
+    as_root "$MIRROR $* > $LOG 2>&1 &"
     i=0
     while [ -z "$(mirror_pid)" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
 }
@@ -66,11 +74,13 @@ rm -rf $TMP
 mkdir -p $TMP
 
 # Test the binary the app actually ships, not a rebuild that might drift from it.
-if ! su -c "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null; then
+# Without su the app's private copy is unreadable; build-harness.sh pushes the same committed binary.
+if ! as_root "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
+    ! [ -x $MIRROR ]; then
     echo "  ABORT: no pude copiar el binario del daemon (esta instalada la app?)"
     exit 1
 fi
-echo "  daemon: $(su -c "$MIRROR" 2>&1 | head -n 1 | cut -c1-40)..."
+echo "  daemon: $(as_root "$MIRROR" 2>&1 | head -n 1 | cut -c1-40)..."
 
 SRCFIFO=$TMP/src.fifo
 DSTFIFO=$TMP/dst.fifo
@@ -143,7 +153,7 @@ else
     expect_exists  "$STATE" "queda registro de lo ocultado"
 
     # SIGTERM is the product's own stop signal; it must take the clean path that restores.
-    su -c "kill -TERM $(mirror_pid)" 2>/dev/null
+    as_root "kill -TERM $(mirror_pid)" 2>/dev/null
     stop_mirror
     sleep 0.5
 
@@ -161,13 +171,13 @@ if [ -z "$(mirror_pid)" ]; then
     bad "el daemon arranco para el test de huerfano"
 else
     sleep 0.5
-    su -c "kill -KILL $(mirror_pid)" 2>/dev/null
+    as_root "kill -KILL $(mirror_pid)" 2>/dev/null
     sleep 0.5
 
     expect_missing "$SRC" "SIGKILL deja el nodo oculto (sin cleanup)"
     expect_exists  "$STATE" "el registro sobrevive para poder sanar"
 
-    su -c "$MIRROR --heal --hidden-state-file $STATE" 2>/dev/null
+    as_root "$MIRROR --heal --hidden-state-file $STATE" 2>/dev/null
     sleep 0.3
 
     expect_exists  "$SRC" "--heal devuelve el nodo huerfano"
@@ -188,7 +198,7 @@ else
 
     # Deleting the heartbeat is how the app signals "you have no owner": uninstalled, data cleared,
     # or a duplicate launch it abandoned.
-    su -c "rm -f $HEART"
+    as_root "rm -f $HEART"
     wait_for_gone "/proc/$(mirror_pid)" 80
 
     if [ -z "$(mirror_pid)" ]; then
@@ -244,7 +254,7 @@ mkfifo $FIFO 2>/dev/null
 
 generation() { sed -n 's/^generation //p' $HEART 2>/dev/null; }
 write_config() {
-    printf '{ "generation": %s, "home_as_back": %s, "combo_hold_kill_app": false, "virtual_mouse": false }\n' \
+    printf '{ "generation": %s, "home_mode": %s, "combo_hold_kill_app": false, "virtual_mouse": false }\n' \
         "$1" "$2" > $CFG.tmp
     mv $CFG.tmp $CFG
 }
@@ -259,7 +269,7 @@ press_source() { echo "key $1 1" >&3; echo "syn" >&3; echo "key $1 0" >&3; echo 
 # Un eje del pad de origen a un valor concreto. Los ejes van de -32768 a 32767 con reposo en 0.
 move_source() { echo "abs $1 $2" >&3; echo "syn" >&3; }
 
-write_config 1 false
+write_config 1 0
 start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --hidden-state-file $STATE --heartbeat-file $HEART
 PID_BEFORE=$(mirror_pid)
 if [ -z "$PID_BEFORE" ]; then
@@ -269,7 +279,7 @@ else
     G=$(generation)
     if [ "$G" = "1" ]; then ok "adopta la config del arranque"; else bad "no publico la generacion inicial [$G]"; fi
 
-    write_config 2 true
+    write_config 2 1
     poke
     sleep 1.5
     G=$(generation)
@@ -301,7 +311,7 @@ echo "=== T7: la captura reporta y no reenvia ==="
 CAPLOG=$TMP/capture.log
 rm -f $CAPLOG $CFG $FIFO
 mkfifo $FIFO 2>/dev/null
-write_config 1 false
+write_config 1 0
 
 start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --capture-file $CAPLOG --heartbeat-file $HEART
 if [ -z "$(mirror_pid)" ]; then
@@ -359,7 +369,7 @@ echo "=== T8: un mapeo en la config cambia el codigo reenviado ==="
 cat > $CFG.tmp <<'EOF'
 {
   "generation": 1,
-  "home_as_back": false,
+  "home_mode": 0,
   "combo_hold_kill_app": false,
   "virtual_mouse": false,
   "mapping": { "bindings": [[0, 304, 0, 0, 307, 0]] }
@@ -403,7 +413,7 @@ echo "=== T9: media travesia de un eje llega como boton ==="
 cat > $CFG.tmp <<'EOF'
 {
   "generation": 1,
-  "home_as_back": false,
+  "home_mode": 0,
   "combo_hold_kill_app": false,
   "virtual_mouse": false,
   "mapping": { "bindings": [[2, 2, 1, 0, 307, 0]] }
@@ -466,7 +476,7 @@ echo "=== T10: un boton llega como deflexion completa de un eje ==="
 cat > $CFG.tmp <<'EOF'
 {
   "generation": 1,
-  "home_as_back": false,
+  "home_mode": 0,
   "combo_hold_kill_app": false,
   "virtual_mouse": false,
   "mapping": { "bindings": [[0, 304, 0, 2, 3, 1]] }
@@ -510,7 +520,7 @@ echo "=== T11: una captura abandonada expira sola ==="
 # porque es lo que se esta probando; no hay forma honesta de acelerarlo.
 rm -f $CFG $FIFO
 mkfifo $FIFO 2>/dev/null
-write_config 1 false
+write_config 1 0
 
 start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --capture-file $TMP/t11.cap --heartbeat-file $HEART
 if [ -z "$(mirror_pid)" ]; then
@@ -659,6 +669,202 @@ else
 fi
 rm -f $TMP/t12.mouse $TMP/t12.dst $TMP/t12.back
 
+# --- T13: un stick tocado al arrancar no deja deriva -------------------------------------------------
+
+echo ""
+echo "=== T13: un stick tocado al arrancar no queda descentrado ==="
+
+# Reported from the field as drift to the right. The daemon used to take an axis's resting point
+# from wherever it sat at startup, and it starts the moment a pad connects, i.e. in someone's hands.
+# Hold the stick right at startup, let go, and the target must read centre, not an offset.
+cat > $CFG.tmp <<'EOF'
+{
+  "generation": 1,
+  "home_mode": 0,
+  "combo_hold_kill_app": false,
+  "virtual_mouse": false,
+  "mapping": { "bindings": [[2, 0, 1, 2, 0, 1], [2, 0, -1, 2, 0, -1]] }
+}
+EOF
+mv $CFG.tmp $CFG
+
+move_source 0 12000
+sleep 0.2
+start_mirror "$SRC" "$DST" --config-file $CFG --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de deriva"
+else
+    timeout 3 getevent -lc 4 "$DST" > $TMP/t13.out 2>&1 &
+    T13GE=$!
+    sleep 0.5
+    # Through the left first: the input core drops an event repeating the target's current value,
+    # and the target already reads centre, so a correct release would otherwise send nothing at all.
+    move_source 0 -6000
+    sleep 0.2
+    move_source 0 0
+    sleep 1.5
+    kill $T13GE 2>/dev/null
+    LAST=$(grep "ABS_X" $TMP/t13.out | tail -n 1 | awk '{print $NF}')
+    if [ "$LAST" = "00000000" ]; then
+        ok "el stick suelto llega centrado"
+    else
+        bad "el stick suelto llega descentrado [$LAST]"
+    fi
+    stop_mirror
+fi
+rm -f $TMP/t13.out $CFG
+
+# --- T17: un eje sin mapear se reescala al rango del target -----------------------------------------
+
+echo ""
+echo "=== T17: un eje sin mapear se reescala entre rangos distintos ==="
+
+# A pad reporting its stick as 0..255 into a target expecting -32768..32767. Forwarded raw, full right
+# arrived as 255 — a hair right of centre — and full left as 0, dead centre. Rescaled, the limits land
+# on the limits and the source's rest (127) on the target's (0).
+NARROWFIFO=$TMP/narrow.fifo
+mkfifo $NARROWFIFO
+$VPAD --name "E2E Narrow Pad" --vendor 0x2020 --product 0x0111 --range 0 255 --path-file $TMP/narrow.path < $NARROWFIFO &
+exec 6> $NARROWFIFO
+wait_for_file $TMP/narrow.path
+NARROW=$(cat $TMP/narrow.path)
+
+if [ -z "$NARROW" ] || [ ! -e "$NARROW" ]; then
+    bad "se creo el pad de rango angosto"
+else
+    start_mirror "$NARROW" "$DST" --heartbeat-file $HEART
+    if [ -z "$(mirror_pid)" ]; then
+        bad "el daemon arranco para el test de reescalado"
+    else
+        getevent -lt "$DST" > $TMP/t17.out 2>&1 &
+        T17GE=$!
+        sleep 0.4
+        echo "abs 0 255" >&6; echo "syn" >&6
+        sleep 0.2
+        echo "abs 0 0" >&6; echo "syn" >&6
+        sleep 0.2
+        echo "abs 0 127" >&6; echo "syn" >&6
+        sleep 0.6
+        kill $T17GE 2>/dev/null
+
+        # getevent prints the value as 32-bit hex: 32767 = 00007fff, -32768 = ffff8000.
+        expect_contains $TMP/t17.out "ABS_X.*00007fff" "el tope del source llega como tope del target"
+        expect_contains $TMP/t17.out "ABS_X.*ffff8000" "el minimo del source llega como minimo del target"
+        if grep -q "ABS_X.*000000ff" $TMP/t17.out 2>/dev/null; then
+            bad "llego el valor crudo sin reescalar"
+        else
+            ok "el valor crudo no llega"
+        fi
+        LAST=$(grep "ABS_X" $TMP/t17.out | tail -n 1 | awk '{print $NF}')
+        if [ "$LAST" = "00000000" ]; then
+            ok "el reposo del source llega como reposo del target"
+        else
+            bad "el reposo del source llega descentrado [$LAST]"
+        fi
+        stop_mirror
+    fi
+fi
+exec 6>&-
+rm -f $TMP/t17.out $NARROWFIFO $TMP/narrow.path
+
+# --- T18: nunca oculta el nodo del target -----------------------------------------------------------
+
+echo ""
+echo "=== T18: se niega a ocultar el propio target ==="
+
+# On the Thor the built-in pad (the target) carries the same 0x2020 vendor as the external pad's twin,
+# so the vendor check T5 covers would let a wrong hide path unlink the node the mirror writes into.
+# Without su the unlink fails anyway, so the node surviving proves nothing there; the log line does.
+start_mirror "$SRC" "$DST" --hide-node "$DST" --hidden-state-file $STATE --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test del target"
+else
+    sleep 0.6
+    expect_exists "$DST" "el daemon NO desvincula el nodo del target"
+    expect_contains $LOG "is the mirror target" "y lo rechaza por ser el target"
+    P=$(mirror_pid)
+    as_root "kill -TERM $P" 2>/dev/null
+    wait_for_gone "/proc/$P" 30
+    stop_mirror
+fi
+# A daemon that did hide it put it back on SIGTERM; heal whatever a failure left behind regardless.
+as_root "$MIRROR --heal --hidden-state-file $STATE" 2>/dev/null
+rm -f $STATE
+# --- T14: lo que queda apretado se suelta al parar ---------------------------------------------
+
+echo ""
+echo "=== T14: lo que queda apretado se suelta al parar ==="
+
+# A stick deflected and a button down when the daemon stops (pad sleeping, undock) used to stay
+# that way on the internal pad into handheld play. A clean stop must send the releases itself.
+start_mirror "$SRC" "$DST" --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de suelta"
+else
+    getevent -lt "$DST" > $TMP/t14.out 2>&1 &
+    T14GE=$!
+    sleep 0.4
+    echo "key 304 1" >&3; echo "syn" >&3
+    move_source 0 12000
+    sleep 0.3
+    as_root "kill -TERM $(mirror_pid)" 2>/dev/null
+    i=0; while [ -n "$(mirror_pid)" ] && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
+    sleep 0.3
+    kill $T14GE 2>/dev/null
+    LASTKEY=$(grep "BTN_GAMEPAD" $TMP/t14.out | tail -n 1 | awk '{print $NF}')
+    LASTABS=$(grep "ABS_X" $TMP/t14.out | tail -n 1 | awk '{print $NF}')
+    if [ "$LASTKEY" = "UP" ]; then ok "el boton se suelta al parar"; else bad "el boton queda apretado al parar [$LASTKEY]"; fi
+    if [ "$LASTABS" = "00000000" ]; then ok "el stick vuelve al centro al parar"; else bad "el stick queda desviado al parar [$LASTABS]"; fi
+    # Leave the source at rest for the tests that follow (the daemon is gone, so nothing forwards this).
+    echo "key 304 0" >&3; echo "syn" >&3
+    move_source 0 0
+    sleep 0.2
+fi
+rm -f $TMP/t14.out
+
+# --- T15: los comandos del fifo se aplican en orden -------------------------------------------
+
+echo ""
+echo "=== T15: los comandos del fifo se aplican en orden ==="
+
+# Two commands in ONE write. The daemon used to match the whole buffer by priority, so this pair
+# left the capture ON and the pad mute for 30 s; applied in order, the pad keeps forwarding.
+# First a lone "capture button" must mute the pad, or a passing second half proves nothing.
+rm -f $CAPLOG $CFG $FIFO
+mkfifo $FIFO 2>/dev/null
+write_config 1 0
+start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --capture-file $CAPLOG --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de orden"
+else
+    poke_cmd "capture button"
+    sleep 0.5
+    timeout 3 getevent -lc 4 "$DST" > $TMP/t15.out 2>&1 &
+    T15GE=$!
+    sleep 0.4
+    press_source 304
+    sleep 1.5
+    kill $T15GE 2>/dev/null
+    if [ -s $TMP/t15.out ]; then bad "una captura sola no enmudece el pad (el test no prueba nada)"; else ok "una captura sola enmudece el pad"; fi
+    poke_cmd "capture off"
+    sleep 0.3
+
+    # A shell builtin echo of a two-line string is ONE write(2); printf on this toybox is not.
+    poke_cmd "capture button
+capture off"
+    sleep 0.5
+    rm -f $TMP/t15.out
+    timeout 3 getevent -lc 4 "$DST" > $TMP/t15.out 2>&1 &
+    T15GE=$!
+    sleep 0.4
+    press_source 304
+    sleep 1.5
+    kill $T15GE 2>/dev/null
+    expect_contains $TMP/t15.out "BTN_GAMEPAD" "capture button + capture off en una escritura deja el pad vivo"
+    stop_mirror
+fi
+rm -f $CAPLOG $TMP/t15.out
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""
@@ -667,7 +873,7 @@ stop_mirror
 exec 3>&-
 exec 4>&-
 sleep 0.5
-su -c "rm -rf $TMP $MIRROR" 2>/dev/null
+as_root "rm -rf $TMP $MIRROR" 2>/dev/null
 echo "  limpio"
 
 echo ""

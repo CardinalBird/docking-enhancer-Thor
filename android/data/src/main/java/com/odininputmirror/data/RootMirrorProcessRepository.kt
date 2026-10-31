@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import android.system.Os
 import android.system.OsConstants
 import com.odininputmirror.domain.model.CaptureKind
@@ -25,17 +26,22 @@ internal class RootMirrorProcessRepository(
 
     override fun start(request: MirrorStartRequest) {
         val binary = files.ensureBinaryInstalled()
-        files.prepareProcessFiles()
 
         // Hand the daemon its config up front so a fresh start and a hot reload read the same
         // document. The command-line flags below stay as the fallback the daemon uses when the file
         // is missing or unreadable — they are what the e2e harness drives it with.
+        //
+        // The options come from the stored settings, read together with the generation. The request
+        // holds what the supervisor saw when it decided to start, which can be older: a toggle flipped
+        // in between got the new generation paired with the old value, the daemon acknowledged a
+        // change it never made, and the toggle was silently lost.
+        val settings = mirrorSettingsRepository.getSettings()
         files.writeConfig(
             configJson(
-                generation = mirrorSettingsRepository.getSettings().configGeneration,
-                homeAsBack = request.homeAsBack,
-                comboHoldKillApp = request.comboHoldKillApp,
-                virtualMouse = request.virtualMouse,
+                generation = settings.configGeneration,
+                homeMode = settings.homeMode,
+                comboHoldKillApp = settings.comboHoldKillApp,
+                virtualMouse = settings.virtualMouse,
                 mapping = request.mapping,
             ),
         )
@@ -44,9 +50,9 @@ internal class RootMirrorProcessRepository(
         val configArg = " --config-file ${files.configFile.absolutePath.shellQuote()}"
         val controlFifoArg = " --control-fifo ${files.controlFifo.absolutePath.shellQuote()}"
         val captureArg = " --capture-file ${files.captureFile.absolutePath.shellQuote()}"
-        val homeAsBackArg = if (request.homeAsBack) " --home-as-back" else ""
-        val comboHoldKillAppArg = if (request.comboHoldKillApp) " --combo-hold-kill-app" else ""
-        val virtualMouseArg = if (request.virtualMouse) " --virtual-mouse" else ""
+        val homeModeArg = " --home-mode ${settings.homeMode.wire}"
+        val comboHoldKillAppArg = if (settings.comboHoldKillApp) " --combo-hold-kill-app" else ""
+        val virtualMouseArg = if (settings.virtualMouse) " --virtual-mouse" else ""
         val hideNodeArgs = request.hideNodes.joinToString("") { " --hide-node ${it.shellQuote()}" }
         val hiddenStateArg = " --hidden-state-file ${files.hiddenStateFile.absolutePath.shellQuote()}"
         val pidFileArg = " --pid-file ${files.pidFile.absolutePath.shellQuote()}"
@@ -56,7 +62,7 @@ internal class RootMirrorProcessRepository(
         // so no `echo $! > pidfile` bookkeeping is needed here.
         //
         val launch =
-            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeAsBackArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
+            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeModeArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
 
         // Only skip the launch for a daemon already mirroring THESE nodes.
         //
@@ -67,18 +73,25 @@ internal class RootMirrorProcessRepository(
         // worked. Matching on the argument list makes "already running" mean what it should, and
         // stops the stale one so its replacement can take the grab.
         val command = buildString {
-            append("for p in \$(pidof input_mirror 2>/dev/null); do ")
+            append("keep=; for p in \$(pidof input_mirror 2>/dev/null); do ")
             // The daemon's own argv, where $1 is the binary and $2/$3 are the source and target it
             // opened. Compared exactly rather than by pattern: a substring match would call a daemon
             // on /dev/input/event1 a match for a request for event10.
             append("set -- \$(tr '\\0' ' ' < /proc/\$p/cmdline 2>/dev/null); ")
-            append("[ \"\$2\" = ${request.source.shellQuote()} ] && ")
-            append("[ \"\$3\" = ${request.target.shellQuote()} ] && exit 0; ")
-            append("kill -TERM \$p 2>/dev/null; ")
+            append("if [ \"\$2\" = ${request.source.shellQuote()} ] && [ \"\$3\" = ${request.target.shellQuote()} ]; ")
+            append("then keep=1; else kill -TERM \$p 2>/dev/null; fi; ")
             append("done; ")
+            // Decided after the loop. Exiting on the first match left every stale daemon behind it
+            // alive, each holding its own grab or hidden node.
+            append("[ -n \"\$keep\" ] && exit 0; ")
             // Give a daemon we just signalled time to restore what it hid and drop its grab, or the
             // replacement races it for the EVIOCGRAB and loses.
             append("i=0; while pidof input_mirror >/dev/null 2>&1 && [ \$i -lt 20 ]; do sleep 0.1; i=\$((i+1)); done; ")
+            // Stale pid/heartbeat go only now, past the guard. Deleted up front, they took the
+            // heartbeat from a healthy daemon the guard then kept, and it shut itself down 5s later
+            // for having lost its heartbeat. Not pre-created either: a fresh empty heartbeat would
+            // read as alive before the daemon is.
+            append("rm -f ${files.pidFile.absolutePath.shellQuote()} ${files.heartbeatFile.absolutePath.shellQuote()}; ")
             append(launch)
         }
         if (!shell.launchDaemon(command)) {
@@ -151,7 +164,7 @@ internal class RootMirrorProcessRepository(
         files.writeConfig(
             configJson(
                 generation = settings.configGeneration,
-                homeAsBack = settings.homeAsBack,
+                homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
                 virtualMouse = settings.virtualMouse,
                 mapping = mapping,
@@ -281,14 +294,14 @@ private fun parseCaptureLine(line: String): CaptureResult? {
 // matching simplicity.
 private fun configJson(
     generation: Long,
-    homeAsBack: Boolean,
+    homeMode: HomeButtonMode,
     comboHoldKillApp: Boolean,
     virtualMouse: Boolean,
     mapping: ControllerMapping,
 ): String = """
     {
       "generation": $generation,
-      "home_as_back": $homeAsBack,
+      "home_mode": ${homeMode.wire},
       "combo_hold_kill_app": $comboHoldKillApp,
       "virtual_mouse": $virtualMouse,
       "mapping": {

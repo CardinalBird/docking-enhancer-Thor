@@ -123,14 +123,6 @@ internal class InputMirrorFiles(
         return target
     }
 
-    fun prepareProcessFiles() {
-        // Clear any stale pid/heartbeat from a previous run. Do NOT pre-create empty files: the
-        // daemon writes and chmods its own, and a freshly-touched heartbeat would otherwise read as
-        // "fresh" (recent mtime) before the daemon is even alive, masking a failed launch.
-        pidFile.delete()
-        heartbeatFile.delete()
-    }
-
     fun clearProcessFiles() {
         pidFile.delete()
         heartbeatFile.delete()

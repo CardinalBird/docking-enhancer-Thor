@@ -107,4 +107,33 @@ class GameControllerDbTest {
         assertEquals(roles.size, mapping.bindings.size)
         assertTrue(icons.isNotEmpty())
     }
+
+    // A Switch Pro Controller on an AYN Thor: the buttons its driver declares (no 306, D-pad as
+    // BTN_DPAD_*, no hat) and the database's entries for it, in file order. The first entry was
+    // written for a different driver; taking it put Home on D-pad up.
+    @Test
+    fun picksTheEntryThatFitsThePadNotTheFirstOne() {
+        val proKeys = setOf(304, 305) + (307..318) + (544..547)
+        val proAxes = setOf(0, 1, 3, 4)
+        val db = GameControllerDb(
+            sequenceOf(
+                "030000007e0500000920000000026803,Nintendo Switch Pro Controller,a:b1,b:b0,back:b4,dpdown:b12,dpleft:b13,dpright:b14,dpup:b11,guide:b5,leftshoulder:b9,leftstick:b7,lefttrigger:a4,leftx:a0,lefty:a1,rightshoulder:b10,rightstick:b8,righttrigger:a5,rightx:a2,righty:a3,start:b6,x:b3,y:b2,platform:Linux,",
+                "050000007e0500000920000001000000,Nintendo Switch Pro Controller,a:b0,b:b1,back:b8,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b12,leftshoulder:b4,leftstick:b10,lefttrigger:b6,leftx:a0,lefty:a1,misc1:b13,rightshoulder:b5,rightstick:b11,righttrigger:b7,rightx:a2,righty:a3,start:b9,x:b2,y:b3,platform:Linux,",
+                "050000007e0500000920000001800000,Nintendo Switch Pro Controller,a:b0,b:b1,back:b9,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1,guide:b11,leftshoulder:b5,leftstick:b12,lefttrigger:b7,leftx:a0,lefty:a1,misc1:b4,rightshoulder:b6,rightstick:b13,righttrigger:b8,rightx:a2,righty:a3,start:b10,x:b3,y:b2,platform:Linux,",
+                "050000007e05000009200000ffff0f00,Nintendo Switch Pro Controller,a:b0,b:b1,back:b15,dpdown:b12,dpleft:b13,dpright:b14,dpup:b11,guide:b5,leftshoulder:b3,leftstick:b4,lefttrigger:b9,leftx:a0,lefty:a1,rightshoulder:b18,rightstick:b6,righttrigger:b10,rightx:a2,righty:a3,start:b16,x:b17,y:b2,platform:Android,",
+            ),
+        )
+
+        val entry = db.entryFor(0x057e, 0x2009, proKeys)!!
+        assertEquals("b11", entry["guide"])
+        assertEquals("Linux", entry["platform"])
+
+        val mapping = GameControllerDb.toMapping(entry, proKeys, proAxes, mappingSlots(odinFallbackTraits()))
+        val sources = mapping.bindings.map { it.source }
+        // Home and the stick clicks stay off the D-pad, and the absent hat binds nothing, so the
+        // D-pad buttons are forwarded as the pad reports them.
+        assertTrue(mapping.bindings.none { it.source == ControlRef.button(316) })
+        assertTrue(sources.none { it.kind == com.odininputmirror.domain.model.ControlKind.HALF_AXIS && it.code in 0x10..0x11 })
+        assertEquals(ControlRef.button(0x136), mapping.bindings.first { it.target == ControlRef.button(0x136) }.source)
+    }
 }

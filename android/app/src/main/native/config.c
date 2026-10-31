@@ -203,7 +203,7 @@ int parse_config(const char *path, const struct config *current, struct config *
     }
 
     out->generation = generation;
-    out->home_as_back = json_bool(buffer, "home_as_back", current->home_as_back);
+    out->home_mode = (int)json_number(buffer, "home_mode", current->home_mode);
     out->combo_hold_kill_app = json_bool(buffer, "combo_hold_kill_app", current->combo_hold_kill_app);
     out->virtual_mouse = json_bool(buffer, "virtual_mouse", current->virtual_mouse);
     parse_mapping(buffer, out);

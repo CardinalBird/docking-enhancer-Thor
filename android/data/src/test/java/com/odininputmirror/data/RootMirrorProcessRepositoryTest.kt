@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.HomeButtonMode
 import com.odininputmirror.domain.model.Binding
 import com.odininputmirror.domain.model.ControlRef
 import com.odininputmirror.domain.model.ControllerMapping
@@ -110,11 +111,16 @@ class RootMirrorProcessRepositoryTest {
 
     @Test
     fun startExtractsBinaryAndLaunchesGuardedQuotedCommand() {
+        settings.state = settings.state.copy(
+            homeMode = HomeButtonMode.BACK,
+            comboHoldKillApp = true,
+            virtualMouse = true,
+        )
         repository.start(
             MirrorStartRequest(
                 source = "/dev/input/event9",
                 target = "/dev/input/event2",
-                homeAsBack = true,
+                homeMode = HomeButtonMode.BACK,
                 comboHoldKillApp = true,
                 virtualMouse = true,
             )
@@ -132,7 +138,7 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(command.contains("[ \"\$3\" = '/dev/input/event2' ]"))
         assertTrue(command.contains("kill -TERM \$p"))
         assertTrue(command.contains("'/dev/input/event9' '/dev/input/event2'"))
-        assertTrue(command.contains(" --home-as-back"))
+        assertTrue(command.contains(" --home-mode 1"))
         assertTrue(command.contains(" --combo-hold-kill-app"))
         assertTrue(command.contains(" --virtual-mouse"))
         assertTrue(command.contains("--pid-file '${files.pidFile.absolutePath}'"))
@@ -140,25 +146,60 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(command.contains("--hidden-state-file '${files.hiddenStateFile.absolutePath}'"))
         assertTrue(command.contains("--config-file '${files.configFile.absolutePath}'"))
         assertTrue(command.contains("--control-fifo '${files.controlFifo.absolutePath}'"))
+        // Stale files are cleared only past the guard: before it, the heartbeat of a healthy daemon
+        // the guard then keeps would vanish, and that daemon would shut itself down.
+        val cleared = command.indexOf("rm -f '${files.pidFile.absolutePath}' '${files.heartbeatFile.absolutePath}'")
+        assertTrue(cleared > command.indexOf("exit 0"))
+        assertTrue(cleared < command.indexOf("nice -n -20"))
+        // The keep/kill verdict is taken per daemon and the exit only after the loop, so a stale
+        // daemon listed after the matching one is still stopped.
+        assertTrue(command.indexOf("exit 0") > command.indexOf("done;"))
     }
 
     @Test
-    fun startWritesTheConfigTheDaemonWillRead() {
-        settings.state = settings.state.copy(configGeneration = 3L)
+    fun startLeavesALiveDaemonsHeartbeatAlone() {
+        // The shell guard decides whether a daemon survives; the app must not have deleted its
+        // heartbeat before that decision is made.
+        writeHeartbeat(ageMs = 1_000L)
 
         repository.start(
             MirrorStartRequest(
                 source = "/dev/input/event9",
                 target = "/dev/input/event2",
-                homeAsBack = true,
+                homeMode = HomeButtonMode.HOME,
                 comboHoldKillApp = false,
-                virtualMouse = true,
+                virtualMouse = false,
+            )
+        )
+
+        assertTrue(files.heartbeatFile.exists())
+    }
+
+    @Test
+    fun startWritesTheConfigTheDaemonWillRead() {
+        // The request is stale on purpose: the user changed every option after the supervisor read
+        // them. The config must carry the stored values with the generation they were stored under,
+        // or the daemon acknowledges a change it never made.
+        settings.state = settings.state.copy(
+            configGeneration = 3L,
+            homeMode = HomeButtonMode.BACK,
+            comboHoldKillApp = false,
+            virtualMouse = true,
+        )
+
+        repository.start(
+            MirrorStartRequest(
+                source = "/dev/input/event9",
+                target = "/dev/input/event2",
+                homeMode = HomeButtonMode.HOME,
+                comboHoldKillApp = true,
+                virtualMouse = false,
             )
         )
 
         val config = files.configFile.readText()
         assertTrue(config.contains("\"generation\": 3"))
-        assertTrue(config.contains("\"home_as_back\": true"))
+        assertTrue(config.contains("\"home_mode\": 1"))
         assertTrue(config.contains("\"combo_hold_kill_app\": false"))
         assertTrue(config.contains("\"virtual_mouse\": true"))
     }
@@ -176,7 +217,7 @@ class RootMirrorProcessRepositoryTest {
         )
 
         val delivered = reloading.applyLiveSettings(
-            MirrorSettings(configGeneration = 9L, homeAsBack = true, virtualMouse = false),
+            MirrorSettings(configGeneration = 9L, homeMode = HomeButtonMode.BACK, virtualMouse = false),
             ControllerMapping(listOf(Binding(ControlRef.button(304), ControlRef.button(307)))),
         )
 
@@ -184,7 +225,7 @@ class RootMirrorProcessRepositoryTest {
         assertEquals(files.controlFifo, poked)
         val config = files.configFile.readText()
         assertTrue(config.contains("\"generation\": 9"))
-        assertTrue(config.contains("\"home_as_back\": true"))
+        assertTrue(config.contains("\"home_mode\": 1"))
         assertTrue(config.contains("\"virtual_mouse\": false"))
         assertTrue(config.contains("\"bindings\": [[0, 304, 0, 0, 307, 0]]"))
         // The reload must never travel through PServer: that queue is serialized process-wide, and
@@ -242,7 +283,7 @@ class RootMirrorProcessRepositoryTest {
             MirrorStartRequest(
                 source = "/dev/input/event9",
                 target = "/dev/input/event2",
-                homeAsBack = false,
+                homeMode = HomeButtonMode.PASS_THROUGH,
                 comboHoldKillApp = false,
                 hideNodes = listOf("/dev/input/event10", "/dev/input/event11"),
             )
@@ -259,7 +300,7 @@ class RootMirrorProcessRepositoryTest {
             MirrorStartRequest(
                 source = "/dev/input/event9",
                 target = "/dev/input/event2",
-                homeAsBack = false,
+                homeMode = HomeButtonMode.PASS_THROUGH,
                 comboHoldKillApp = false,
             )
         )
@@ -276,7 +317,7 @@ class RootMirrorProcessRepositoryTest {
                 MirrorStartRequest(
                     source = "/dev/input/event9",
                     target = "/dev/input/event2",
-                    homeAsBack = false,
+                    homeMode = HomeButtonMode.PASS_THROUGH,
                     comboHoldKillApp = false,
                 )
             )
@@ -339,8 +380,9 @@ private class FakeSettingsRepository(
         state = state.copy(expectedRunning = expectedRunning)
     }
 
-    override fun setHomeAsBackEnabled(enabled: Boolean) {
-        state = state.copy(homeAsBack = enabled)
+    override fun setPlayer1(name: String?, path: String?) = Unit
+    override fun setHomeMode(mode: HomeButtonMode) {
+        state = state.copy(homeMode = mode)
     }
 
     override fun setComboHoldKillAppEnabled(enabled: Boolean) {

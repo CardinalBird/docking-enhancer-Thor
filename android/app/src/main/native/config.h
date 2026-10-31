@@ -44,7 +44,7 @@ struct binding {
 };
 
 struct config {
-    int home_as_back;
+    int home_mode;  // enum home_mode in input_mirror.c: 0 pass through, 1 Back, 2 Home
     int combo_hold_kill_app;
     int virtual_mouse;
     long long generation;

@@ -7,6 +7,19 @@ import com.odininputmirror.domain.model.TargetTraits
 import com.odininputmirror.domain.repository.InputDeviceRepository
 import java.io.File
 
+// Compiled once: these run on every supervisor tick, several times per /proc block and dumpsys line.
+private val PROC_BLOCK_SEPARATOR = Regex("\\n\\s*\\n")
+private val PROC_IDENTITY = Regex("I: Bus=([0-9A-Fa-f]+) Vendor=([0-9A-Fa-f]+) Product=([0-9A-Fa-f]+)")
+private val PROC_NAME = Regex("N: Name=\"([^\"]+)\"")
+private val PROC_HANDLERS = Regex("H: Handlers=(.+)")
+private val PROC_EVENT_NAME = Regex("\\bevent\\d+\\b")
+private val PROC_KEY_BITS = Regex("B: KEY=(.+)")
+private val PROC_ABS_BITS = Regex("B: ABS=(.+)")
+private val DUMPSYS_HUB_ID = Regex("""^\s+(-?\d+): """)
+private val DUMPSYS_HUB_PATH = Regex("""^\s+Path: (/dev/input/\S+)""")
+private val DUMPSYS_READER_DEVICE = Regex("""^\s+Device (-?\d+): """)
+private val DUMPSYS_READER_HUBS = Regex("""EventHub Devices: \[\s*(-?\d+)""")
+
 internal class AndroidInputDeviceRepository(
     private val shell: MirrorShell = UnavailableShell,
     private val pathExists: (String) -> Boolean = { File(it).exists() },
@@ -44,11 +57,13 @@ internal class AndroidInputDeviceRepository(
     // The real pad keeps its /proc entry — bitmasks included — even while its /dev node is hidden,
     // which is exactly when seeding runs.
     override fun sourceTraits(key: MappingKey): TargetTraits? {
-        val entry = readProcEntries().firstOrNull {
+        // The node with the most keys: a pad's motion-sensor/IMU node carries the same vendor:product
+        // and no buttons, and whichever registered first used to win, seeding an empty button set.
+        val entry = readProcEntries().filter {
             it.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&
                 it.vendorId != 0 &&
                 MappingKey.of(it.vendorId, it.productId) == key
-        } ?: return null
+        }.maxByOrNull { it.keyBits.size } ?: return null
         if (entry.keyBits.isEmpty() && entry.absBits.isEmpty()) {
             return null
         }
@@ -57,27 +72,59 @@ internal class AndroidInputDeviceRepository(
 
     private fun readProcEntries(): List<ProcInputEntry> =
         shell.read("cat /proc/bus/input/devices")
-            .split(Regex("\\n\\s*\\n"))
+            .split(PROC_BLOCK_SEPARATOR)
             .mapNotNull { parseProcInputBlock(it) }
+
+    // `dumpsys input` is a heavy dump that takes the input locks, and two identically named pads
+    // (the normal Thor state: the firmware twins one external pad, so it and the real pad share a
+    // name) made it run on every 2.5s tick. The id→node map only changes when the framework's
+    // device set does, so it is keyed on the candidate ids and re-read only when they change. Kept
+    // only when every id resolved: a dump taken mid-registration must not pin a miss.
+    @Volatile
+    private var dumpsysPaths: Pair<List<Int>, Map<Int, String>>? = null
+
+    internal fun knownPathsFor(candidateIds: List<Int>): Map<Int, String> {
+        val key = candidateIds.sorted()
+        dumpsysPaths?.let { (ids, paths) -> if (ids == key) return paths }
+        val paths = parseDumpsysInputPaths(shell.read("dumpsys input"))
+        if (key.all { it in paths }) {
+            dumpsysPaths = key to paths
+        }
+        return paths
+    }
 
     override fun getConnectedControllers(): List<ControllerDevice> {
         val procEntries = readProcEntries()
 
         val mirroredNames = computeMirroredNames(procEntries)
 
-        val framework = InputDevice.getDeviceIds()
+        val candidates = InputDevice.getDeviceIds()
             .asSequence()
             .mapNotNull { id -> InputDevice.getDevice(id) }
             .filter { device -> isPhysicalGameController(device) }
             .map { it.toCandidate() }
-            .mapNotNull { candidate -> resolveControllerDevice(candidate, procEntries, mirroredNames) }
-            .distinctBy { it.path }
             .toList()
 
-        val devices = (framework + hiddenSourceDevice(framework, procEntries))
-            .sortedBy { it.controllerNumber }
+        // Matching by name sends two identically named pads to the same node, and the distinctBy
+        // below then drops one. Only then is the input service asked which node each device really
+        // reads, so the common case costs no extra privileged call.
+        val sharedName = candidates.groupBy { it.name.lowercase() }.any { it.value.size > 1 }
+        val knownPaths = if (sharedName) knownPathsFor(candidates.map { it.id }) else emptyMap()
 
-        return resolveInternalController(devices, manualInternalGuidProvider())
+        val framework = candidates
+            .mapNotNull { candidate ->
+                resolveControllerDevice(candidate, procEntries, mirroredNames, knownPaths[candidate.id])
+            }
+            .distinctBy { it.path }
+            .toList()
+            .let(::dropForeignHideNodes)
+
+        // The hidden source is the external pad being mirrored, so it never takes part in choosing
+        // the internal one. It used to: rebuilt with controller number 0 it sorted first, and on a
+        // Thor it shares the built-in pad's 2020:0111 guid, so a manual pick of the built-in pad
+        // matched it instead and the mirror swapped source and target every few seconds.
+        val internalResolved = resolveInternalController(framework.sortedBy { it.controllerNumber }, manualInternalGuidProvider())
+        return (internalResolved + hiddenSourceDevice(framework, procEntries)).sortedBy { it.controllerNumber }
     }
 
     // When the hide-external feature has unlinked the mirror source's /dev node, the framework drops
@@ -108,7 +155,7 @@ internal class AndroidInputDeviceRepository(
                 isKnownInternal = false,
                 hideNodePath = entry.path,
                 // The mirror is running, so this is the path the wizard sees the pad through.
-                mappingKey = resolveMappingKey(entry.name, procEntries),
+                mappingKey = resolveMappingKey(entry, procEntries),
             ),
         )
     }
@@ -126,7 +173,11 @@ internal class AndroidInputDeviceRepository(
             return devices
         }
 
-        val manualMatch = manualGuid?.let { guid -> devices.firstOrNull { it.guid == guid } }
+        // Several devices can share a guid (it is only vendor:product, and the Thor's firmware gives
+        // an external pad the built-in pad's), so a recognised built-in pad wins among them.
+        val manualMatch = manualGuid?.let { guid ->
+            devices.filter { it.guid == guid }.maxByOrNull { it.isKnownInternal }
+        }
         if (manualMatch != null) {
             return devices.map { device -> device.copy(isInternal = device.path == manualMatch.path) }
         }
@@ -168,11 +219,17 @@ internal class AndroidInputDeviceRepository(
      * true vendor:product. Returns null when no such entry exists, which is the normal case for the
      * internal controller.
      */
-    internal fun resolveMappingKey(name: String, entries: List<ProcInputEntry>): MappingKey? {
+    internal fun resolveMappingKey(resolved: ProcInputEntry, entries: List<ProcInputEntry>): MappingKey? {
+        // A pad the firmware did NOT twin is already its own real entry. Looking it up by name would
+        // hand a same-named clone (a DS4 and a third-party "Wireless Controller") the other pad's key,
+        // so it would mirror with and edit the wrong mapping.
+        if (resolved.vendorId !in MIRRORING_QUIRK_VENDOR_IDS && resolved.vendorId != 0) {
+            return MappingKey.of(resolved.vendorId, resolved.productId)
+        }
         val real = entries.firstOrNull { entry ->
             entry.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&
                 entry.vendorId != 0 &&
-                entry.name.lowercase() == name.lowercase()
+                entry.name.lowercase() == resolved.name.lowercase()
         } ?: return null
         return MappingKey.of(real.vendorId, real.productId)
     }
@@ -181,6 +238,8 @@ internal class AndroidInputDeviceRepository(
         candidate: ControllerCandidate,
         entries: List<ProcInputEntry>,
         mirroredNames: Set<String>,
+        // The node the input service says this device reads, when we asked. Beats any name match.
+        knownPath: String? = null,
     ): ControllerDevice? {
         val normalizedName = candidate.name.lowercase()
         val candidates = entries.filter { entry ->
@@ -199,7 +258,10 @@ internal class AndroidInputDeviceRepository(
             sameVendorProduct || sameName
         }
 
-        return candidates
+        // The node the input service named wins outright, but only among nodes that pass the checks
+        // above: narrowing to it first dropped the pad entirely whenever that node was a sibling
+        // (a motion sensor, say) that failed them.
+        return (candidates.filter { it.path == knownPath }.ifEmpty { candidates })
             .sortedWith(
                 compareByDescending<ProcInputEntry> {
                     candidate.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&
@@ -225,7 +287,7 @@ internal class AndroidInputDeviceRepository(
                     hideNodePath = resolveHideNodePath(isInternal, normalizedName, entries),
                     // Only an external controller gets one: the internal pad IS the quirk vendor, so
                     // it has no separate real entry to point at, and it is never the one remapped.
-                    mappingKey = if (isInternal) null else resolveMappingKey(entry.name, entries),
+                    mappingKey = if (isInternal) null else resolveMappingKey(entry, entries),
                 )
             }
     }
@@ -251,28 +313,27 @@ internal class AndroidInputDeviceRepository(
     }
 
     internal fun parseProcInputBlock(block: String): ProcInputEntry? {
-        val identityMatch = Regex("I: Bus=([0-9A-Fa-f]+) Vendor=([0-9A-Fa-f]+) Product=([0-9A-Fa-f]+)")
-            .find(block)
+        val identityMatch = PROC_IDENTITY.find(block)
             ?: return null
-        val name = Regex("N: Name=\"([^\"]+)\"").find(block)?.groupValues?.getOrNull(1) ?: return null
-        val handlersLine = Regex("H: Handlers=(.+)").find(block)?.groupValues?.getOrNull(1) ?: return null
-        val eventName = Regex("\\bevent\\d+\\b").find(handlersLine)?.value ?: return null
+        val name = PROC_NAME.find(block)?.groupValues?.getOrNull(1) ?: return null
+        val handlersLine = PROC_HANDLERS.find(block)?.groupValues?.getOrNull(1) ?: return null
+        val eventName = PROC_EVENT_NAME.find(handlersLine)?.value ?: return null
 
         return ProcInputEntry(
             name = name,
-            handlers = handlersLine.split(Regex("\\s+")).filter { it.isNotBlank() },
+            handlers = handlersLine.split(WHITESPACE).filter { it.isNotBlank() },
             path = "/dev/input/$eventName",
             eventName = eventName,
             bus = identityMatch.groupValues[1].toInt(16),
             vendorId = identityMatch.groupValues[2].toInt(16),
             productId = identityMatch.groupValues[3].toInt(16),
-            keyBits = capabilityBits(block, "KEY"),
-            absBits = capabilityBits(block, "ABS"),
+            keyBits = capabilityBits(block, PROC_KEY_BITS),
+            absBits = capabilityBits(block, PROC_ABS_BITS),
         )
     }
 
-    private fun capabilityBits(block: String, kind: String): Set<Int> =
-        Regex("B: $kind=(.+)").find(block)?.groupValues?.getOrNull(1)
+    private fun capabilityBits(block: String, pattern: Regex): Set<Int> =
+        pattern.find(block)?.groupValues?.getOrNull(1)
             ?.let(::parseCapabilityBits)
             ?: emptySet()
 
@@ -314,6 +375,8 @@ internal class AndroidInputDeviceRepository(
 
 internal data class ControllerCandidate(
     val name: String,
+    // InputDevice.getId(), the key into parseDumpsysInputPaths.
+    val id: Int = -1,
     val vendorId: Int,
     val productId: Int,
     val controllerNumber: Int,
@@ -322,6 +385,7 @@ internal data class ControllerCandidate(
 
 private fun InputDevice.toCandidate(): ControllerCandidate = ControllerCandidate(
     name = name,
+    id = id,
     vendorId = vendorId,
     productId = productId,
     controllerNumber = controllerNumber,
@@ -335,3 +399,56 @@ private fun InputDevice.getGuid(): String = guidOf(vendorId, productId)
 internal fun guidOf(vendorId: Int, productId: Int): String = String.format("%016x%016x", productId, vendorId)
 
 private fun Int.hasSource(source: Int): Boolean = this and source == source
+
+/**
+ * Framework input device id -> the /dev node it reads, from `dumpsys input`.
+ *
+ * Two sections are joined. "Event Hub State" lists every node by EventHub id with its `Path:`;
+ * "Input Reader State" lists every framework device (`Device N:`) and, from Android 11, the EventHub
+ * ids behind it (`EventHub Devices: [ 3 ]`). Before Android 11 the two ids are the same number, so a
+ * device without that line is looked up under its own id. Anything unparseable just leaves the device
+ * out, and the caller falls back to matching by name.
+ */
+internal fun parseDumpsysInputPaths(dump: String): Map<Int, String> {
+    val hubPaths = mutableMapOf<Int, String>()
+    val readerHub = mutableMapOf<Int, Int>()
+    var section = ""
+    var hubId: Int? = null
+    var readerId: Int? = null
+    for (line in dump.lineSequence()) {
+        if (line.isNotEmpty() && !line[0].isWhitespace()) {
+            section = line.trim()
+            continue
+        }
+        if (section.startsWith("Event Hub State")) {
+            DUMPSYS_HUB_ID.find(line)?.let { hubId = it.groupValues[1].toInt() }
+            DUMPSYS_HUB_PATH.find(line)?.let { match ->
+                hubId?.let { hubPaths[it] = match.groupValues[1] }
+            }
+        } else if (section.startsWith("Input Reader State")) {
+            DUMPSYS_READER_DEVICE.find(line)?.let {
+                val id = it.groupValues[1].toInt()
+                readerId = id
+                readerHub[id] = id
+            }
+            DUMPSYS_READER_HUBS.find(line)?.let { match ->
+                readerId?.let { readerHub[it] = match.groupValues[1].toInt() }
+            }
+        }
+    }
+    return readerHub.mapNotNull { (reader, hub) -> hubPaths[hub]?.let { reader to it } }.toMap()
+}
+
+/**
+ * The hide node is found by name, so with two identically named pads one can be handed the other's
+ * node, and mirroring it would hide the wrong controller. A node that is another device's own path
+ * belongs to that device: drop it. The pad left without one stays visible while mirrored (a phantom
+ * player 2), which beats making a real pad vanish.
+ */
+internal fun dropForeignHideNodes(devices: List<ControllerDevice>): List<ControllerDevice> {
+    val ownPaths = devices.map { it.path }.toSet()
+    return devices.map { device ->
+        val hide = device.hideNodePath
+        if (hide != null && hide != device.path && hide in ownPaths) device.copy(hideNodePath = null) else device
+    }
+}

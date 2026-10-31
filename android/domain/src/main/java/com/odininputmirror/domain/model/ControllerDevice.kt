@@ -1,5 +1,29 @@
 package com.odininputmirror.domain.model
 
+/**
+ * The pad locked in with L + R, if it is here. The exact node it was picked on wins, which is what
+ * keeps two identical pads apart; the name is the fallback once a reconnect has moved it to a new
+ * node, and the name is what survives the firmware republishing the pad under its own vendor id.
+ */
+fun List<ControllerDevice>.lockedPlayer1(name: String?, path: String?): ControllerDevice? {
+    if (name == null) return null
+    return firstOrNull { path != null && it.path == path }
+        ?: firstOrNull { it.name.equals(name, ignoreCase = true) }
+}
+
+/** The external pad to mirror: the locked player 1 when it is connected, otherwise the first external. */
+fun List<ControllerDevice>.pickExternal(
+    local: ControllerDevice?,
+    player1Name: String?,
+    player1Path: String? = null,
+): ControllerDevice? {
+    val externals = filter { !it.isInternal && (local == null || !it.isSamePhysicalControllerAs(local)) }
+    return externals.lockedPlayer1(player1Name, player1Path) ?: externals.firstOrNull()
+}
+
+private fun ControllerDevice.isSamePhysicalControllerAs(other: ControllerDevice): Boolean =
+    controllerNumber > 0 && controllerNumber == other.controllerNumber
+
 data class ControllerDevice(
     val name: String,
     val path: String,

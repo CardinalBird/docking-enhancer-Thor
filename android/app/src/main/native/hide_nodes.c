@@ -28,7 +28,8 @@ int count_active_hidden(const struct hidden_node *nodes, int count) {
 // (POSIX: unlink removes the name, not the open description). The mirror never reads these nodes;
 // they are duplicate representations of the source we simply want gone while mirroring. Records the
 // device number so restore_hidden_nodes can recreate the node on exit.
-void hide_node(const char *path, struct hidden_node *slot, unsigned short expected_vendor) {
+void hide_node(const char *path, struct hidden_node *slot, unsigned short expected_vendor,
+               dev_t target_rdev) {
     memset(slot, 0, sizeof(*slot));
     // Refuse anything we could not record verbatim. unlink() below would take the FULL path while the
     // state file kept a truncated one, so the node would go away and no restore — not on exit, not on
@@ -61,6 +62,16 @@ void hide_node(const char *path, struct hidden_node *slot, unsigned short expect
         ioctl(probe, EVIOCGID, &id) != 0 || id.vendor != expected_vendor) {
         fprintf(stderr, "hide: %s failed identity check (vendor is not %04x), refusing\n",
                 path, expected_vendor);
+        close(probe);
+        return;
+    }
+    // The vendor check alone cannot tell the handheld's own pad from the external one: on the Thor
+    // both are 0x2020, so a wrong path would unlink the very node we are writing into and take the
+    // built-in controls away from the framework. Compared by device number, so no path spelling or
+    // renumbering can slip past it. The SOURCE is deliberately not refused: on the Thor it is often
+    // the 0x2020 twin that is meant to be hidden.
+    if (st.st_rdev == target_rdev) {
+        fprintf(stderr, "hide: %s is the mirror target, refusing\n", path);
         close(probe);
         return;
     }

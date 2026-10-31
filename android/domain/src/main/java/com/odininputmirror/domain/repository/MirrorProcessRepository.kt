@@ -36,8 +36,9 @@ interface MirrorProcessRepository {
 
     /**
      * Generation of the config the running daemon has adopted, or null when it cannot be read — no
-     * fresh heartbeat, or a daemon predating the ack. Null is what sends callers back to the restart
-     * path instead of leaving a toggle silently unapplied.
+     * fresh heartbeat, or a daemon predating the ack. Callers treat null as "nothing to correct yet"
+     * (see ResolveAutoMirrorDecisionUseCase): pushing on silence would fire on every tick of the
+     * startup window.
      */
     fun appliedConfigGeneration(): Long?
 

@@ -21,23 +21,39 @@ import com.odininputmirror.domain.model.SlotIcon
  */
 internal class GameControllerDb(private val lines: Sequence<String>) {
 
-    /** The database entry for this vendor:product, or null. First match wins, as in SDL. */
-    fun entryFor(vendorId: Int, productId: Int): Map<String, String>? {
-        for (line in lines) {
-            val fields = line.trim().split(',')
-            if (fields.size < 3 || line.startsWith("#")) continue
-            val guid = fields[0]
-            if (guid.length != 32) continue
-            if (guidWord(guid, 4) == vendorId && guidWord(guid, 8) == productId) {
-                return fields.drop(2)
+    /**
+     * The database entry for this vendor:product that fits the pad, or null.
+     *
+     * Only Linux entries: their indices come from the evdev walk [SdlJoystickIndex] reproduces, and an
+     * Android entry numbers buttons some other way. A pad can have several Linux entries, one per
+     * driver that has exposed it (the Switch Pro has four), and they disagree. The first one used to
+     * win; on a Thor it was written for another driver and put Home on D-pad up and the stick clicks
+     * on the D-pad. So each is scored by how many roles land on the code a standard gamepad driver
+     * gives that role, against the pad's real [sourceKeys], and the best fit wins (first on a tie).
+     */
+    fun entryFor(vendorId: Int, productId: Int, sourceKeys: Set<Int> = emptySet()): Map<String, String>? {
+        val buttons = SdlJoystickIndex.buttonCodes(sourceKeys)
+        return lines
+            .mapNotNull { line ->
+                val fields = line.trim().split(',')
+                if (fields.size < 3 || line.startsWith("#")) return@mapNotNull null
+                val guid = fields[0]
+                if (guid.length != 32) return@mapNotNull null
+                if (guidWord(guid, 4) != vendorId || guidWord(guid, 8) != productId) return@mapNotNull null
+                fields.drop(2)
                     .mapNotNull { field ->
                         val at = field.indexOf(':')
                         if (at <= 0) null else field.take(at) to field.substring(at + 1)
                     }
                     .toMap()
+                    .takeIf { it["platform"] == "Linux" }
             }
-        }
-        return null
+            .toList()
+            .maxByOrNull { entry ->
+                STANDARD_CODES.count { (role, code) ->
+                    entry[role]?.removePrefix("b")?.toIntOrNull()?.let(buttons::getOrNull) == code
+                }
+            }
     }
 
     // The GUID packs little-endian u16s at fixed byte offsets: bus, crc, VENDOR, 0, PRODUCT, 0,
@@ -68,6 +84,7 @@ internal class GameControllerDb(private val lines: Sequence<String>) {
         ): ControllerMapping {
             val buttons = SdlJoystickIndex.buttonCodes(sourceKeys)
             val axes = SdlJoystickIndex.axisCodes(sourceAxes)
+            val hats = sourceAxes.filter { it in ABS_HAT0X..ABS_HAT0X + 7 }.toSet()
             val byIcon = slots.associateBy { it.icon }
             val bindings = mutableListOf<Binding>()
 
@@ -77,7 +94,7 @@ internal class GameControllerDb(private val lines: Sequence<String>) {
                 if (role == "platform") continue
                 val icon = BUTTON_ROLES[role]
                 if (icon != null) {
-                    val source = parseSource(spec, buttons, axes, wholeAxis = false) ?: continue
+                    val source = parseSource(spec, buttons, axes, hats, wholeAxis = false) ?: continue
                     val slotTarget = target(icon) ?: continue
                     bindings += Binding(source, slotTarget)
                     continue
@@ -90,7 +107,7 @@ internal class GameControllerDb(private val lines: Sequence<String>) {
                 val stick = STICK_AXIS_ROLES[role]
                 if (stick != null) {
                     val (positiveIcon, negativeIcon) = stick
-                    val source = parseSource(spec, buttons, axes, wholeAxis = true) ?: continue
+                    val source = parseSource(spec, buttons, axes, hats, wholeAxis = true) ?: continue
                     if (source.kind == ControlKind.AXIS) {
                         val forward = source.direction
                         target(positiveIcon)?.let {
@@ -121,6 +138,7 @@ internal class GameControllerDb(private val lines: Sequence<String>) {
             spec: String,
             buttons: List<Int>,
             axes: List<Int>,
+            hats: Set<Int>,
             wholeAxis: Boolean,
         ): ControlRef? {
             var body = spec
@@ -142,6 +160,9 @@ internal class GameControllerDb(private val lines: Sequence<String>) {
                     val hat = parts[0].toIntOrNull() ?: return null
                     val mask = parts[1].toIntOrNull() ?: return null
                     val x = ABS_HAT0X + hat * 2
+                    // A pad with no such hat reports its D-pad some other way; a binding to a hat it
+                    // never moves would just sit on the slot.
+                    if (x !in hats) return null
                     // SDL hat masks: 1 up, 2 right, 4 down, 8 left. evdev counts hat Y downward.
                     when (mask) {
                         1 -> ControlRef.half(x + 1, -1)
@@ -187,6 +208,16 @@ internal class GameControllerDb(private val lines: Sequence<String>) {
         )
 
         private const val ABS_HAT0X = 0x10
+
+        // The code a standard Linux gamepad driver gives each role, for scoring entries. Face buttons
+        // are left out: which letter sits where is exactly what Nintendo and Xbox pads disagree on.
+        private val STANDARD_CODES = mapOf(
+            "leftshoulder" to 0x136, "rightshoulder" to 0x137,
+            "lefttrigger" to 0x138, "righttrigger" to 0x139,
+            "back" to 0x13a, "start" to 0x13b, "guide" to 0x13c,
+            "leftstick" to 0x13d, "rightstick" to 0x13e,
+            "dpup" to 0x220, "dpdown" to 0x221, "dpleft" to 0x222, "dpright" to 0x223,
+        )
     }
 }
 

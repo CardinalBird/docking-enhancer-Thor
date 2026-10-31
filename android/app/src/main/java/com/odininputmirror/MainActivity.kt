@@ -1,6 +1,7 @@
 package com.odininputmirror
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -28,6 +29,10 @@ class MainActivity : ComponentActivity() {
     // focus because FocusRequester.requestFocus() silently no-ops while the window is unfocused —
     // which is why focus never landed on launch until a button press handed it out by default.
     var onWindowFocused: (() -> Unit)? = null
+
+    // Set while the Player 1 picker is open; called with the pad that pressed L + R.
+    var onLPlusR: ((InputDevice) -> Unit)? = null
+    private val shouldersHeld = mutableMapOf<Int, Int>()  // deviceId -> bits: 1 = L, 2 = R
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -78,6 +83,29 @@ class MainActivity : ComponentActivity() {
         if (!granted) {
             requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    // Lint reads overriding dispatchKeyEvent as calling a restricted androidx API; it is the
+    // platform Activity method, overridden, and the androidx restriction does not apply.
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val picker = onLPlusR
+        val bit = when (event.keyCode) {
+            KeyEvent.KEYCODE_BUTTON_L1 -> 1
+            KeyEvent.KEYCODE_BUTTON_R1 -> 2
+            else -> 0
+        }
+        if (picker == null || bit == 0) {
+            return super.dispatchKeyEvent(event)
+        }
+        // Tracked per device so L on one pad and R on another never count as a press.
+        val held = shouldersHeld[event.deviceId] ?: 0
+        val now = if (event.action == KeyEvent.ACTION_DOWN) held or bit else held and bit.inv()
+        shouldersHeld[event.deviceId] = now
+        if (now == 3 && held != 3) {
+            event.device?.let(picker)
+        }
+        return true
     }
 
     // Make the app fully gamepad-drivable, the way a handheld user expects:

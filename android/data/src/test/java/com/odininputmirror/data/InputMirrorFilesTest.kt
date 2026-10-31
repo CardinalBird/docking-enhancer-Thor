@@ -2,7 +2,6 @@ package com.odininputmirror.data
 
 import java.io.ByteArrayInputStream
 import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -33,17 +32,5 @@ class InputMirrorFilesTest {
         val reinstalled = files.ensureBinaryInstalled()
 
         assertArrayEquals(asset, reinstalled.readBytes())
-    }
-
-    @Test
-    fun prepareProcessFilesDeletesStalePidAndHeartbeat() {
-        val files = files()
-        files.pidFile.writeText("123")
-        files.heartbeatFile.writeText("456")
-
-        files.prepareProcessFiles()
-
-        assertFalse(files.pidFile.exists())
-        assertFalse(files.heartbeatFile.exists())
     }
 }
