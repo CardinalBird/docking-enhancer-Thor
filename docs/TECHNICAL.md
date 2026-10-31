@@ -103,12 +103,72 @@ mechanism.
 
 The one thing that still restarts the daemon is changing **which devices** are mirrored.
 
+## Button combinations (chords)
+
+A mapping target can be driven by 2–4 controls held together instead of one. They are kept apart
+from ordinary bindings all the way down, so code that reads "one source per binding" can never
+mistake a chord for its first member.
+
+**Stored** as one line per chord beside the binding lines, `c <n> <kind code dir>×n <kind code dir>`
+(`m …` lines are untouched). A parser that predates chords skips `c` lines, so a downgrade loses the
+chords and nothing else. A mapping holding only chords is not "empty": empty means "re-seed from the
+database", which would throw them away.
+
+**Sent to the daemon** under its own config key, as fixed 16-wide rows:
+
+```json
+"mapping": {
+  "bindings": [[0, 307, 0, 0, 308, 0]],
+  "chords":   [[2, 0, 314, 0, 0, 315, 0, 0, 0, 0, 0, 0, 0, 0, 102, 0]]
+}
+```
+
+`[n, kind, code, dir ×4 (unused slots zero), target kind, code, dir]`. Members are buttons or half
+axes (with the same press/release hysteresis as an axis bound to a button); the target is a key,
+including `KEY_HOME` (102) and `KEY_BACK` (158), which take the existing tap / hold-for-Recents path.
+Chords get their own key because the tuple reader stops at the first row wider than it expects, which
+would silently drop every binding after it. Up to 16 chords. The app always writes the key, empty
+array included, for the same reason as `bindings`.
+
+**Matching** runs before the bindings, in `mapping.c`:
+
+- When the last member goes down, the target is pressed. Members pressed earlier have already reached
+  the target as themselves, so they are released there first (through the same bindings their press
+  took, so a remapped member is released under its remapped code).
+- Every member is then swallowed until it is let go, autorepeat included.
+- Letting go of any member releases the target.
+- Members that are not part of a complete chord pass through as normal, so a chord costs nothing
+  until it fires. Overlapping chords are not arbitrated: each fires on its own completion.
+
+**Guide.** Under the Home button setting (Home or Back), Guide is swallowed before the mapping ever
+sees it. It still feeds the chords, and when a chord owns the press Guide's own Home/Back/Recents is
+skipped; Guide alone behaves as before.
+
+**Capture.** The editor captures with `capture chord`, a non-latching mode that logs every press and
+release (`button N`, `release N`, `axis_button C S`, `axis_release C S`). The app treats whatever was
+held together as the answer once everything is let go: a single press and release is an ordinary
+binding, several are a chord. With the mirror off the app reads the same edges from the Activity. No
+on-screen confirm is involved, so it works docked with only the external pad in hand.
+
+## Themes and button prompts
+
+The palette is a `CompositionLocal` read through the same `Palette` name every screen already used:
+Dark, Super dark and Light, with teal `#00C2D6` focus and selection in all three. System bar icons
+follow the app theme, not the system's.
+
+Button prompts are vector drawables converted from Kenney Input Prompts 1.5 (`res/drawable/kp_*`),
+drawn through one `PadIcon` and tinted by the theme. Xbox Series art is the default; Nintendo Switch 2
+art takes over once the Nintendo preset is applied, remembered per controller. Kenney draws the plain
+Xbox and Switch A/B/X/Y identically, so the Xbox faces use the pack's coloured versions (left
+untinted).
+
 ## Latency
 
 **The mirror adds roughly 0.04 ms to a button press** (p95 ≈ 0.11 ms), measured on an Odin 2 Portal
 over 300 presses. An earlier run recorded 0.09 ms; re-measuring the older daemon alongside the current
 one gave the same ~0.04 ms, so that spread is the device's own state on the day rather than anything
 in the code. Only compare a mirrored figure against the control run from the same session.
+Re-measured on an AYN Thor: median ~0.04 ms as well (65 µs mirrored against 22 µs without the daemon).
 
 The figure is the difference against a control run of the same round trip with no daemon in between,
 so it excludes the measurement harness's own overhead. For scale, that is a fraction of a percent of a
@@ -139,6 +199,8 @@ Reproduce it with the e2e suite's `latency.sh`.
   when you remapped your face buttons would be a combo you could accidentally remap away, with no way
   left to get back. Remapping A does change what the game sees; it does not change which button
   left-clicks in mouse mode.
+- **A config larger than 8 KB is refused**, not read in part: a truncated document would keep the
+  rows before the cut and silently drop the rest (the chords come last).
 - **A config without a `bindings` key clears the mapping** rather than keeping the one in force. Every
   other field in a partial config falls back to the running value; this one does not, because
   "no bindings" has to be expressible — otherwise a cleared mapping could never be pushed to a live
@@ -146,15 +208,25 @@ Reproduce it with the e2e suite's `latency.sh`.
 
 ## Building from source
 
-**Prerequisites:** JDK 17, Android SDK (compileSdk 35), and an NDK only if you intend to change the C
-core — a prebuilt binary is committed.
+**Prerequisites:** JDK 21 to run Gradle (the code compiles for Java 17), the Android SDK
+(compileSdk 37), and an NDK (26.3 used here) only if you intend to change the C core — a prebuilt
+binary is committed.
+
+macOS / Linux:
+
+```sh
+# App
+cd android && ./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Native binary (only when the C sources change)
+ANDROID_NDK_HOME=/path/to/ndk scripts/build-input-mirror.sh
+```
+
+Windows:
 
 ```powershell
-# App
 .\android\gradlew.bat -p .\android :app:assembleDebug
-adb install -r .\android\app\build\outputs\apk\debug\app-debug.apk
-
-# Native binary (only when input_mirror.c changes)
 $env:ANDROID_NDK_HOME = "$env:LOCALAPPDATA\Android\Sdk\ndk\<version>"
 .\scripts\build-input-mirror.ps1
 ```
@@ -171,7 +243,7 @@ It builds with `-Werror` and the usual hardening for something that runs as root
 the artifact is committed rather than built by CI, a warning that nobody's local build surfaces would
 otherwise ship unnoticed — `-Werror` is what makes the build itself the thing that refuses.
 
-`scripts/build-input-mirror.ps1` records the binary's SHA-256 beside it.
+`scripts/build-input-mirror.sh` (or `.ps1`) records the binary's SHA-256 beside it.
 `scripts/check-input-mirror-sync.ps1` verifies the committed binary matches that hash and that no
 source is newer than it, and the tracked `pre-commit` hook (install once with
 `scripts/install-hooks.ps1`) refuses a commit that touches `native/*.c` without staging the rebuilt
@@ -182,8 +254,8 @@ It targets `arm64-v8a` and drops the result into
 don't need an NDK. **Rebuild and commit it in the same commit as any native source change**, or the
 repo describes one daemon and ships another.
 
-Stack: Kotlin 2.0.21 · Compose + Material 3 (BOM 2024.10.01) · Gradle 8.11.1 · AGP 8.7.3 · JVM 17 ·
-minSdk 28 · target/compileSdk 35.
+Stack: Kotlin 2.4.21 · Compose + Material 3 (BOM 2026.09.00) · Gradle 9.8.2 · AGP 9.5.0 · JVM 17 ·
+minSdk 28 · targetSdk 35 · compileSdk 37.
 
 ## Testing
 

@@ -38,6 +38,13 @@ The app's typeface is Poppins SemiBold, copyright 2020 The Poppins Project Autho
 (https://github.com/itfoundry/Poppins), under the SIL Open Font License 1.1. See
 [third-party/poppins/NOTICE.md](third-party/poppins/NOTICE.md).
 
+### SDL GameControllerDB
+
+`android/data/src/main/assets/gamecontrollerdb.txt` is the community SDL game controller database
+(https://github.com/mdqinc/SDL_GameControllerDB), under the zlib license, copyright Sam Lantinga and
+the contributors. It seeds the default mapping for pads it knows. See
+[third-party/gamecontrollerdb/NOTICE.md](third-party/gamecontrollerdb/NOTICE.md).
+
 ### Kenney Input Prompts
 
 The button and controller prompts (`android/app/src/main/res/drawable/kp_*.xml`) are converted from
