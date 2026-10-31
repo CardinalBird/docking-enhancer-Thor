@@ -489,9 +489,12 @@ static void release_target_holds(struct mirror_state *s) {
     // Failures are ignored as before; at worst this is the shutdown after the target already failed.
     (void)flush_target(s);
     // The mapping's edge detectors still describe what was just released. Left alone, a bound trigger
-    // released while nothing was forwarded would make its next real press look like no change.
-    memset(s->mapping.drive, 0, sizeof(s->mapping.drive));
-    memset(s->mapping.pressed, 0, sizeof(s->mapping.pressed));
+    // released while nothing was forwarded would make its next real press look like no change, and a
+    // chord would count members whose releases it never got to see.
+    mapping_reset_state(&s->mapping);
+    // A bound Home / Back held now would tap on a release resolved under whatever comes next.
+    s->nav_pressed_at_ms[0] = 0;
+    s->nav_pressed_at_ms[1] = 0;
 }
 
 // Hand control to the pointer, then quiesce the target — in that order, because a pointer that fails
@@ -561,10 +564,13 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
     if (!s->mouse.mode &&
         (s->mapping.count != next->binding_count ||
          memcmp(s->mapping.entries, next->bindings,
-                (size_t)s->mapping.count * sizeof(struct binding)) != 0)) {
+                (size_t)s->mapping.count * sizeof(struct binding)) != 0 ||
+         s->mapping.chord_count != next->chord_count ||
+         memcmp(s->mapping.chords, next->chords,
+                (size_t)s->mapping.chord_count * sizeof(struct chord)) != 0)) {
         release_target_holds(s);
     }
-    mapping_load(&s->mapping, next->bindings, next->binding_count);
+    mapping_load(&s->mapping, next->bindings, next->binding_count, next->chords, next->chord_count);
 }
 
 // Read whatever the app queued on the control fifo. Returns the capture command in force and sets
@@ -574,6 +580,7 @@ enum control_command {
     CONTROL_NONE = 0,
     CONTROL_CAPTURE_BUTTON,
     CONTROL_CAPTURE_STICK,
+    CONTROL_CAPTURE_CHORD,
     CONTROL_CAPTURE_OFF,
 };
 
@@ -603,6 +610,8 @@ static enum control_command drain_control(int fd, int *reload) {
                 command = CONTROL_CAPTURE_BUTTON;
             } else if (strstr(line, "capture stick") != NULL) {
                 command = CONTROL_CAPTURE_STICK;
+            } else if (strstr(line, "capture chord") != NULL) {
+                command = CONTROL_CAPTURE_CHORD;
             } else if (strstr(line, "capture off") != NULL) {
                 command = CONTROL_CAPTURE_OFF;
             } else if (strstr(line, "reload") != NULL) {
@@ -743,33 +752,37 @@ static int tap_bound_nav_key(struct mirror_state *s, const struct input_event *o
     return 0;
 }
 
-// Forward one event to the target: apply the Nintendo face-button swap, record what the target now
-// believes held/deflected (for mouse-mode entry), and queue it for the batch's single write. Returns 0,
-// or -1 if the target write kept failing.
-static int forward_event(struct mirror_state *s, const struct input_event *ev) {
-    // One event in, several possibly out: a mapping may change an event's very type, and more than
-    // one binding may name the same source.
-    struct input_event mapped[MAX_MAPPED_EVENTS];
-    int bound = 0;
-    int count = mapping_apply(&s->mapping, s->source_axes, s->target_axes, ev,
-                              mapped, MAX_MAPPED_EVENTS, &bound);
-
-    // The face-button swap corrects a pad whose layout we had to GUESS at. A binding is the user
-    // telling us, so it wins: swapping on top of one would invert exactly what they just set, which
-    // is maddening precisely because the editor shows the binding they wanted, working, and the pad
-    // does the opposite.
-    int swap = s->swap_nintendo_layout && !bound;
-
+// Send mapped events to the target: apply the Nintendo face-button swap, record what the target now
+// believes held/deflected (for mouse-mode entry), and queue each for the batch's single write.
+// Returns 0, or -1 if the target write kept failing.
+static int write_mapped(struct mirror_state *s, struct input_event *mapped, const unsigned char *flags,
+                        int count) {
     for (int i = 0; i < count; i++) {
         struct input_event *out = &mapped[i];
+        int bound = (flags[i] & MAPPED_BOUND) != 0;
+        int leak = (flags[i] & MAPPED_LEAK) != 0;
         if (bound && out->type == EV_KEY && (out->code == KEY_HOME || out->code == KEY_BACK)) {
+            if (leak) {
+                // A chord took this press over: no tap owed for it.
+                s->nav_pressed_at_ms[out->code == KEY_BACK] = 0;
+                continue;
+            }
             if (tap_bound_nav_key(s, out) != 0) {
                 return -1;
             }
             continue;
         }
-        if (swap && out->type == EV_KEY) {
+        // The face-button swap corrects a pad whose layout we had to GUESS at. A binding is the user
+        // telling us, so it wins: swapping on top of one would invert exactly what they just set,
+        // which is maddening precisely because the editor shows the binding they wanted, working, and
+        // the pad does the opposite.
+        if (s->swap_nintendo_layout && !bound && out->type == EV_KEY) {
             out->code = swap_nintendo_face_button(out->code);
+        }
+        // Taking back a press the target never saw (Guide, swallowed by the Home setting) would be a
+        // release out of nowhere.
+        if (leak && out->type == EV_KEY && out->code < KEY_CNT && !s->key_down[out->code]) {
+            continue;
         }
         // Post-swap: this is what the TARGET believes.
         if (out->type == EV_KEY && out->code < KEY_CNT) {
@@ -782,6 +795,43 @@ static int forward_event(struct mirror_state *s, const struct input_event *ev) {
         }
     }
     return 0;
+}
+
+// Forward one event to the target through the mapping. One event in, several possibly out: a mapping
+// may change an event's very type, more than one binding may name the same source, and a chord
+// completing takes back the members that got through before it.
+static int forward_event(struct mirror_state *s, const struct input_event *ev) {
+    struct input_event mapped[MAX_MAPPED_EVENTS];
+    unsigned char flags[MAX_MAPPED_EVENTS];
+    int count = mapping_apply(&s->mapping, s->source_axes, s->target_axes, ev, mapped, flags,
+                              MAX_MAPPED_EVENTS);
+    return write_mapped(s, mapped, flags, count);
+}
+
+/*
+ * Guide under the Home setting never reaches the mapping, but a chord may include it. It still feeds
+ * the chords here, and when a chord owns this press Guide's own Home / Back / Recents is skipped.
+ * Returns 1 when the event is handled, 0 to carry on, -1 when the target write failed.
+ */
+static int handle_home_chord(struct mirror_state *s, const struct input_event *ev) {
+    if (ev->type != EV_KEY || !is_home_button(ev->code) || s->mouse.mode || s->mapping.chord_count == 0 ||
+        (s->home_mode == HOME_MODE_PASS && !s->home_swallowed)) {
+        return 0;
+    }
+    int chorded = mapping_key_in_chord(&s->mapping, ev->code);
+    struct input_event mapped[MAX_MAPPED_EVENTS];
+    unsigned char flags[MAX_MAPPED_EVENTS];
+    int count = mapping_chords_only(&s->mapping, s->source_axes, s->target_axes, ev, mapped, flags,
+                                    MAX_MAPPED_EVENTS);
+    if (write_mapped(s, mapped, flags, count) != 0) {
+        return -1;
+    }
+    if (!chorded && !mapping_key_in_chord(&s->mapping, ev->code)) {
+        return 0;
+    }
+    // The chord's press: swallowed to the end, with no action of its own on release.
+    s->home_swallowed = ev->value != 0;
+    return 1;
 }
 
 // Run one source event through everything that may claim it, in priority order. Returns -1 only when
@@ -802,6 +852,10 @@ static int handle_source_event(struct mirror_state *s, const struct input_event 
         update_combo_tracking(s, event);
     }
 
+    int chorded = handle_home_chord(s, event);
+    if (chorded != 0) {
+        return chorded < 0 ? -1 : 0;
+    }
     if (handle_home_button(s, event)) {
         return 0;
     }
@@ -1184,7 +1238,8 @@ int main(int argc, char **argv) {
         if (control_index >= 0 && (fds[control_index].revents & POLLIN)) {
             command = drain_control(s.control_fd, &reload);
         }
-        if ((command == CONTROL_CAPTURE_BUTTON || command == CONTROL_CAPTURE_STICK) && !s.mouse.mode) {
+        if ((command == CONTROL_CAPTURE_BUTTON || command == CONTROL_CAPTURE_STICK ||
+             command == CONTROL_CAPTURE_CHORD) && !s.mouse.mode) {
             // Capture stops forwarding, so a stick deflected right now would stay deflected on the
             // target for the whole wizard step. Release before the target goes quiet.
             release_target_holds(&s);
@@ -1193,6 +1248,8 @@ int main(int argc, char **argv) {
             capture_begin(&s.capture, CAPTURE_BUTTON, now_ms());
         } else if (command == CONTROL_CAPTURE_STICK) {
             capture_begin(&s.capture, CAPTURE_STICK, now_ms());
+        } else if (command == CONTROL_CAPTURE_CHORD) {
+            capture_begin(&s.capture, CAPTURE_CHORD, now_ms());
         } else if (command == CONTROL_CAPTURE_OFF) {
             capture_end(&s.capture);
         }

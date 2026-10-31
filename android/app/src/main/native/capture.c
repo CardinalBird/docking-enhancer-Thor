@@ -14,6 +14,9 @@ static const long long CAPTURE_IDLE_TIMEOUT_MS = 30000;
 // pushed to its limit moves half of it; a trigger pressed fully moves all of it. Anything below this
 // is drift or a neighbouring axis twitching, which would otherwise capture the wrong control.
 static const double CAPTURE_DEFLECTION = 0.35;
+// Chord capture: an axis reported held counts as let go once back under this. The gap to the press
+// threshold keeps a trigger resting near it from chattering.
+static const double CAPTURE_RELEASE = 0.15;
 
 // Append one result. Opened per line because capture is not a hot path — nothing is being forwarded
 // while it is open — and appending is what makes a fast double press impossible to lose.
@@ -31,6 +34,9 @@ static void capture_emit(const struct capture *c, const char *line) {
 }
 
 void capture_begin(struct capture *c, enum capture_want want, long long now_ms) {
+    if (want != CAPTURE_CHORD || c->want != CAPTURE_CHORD) {
+        memset(c->axis_held, 0, sizeof(c->axis_held));
+    }
     c->want = want;
     c->latched = 0;
     c->first_axis = -1;
@@ -49,6 +55,42 @@ int capture_expired(const struct capture *c, long long now_ms) {
     return c->want != CAPTURE_OFF && now_ms - c->last_command_ms >= CAPTURE_IDLE_TIMEOUT_MS;
 }
 
+// Chord capture: every press and every release, buttons and axes alike. Swallows everything.
+static int chord_feed(struct capture *c, const struct input_event *event, const struct axis_range *axes,
+                      const int *neutral) {
+    char line[64];
+    if (event->type == EV_KEY) {
+        // Autorepeat (2) is neither.
+        if (event->value == 1 || event->value == 0) {
+            snprintf(line, sizeof(line), "%s %u\n", event->value ? "button" : "release", (unsigned)event->code);
+            capture_emit(c, line);
+        }
+        return 1;
+    }
+    if (event->type != EV_ABS || event->code >= ABS_CNT || !axes[event->code].present) {
+        return 1;
+    }
+    long span = (long)axes[event->code].maximum - (long)axes[event->code].minimum;
+    if (span <= 0) {
+        return 1;
+    }
+    long moved = (long)event->value - (long)neutral[event->code];
+    long distance = moved < 0 ? -moved : moved;
+    int sign = moved < 0 ? -1 : 1;
+    signed char *held = &c->axis_held[event->code];
+    if (*held != 0 && (*held != sign || (double)distance < (double)span * CAPTURE_RELEASE)) {
+        snprintf(line, sizeof(line), "axis_release %u %d\n", (unsigned)event->code, *held);
+        capture_emit(c, line);
+        *held = 0;
+    }
+    if (*held == 0 && (double)distance >= (double)span * CAPTURE_DEFLECTION) {
+        snprintf(line, sizeof(line), "axis_button %u %d\n", (unsigned)event->code, sign);
+        capture_emit(c, line);
+        *held = (signed char)sign;
+    }
+    return 1;
+}
+
 int capture_feed(struct capture *c,
                  const struct input_event *event,
                  const struct axis_range *axes,
@@ -62,6 +104,10 @@ int capture_feed(struct capture *c,
     // is that the controller drives the wizard and nothing else.
     if (c->latched) {
         return 1;
+    }
+
+    if (c->want == CAPTURE_CHORD) {
+        return chord_feed(c, event, axes, neutral);
     }
 
     if (event->type == EV_KEY) {

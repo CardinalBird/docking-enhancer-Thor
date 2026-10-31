@@ -9,19 +9,36 @@
 #define PRESS_ENTER 0.55f
 #define PRESS_LEAVE 0.45f
 
-void mapping_load(struct mapping_table *table, const struct binding *entries, int count) {
+void mapping_reset_state(struct mapping_table *table) {
+    memset(table->drive, 0, sizeof(table->drive));
+    memset(table->pressed, 0, sizeof(table->pressed));
+    memset(table->chord_held, 0, sizeof(table->chord_held));
+    memset(table->chord_fired, 0, sizeof(table->chord_fired));
+    memset(table->chord_suppress, 0, sizeof(table->chord_suppress));
+}
+
+void mapping_load(struct mapping_table *table,
+                  const struct binding *entries, int count,
+                  const struct chord *chords, int chord_count) {
     if (count < 0) {
         count = 0;
     }
     if (count > MAX_BINDINGS) {
         count = MAX_BINDINGS;
     }
+    if (chord_count < 0) {
+        chord_count = 0;
+    }
+    if (chord_count > MAX_CHORDS) {
+        chord_count = MAX_CHORDS;
+    }
     memcpy(table->entries, entries, (size_t)count * sizeof(struct binding));
     table->count = count;
+    memcpy(table->chords, chords, (size_t)chord_count * sizeof(struct chord));
+    table->chord_count = chord_count;
     // Deliberately cleared rather than carried over: the new table's row 3 has nothing to do with the
     // old one's, so keeping the drives would leave a target held by a binding that no longer exists.
-    memset(table->drive, 0, sizeof(table->drive));
-    memset(table->pressed, 0, sizeof(table->pressed));
+    mapping_reset_state(table);
 }
 
 static int binding_matches(const struct binding *b, const struct input_event *in) {
@@ -237,24 +254,19 @@ static void pass_through(const struct axis_range *source,
     }
 }
 
-int mapping_apply(struct mapping_table *table,
-                  const struct axis_range *source,
-                  const struct axis_range *target,
-                  const struct input_event *in,
-                  struct input_event *out,
-                  int max_out,
-                  int *bound) {
-    if (bound != NULL) {
-        *bound = 0;
-    }
+// Every binding naming this event, or the event untouched when none does. `extra` is or-ed into
+// each output's flags.
+static int apply_bindings(struct mapping_table *table,
+                          const struct axis_range *source,
+                          const struct axis_range *target,
+                          const struct input_event *in,
+                          struct input_event *out,
+                          unsigned char *flags,
+                          int max_out,
+                          unsigned char extra) {
     if (max_out < 1) {
         return 0;
     }
-    if (table->count == 0 || (in->type != EV_KEY && in->type != EV_ABS)) {
-        pass_through(source, target, in, &out[0]);
-        return 1;
-    }
-
     int matched = 0;
     int written = 0;
     for (int i = 0; i < table->count && written < max_out; i++) {
@@ -262,17 +274,181 @@ int mapping_apply(struct mapping_table *table,
             continue;
         }
         matched = 1;
-        written += apply_binding(table, i, source, target, in, &out[written]);
+        if (apply_binding(table, i, source, target, in, &out[written])) {
+            flags[written++] = MAPPED_BOUND | extra;
+        }
     }
 
     // Untouched is the default on purpose: it is what makes a control the user skipped in the wizard
     // go on working exactly as it did, instead of going dead because nobody named it.
     if (!matched) {
         pass_through(source, target, in, &out[0]);
+        flags[0] = extra;
         return 1;
     }
-    if (bound != NULL) {
-        *bound = 1;
+    return written;
+}
+
+static int ref_matches(const struct bind_ref *r, const struct input_event *in) {
+    return in->code == r->code && in->type == (r->kind == BIND_KEY ? EV_KEY : EV_ABS);
+}
+
+static int same_ref(const struct bind_ref *a, const struct bind_ref *b) {
+    return a->kind == b->kind && a->code == b->code && a->dir == b->dir;
+}
+
+// Whether a member is held after this event, with the same hysteresis as an axis bound to a button.
+static int member_held(const struct bind_ref *r, int was, const struct axis_range *source,
+                       const struct input_event *in) {
+    if (r->kind == BIND_KEY) {
+        return in->value != 0;
+    }
+    struct binding b = {.source_kind = r->kind, .source_code = r->code, .source_dir = r->dir};
+    float drive = source_drive(&b, source, in);
+    return was ? drive > PRESS_LEAVE : drive >= PRESS_ENTER;
+}
+
+// Some fired chord other than `except` already swallows this member, so its press never leaked.
+static int suppressed_elsewhere(const struct mapping_table *table, int except, const struct bind_ref *r) {
+    for (int c = 0; c < table->chord_count; c++) {
+        if (c == except) {
+            continue;
+        }
+        for (int m = 0; m < table->chords[c].count; m++) {
+            if ((table->chord_suppress[c] & (1u << m)) && same_ref(&table->chords[c].members[m], r)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+int mapping_key_in_chord(const struct mapping_table *table, unsigned short code) {
+    struct bind_ref key = {.kind = BIND_KEY, .code = code, .dir = 0};
+    return suppressed_elsewhere(table, -1, &key);
+}
+
+// Send a member's release down the path its press took, so whatever the target saw goes back up.
+static int release_member(struct mapping_table *table,
+                          const struct axis_range *source,
+                          const struct axis_range *target,
+                          const struct input_event *like,
+                          const struct bind_ref *r,
+                          struct input_event *out,
+                          unsigned char *flags,
+                          int max_out) {
+    struct input_event release = *like;
+    release.type = r->kind == BIND_KEY ? EV_KEY : EV_ABS;
+    release.code = r->code;
+    release.value = r->kind == BIND_KEY ? 0 : source[r->code].rest;
+    return apply_bindings(table, source, target, &release, out, flags, max_out, MAPPED_LEAK);
+}
+
+static int emit_chord_key(const struct chord *ch, const struct input_event *like, int value,
+                          struct input_event *out, unsigned char *flags, int max_out) {
+    if (max_out < 1) {
+        return 0;
+    }
+    out[0] = *like;
+    out[0].type = EV_KEY;
+    out[0].code = ch->target.code;
+    out[0].value = value;
+    flags[0] = MAPPED_BOUND;
+    return 1;
+}
+
+// Advance every chord this event belongs to. Sets *consumed when a chord owns the event.
+static int run_chords(struct mapping_table *table,
+                      const struct axis_range *source,
+                      const struct axis_range *target,
+                      const struct input_event *in,
+                      struct input_event *out,
+                      unsigned char *flags,
+                      int max_out,
+                      int *consumed) {
+    *consumed = 0;
+    int written = 0;
+    if (in->type != EV_KEY && in->type != EV_ABS) {
+        return 0;
+    }
+    for (int c = 0; c < table->chord_count; c++) {
+        const struct chord *ch = &table->chords[c];
+        unsigned char before = table->chord_held[c];
+        int touched = 0;
+        for (int m = 0; m < ch->count; m++) {
+            if (!ref_matches(&ch->members[m], in)) {
+                continue;
+            }
+            touched = 1;
+            unsigned char bit = (unsigned char)(1u << m);
+            int held = member_held(&ch->members[m], (before & bit) != 0, source, in);
+            table->chord_held[c] = held ? (table->chord_held[c] | bit) : (table->chord_held[c] & ~bit);
+            if (table->chord_suppress[c] & bit) {
+                *consumed = 1;
+                if (!held) {
+                    table->chord_suppress[c] &= (unsigned char)~bit;
+                }
+            }
+        }
+        if (!touched) {
+            continue;
+        }
+
+        unsigned char all = (unsigned char)((1u << ch->count) - 1);
+        int complete = (table->chord_held[c] & all) == all;
+        if (!table->chord_fired[c] && complete && table->chord_held[c] != before) {
+            // The members held before this one reached the target as themselves: take them back.
+            for (int m = 0; m < ch->count; m++) {
+                unsigned char bit = (unsigned char)(1u << m);
+                if ((before & bit) && !suppressed_elsewhere(table, c, &ch->members[m])) {
+                    written += release_member(table, source, target, in, &ch->members[m],
+                                              &out[written], &flags[written], max_out - written);
+                }
+            }
+            table->chord_fired[c] = 1;
+            table->chord_suppress[c] = all;
+            written += emit_chord_key(ch, in, 1, &out[written], &flags[written], max_out - written);
+            *consumed = 1;
+        } else if (table->chord_fired[c] && !complete) {
+            table->chord_fired[c] = 0;
+            written += emit_chord_key(ch, in, 0, &out[written], &flags[written], max_out - written);
+            *consumed = 1;
+        }
     }
     return written;
+}
+
+int mapping_chords_only(struct mapping_table *table,
+                        const struct axis_range *source,
+                        const struct axis_range *target,
+                        const struct input_event *in,
+                        struct input_event *out,
+                        unsigned char *flags,
+                        int max_out) {
+    int consumed = 0;
+    return run_chords(table, source, target, in, out, flags, max_out, &consumed);
+}
+
+int mapping_apply(struct mapping_table *table,
+                  const struct axis_range *source,
+                  const struct axis_range *target,
+                  const struct input_event *in,
+                  struct input_event *out,
+                  unsigned char *flags,
+                  int max_out) {
+    if (max_out < 1) {
+        return 0;
+    }
+    if (in->type != EV_KEY && in->type != EV_ABS) {
+        pass_through(source, target, in, &out[0]);
+        flags[0] = 0;
+        return 1;
+    }
+    int consumed = 0;
+    int written = run_chords(table, source, target, in, out, flags, max_out, &consumed);
+    if (consumed) {
+        return written;
+    }
+    return written + apply_bindings(table, source, target, in, &out[written], &flags[written],
+                                    max_out - written, 0);
 }

@@ -13,9 +13,9 @@
 // past this is not a config we wrote, so refusing it is safer than parsing a prefix of it.
 #define CONFIG_MAX_BYTES 8192
 
-// Widest tuple the scanner below will read. Six is what a binding row needs: kind, code and
-// direction on each end.
-#define JSON_MAX_TUPLE_WIDTH 6
+// Widest tuple the scanner below will read: a chord row, count + 4 members + target, 3 values each.
+#define CHORD_ROW_WIDTH (1 + 3 * CHORD_MAX_MEMBERS + 3)
+#define JSON_MAX_TUPLE_WIDTH CHORD_ROW_WIDTH
 
 // Point just past the colon following "key", skipping whitespace. NULL when the key is absent or
 // isn't followed by a colon. Deliberately a scanner rather than a parser: this document has one flat
@@ -176,6 +176,44 @@ static void parse_mapping(const char *json, struct config *out) {
     }
 }
 
+/*
+ * Read the chord table: [n, k, c, d (x4, unused zero), tk, tc, td]. Like bindings, a bad row costs
+ * only itself. Members are buttons or half axes (what the editor captures); the target is a key.
+ */
+static void parse_chords(const char *json, struct config *out) {
+    int raw[MAX_CHORDS * CHORD_ROW_WIDTH];
+    int rows = json_tuples(json, "chords", CHORD_ROW_WIDTH, raw, MAX_CHORDS);
+    out->chord_count = 0;
+
+    for (int i = 0; i < rows; i++) {
+        const int *row = &raw[i * CHORD_ROW_WIDTH];
+        int n = row[0];
+        if (n < 2 || n > CHORD_MAX_MEMBERS) {
+            continue;
+        }
+        struct chord c;
+        memset(&c, 0, sizeof(c));  // padding too: apply_config memcmps these
+        c.count = n;
+        int ok = 1;
+        for (int m = 0; m < n && ok; m++) {
+            int kind = row[1 + 3 * m];
+            int code = row[2 + 3 * m];
+            ok = (kind == BIND_KEY || kind == BIND_HALF) && kind_holds_code(kind, code);
+            c.members[m].kind = (unsigned char)kind;
+            c.members[m].code = (unsigned short)code;
+            c.members[m].dir = kind == BIND_KEY ? 0 : (row[3 + 3 * m] < 0 ? -1 : 1);
+        }
+        int target_kind = row[1 + 3 * CHORD_MAX_MEMBERS];
+        int target_code = row[2 + 3 * CHORD_MAX_MEMBERS];
+        if (!ok || target_kind != BIND_KEY || !kind_holds_code(target_kind, target_code)) {
+            continue;
+        }
+        c.target.kind = BIND_KEY;
+        c.target.code = (unsigned short)target_code;
+        out->chords[out->chord_count++] = c;
+    }
+}
+
 int parse_config(const char *path, const struct config *current, struct config *out) {
     if (path == NULL) {
         return -1;
@@ -194,6 +232,12 @@ int parse_config(const char *path, const struct config *current, struct config *
         fprintf(stderr, "config: %s is empty or unreadable\n", path);
         return -1;
     }
+    // A full buffer means the file may be longer than we read; refusing beats adopting a prefix
+    // that silently drops whatever came last (the chords).
+    if ((size_t)got == sizeof(buffer) - 1) {
+        fprintf(stderr, "config: %s is larger than %d bytes; ignoring it\n", path, CONFIG_MAX_BYTES - 1);
+        return -1;
+    }
     buffer[got] = '\0';
 
     long long generation = json_number(buffer, "generation", -1);
@@ -207,6 +251,7 @@ int parse_config(const char *path, const struct config *current, struct config *
     out->combo_hold_kill_app = json_bool(buffer, "combo_hold_kill_app", current->combo_hold_kill_app);
     out->virtual_mouse = json_bool(buffer, "virtual_mouse", current->virtual_mouse);
     parse_mapping(buffer, out);
+    parse_chords(buffer, out);
     return 0;
 }
 

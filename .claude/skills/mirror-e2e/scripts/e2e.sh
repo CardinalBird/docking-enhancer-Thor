@@ -967,6 +967,97 @@ else
 fi
 rm -f $TMP/t20.out $CFG
 
+# --- T21: acordes ---------------------------------------------------------------------------------
+
+echo ""
+echo "=== T21: acordes (varios botones juntos -> un destino) ==="
+
+# Codigos numericos (getevent -t sin -l) para no depender de que nombre le da getevent a cada boton.
+# 304+305 -> KEY_HOME (0x66). 310 + gatillo ABS_Z hacia + -> KEY_BACK (0x9e). Guia (316) + 305 ->
+# BTN_THUMBL (0x13d), con home_mode 2: el acorde gana y la Guia no hace su propio Home.
+# 307 -> 308 es un mapeo simple que tiene que seguir funcionando al lado.
+cat > $CFG.tmp <<'JSON'
+{
+  "generation": 1,
+  "home_mode": 2,
+  "combo_hold_kill_app": false,
+  "virtual_mouse": false,
+  "mapping": {
+    "bindings": [[0, 307, 0, 0, 308, 0]],
+    "chords": [[2, 0, 304, 0, 0, 305, 0, 0, 0, 0, 0, 0, 0, 0, 102, 0],
+               [2, 0, 310, 0, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 158, 0],
+               [2, 0, 316, 0, 0, 305, 0, 0, 0, 0, 0, 0, 0, 0, 317, 0]]
+  }
+}
+JSON
+mv $CFG.tmp $CFG
+k() { echo "key $1 $2" >&3; echo "syn" >&3; }
+
+start_mirror "$SRC" "$DST" --config-file $CFG --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de acordes"
+else
+    # a) A, luego B: Home. A se filtro antes de completar, asi que vuelve a soltarse; B nunca llega.
+    open_settings
+    getevent -t "$DST" > $TMP/t21a.out 2>&1 &
+    GE=$!
+    sleep 0.4
+    k 304 1; sleep 0.1; k 305 1; sleep 0.1; k 305 0; k 304 0
+    sleep 2
+    kill $GE 2>/dev/null
+    if in_settings; then bad "el acorde A+B no llevo a Home [$(top_activity)]"; else ok "A+B juntos hace Home"; fi
+    N=$(grep -c "0001 0066" $TMP/t21a.out 2>/dev/null)
+    if [ "$N" = "2" ]; then ok "un solo toque de KEY_HOME"; else bad "KEY_HOME x$N, esperaba 2"; fi
+    if grep -q "0001 0131" $TMP/t21a.out 2>/dev/null; then bad "el miembro que completo el acorde llego al target"; else ok "el boton que completa el acorde no llega"; fi
+    L=$(grep "0001 0130" $TMP/t21a.out 2>/dev/null | tail -n 1)
+    case "$L" in *00000000*) ok "A, que se filtro antes, queda soltado en el target";; *) bad "A quedo apretado en el target [$L]";; esac
+
+    # b) Sin completar nada: el mapeo simple y un miembro suelto siguen funcionando.
+    getevent -t "$DST" > $TMP/t21b.out 2>&1 &
+    GE=$!
+    sleep 0.4
+    press_source 307
+    press_source 305
+    sleep 0.5
+    kill $GE 2>/dev/null
+    expect_contains $TMP/t21b.out "0001 0134 00000001" "el mapeo simple 307->308 sigue funcionando"
+    expect_contains $TMP/t21b.out "0001 0131 00000001" "un miembro solo, sin acorde, llega como si mismo"
+
+    # c) Boton + gatillo (medio eje): Back al cruzar el umbral, suelto al bajar el gatillo.
+    open_settings
+    getevent -t "$DST" > $TMP/t21c.out 2>&1 &
+    GE=$!
+    sleep 0.4
+    k 310 1; sleep 0.1
+    move_source 2 30000; sleep 0.3
+    move_source 2 0; sleep 0.1
+    k 310 0
+    sleep 1.5
+    kill $GE 2>/dev/null
+    N=$(grep -c "0001 009e" $TMP/t21c.out 2>/dev/null)
+    if [ "$N" = "2" ]; then ok "LB + gatillo hace un toque de Back"; else bad "KEY_BACK x$N, esperaba 2"; fi
+    L=$(grep "0001 0136" $TMP/t21c.out 2>/dev/null | tail -n 1)
+    case "$L" in *00000000*) ok "LB queda soltado en el target";; *) bad "LB quedo apretado [$L]";; esac
+
+    # d) Guia + B con la Guia configurada como Home: sale el destino del acorde y NO un Home.
+    open_settings
+    getevent -t "$DST" > $TMP/t21d.out 2>&1 &
+    GE=$!
+    sleep 0.4
+    k 316 1; sleep 0.1; k 305 1; sleep 0.1; k 305 0; k 316 0
+    sleep 2
+    kill $GE 2>/dev/null
+    N=$(grep -c "0001 013d" $TMP/t21d.out 2>/dev/null)
+    if [ "$N" = "2" ]; then ok "Guia + B dispara su destino"; else bad "BTN_THUMBL x$N, esperaba 2"; fi
+    if in_settings; then ok "la Guia no hizo su propio Home"; else bad "la Guia hizo Home ademas del acorde [$(top_activity)]"; fi
+    # Guia sola sigue haciendo Home.
+    press_source 316
+    sleep 2
+    if in_settings; then bad "la Guia sola dejo de hacer Home"; else ok "la Guia sola sigue haciendo Home"; fi
+    stop_mirror
+fi
+rm -f $TMP/t21a.out $TMP/t21b.out $TMP/t21c.out $TMP/t21d.out $CFG
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""

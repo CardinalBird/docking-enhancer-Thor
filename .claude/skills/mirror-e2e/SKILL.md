@@ -55,6 +55,7 @@ path.
 | T11 capture expiry | A wizard that died mid-step leaving the pad permanently mute, with no way to revive it from the controller itself. |
 | T12 virtual mouse | The pointer failing to appear on Select+R3, the pad still driving the game while the cursor is up, or — worst — a uinput pointer outliving the daemon with nothing left to destroy it. |
 | T17 pass-through rescale | An axis no binding names arriving raw on a target with a different range — a 0..255 stick barely moving a -32768..32767 one, its rest landing off centre. |
+| T21 chords | A chord not firing, a member leaking into the game (the one that completes it, or one left held after it), a single binding broken beside a chord, or Guide doing its own Home on top of a Guide chord. |
 | T18 target refusal | A wrong hide path unlinking the mirror's own target — on the Thor the built-in pad shares the 0x2020 vendor, so the vendor check alone would let it through. |
 
 ## Measuring what the mirror costs
