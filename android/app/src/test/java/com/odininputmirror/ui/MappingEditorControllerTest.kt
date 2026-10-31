@@ -248,6 +248,18 @@ class MappingEditorControllerTest {
         assertEquals("the preset threw the Home binding away", ControlRef.button(0x13c), controller.state.value.bindings[home])
     }
 
+    @Test
+    fun `a preset switches the icon set and remembers it for the pad`() {
+        val mappings = FakeMappingRepository()
+        val controller = controllerWith(mappings = mappings)
+        controller.openAndAwait()
+        assertEquals(PadLayout.XBOX, controller.state.value.layout)
+
+        controller.autoMap(PadLayout.NINTENDO)
+        assertEquals(PadLayout.NINTENDO, controller.state.value.layout)
+        awaitUntil("the layout was never saved") { mappings.layout == PadLayout.NINTENDO }
+    }
+
     // ---- harness ----------------------------------------------------------------------------
 
     private val slots = mappingSlots(odinFallbackTraits())
@@ -299,6 +311,15 @@ class MappingEditorControllerTest {
 
         override fun clear(key: MappingKey) {
             cleared = true
+        }
+
+        @Volatile
+        var layout = PadLayout.XBOX
+
+        override fun layout(key: MappingKey) = layout
+
+        override fun setLayout(key: MappingKey, layout: PadLayout) {
+            this.layout = layout
         }
     }
 

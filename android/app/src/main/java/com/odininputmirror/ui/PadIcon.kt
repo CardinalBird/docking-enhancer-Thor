@@ -21,17 +21,22 @@ internal val LocalPadLayout = compositionLocalOf { PadLayout.XBOX }
 
 /**
  * Every button prompt in the app: Kenney Input Prompts 1.5 (CC0), white vectors tinted by the theme.
- * Xbox Series art for the Xbox layout, Nintendo Switch 2 art for the Nintendo one.
+ * Xbox Series art for the Xbox layout, Nintendo Switch 2 art for the Nintendo one. Kenney draws the
+ * plain A/B/X/Y and sticks identically for both, so the Xbox faces use the pack's coloured versions.
  */
 @Composable
 internal fun PadIcon(icon: SlotIcon, size: Dp = 28.dp, tint: Color = Palette.textPrimary) {
+    val layout = LocalPadLayout.current
     Image(
-        painterResource(padIconRes(icon, LocalPadLayout.current)),
+        painterResource(padIconRes(icon, layout)),
         contentDescription = null,
-        colorFilter = ColorFilter.tint(tint),
+        // Xbox A/B/X/Y keep their green/red/blue/yellow; everything else takes the theme's ink.
+        colorFilter = if (layout == PadLayout.XBOX && icon in XBOX_COLOURED) null else ColorFilter.tint(tint),
         modifier = Modifier.size(size),
     )
 }
+
+private val XBOX_COLOURED = setOf(SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y)
 
 @DrawableRes
 internal fun padIconRes(icon: SlotIcon, layout: PadLayout): Int = when (layout) {
