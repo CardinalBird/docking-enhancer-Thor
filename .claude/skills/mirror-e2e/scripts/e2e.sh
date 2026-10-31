@@ -639,7 +639,26 @@ else
             ok "el pad deja de llegar al target mientras el raton esta activo"
         fi
 
+        # Leaving must hide the cursor WITHOUT touching the screen: the helper may hover (a tracking
+        # id) but never press BTN_TOUCH, which is what used to tap (0,0) and dismiss open dialogs.
+        TOUCHN=$(awk '/Name="Docking Enhancer Mirror"/{f=1} f && /Handlers=/ { sub(/.*Handlers=/, ""); for (i = 1; i <= NF; i++) if ($i ~ /^event/) { print "/dev/input/" $i; exit } }' /proc/bus/input/devices 2>/dev/null)
+        # Launched bare, not behind a `[ ] &&`: killing the pid of a backgrounded list kills the
+        # subshell and orphans getevent, which then holds adb's output open and the run never returns.
+        T12T=
+        if [ -n "$TOUCHN" ]; then
+            getevent -lt "$TOUCHN" > $TMP/t12.touch 2>&1 &
+            T12T=$!
+        fi
+        sleep 0.3
         hold_mouse_combo
+        sleep 0.3
+        [ -n "$T12T" ] && kill $T12T 2>/dev/null
+        expect_contains $TMP/t12.touch "ABS_MT_TRACKING_ID" "al salir pasa un hover por el ayudante tactil"
+        if grep -q "BTN_TOUCH" $TMP/t12.touch 2>/dev/null; then
+            bad "al salir toca la pantalla (BTN_TOUCH en el ayudante)"
+        else
+            ok "al salir no toca la pantalla"
+        fi
         if [ -z "$(mouse_node)" ]; then
             ok "el combo se lleva el puntero"
         else
@@ -667,7 +686,7 @@ else
         bad "quedo un puntero huerfano  [$(mouse_node)]"
     fi
 fi
-rm -f $TMP/t12.mouse $TMP/t12.dst $TMP/t12.back
+rm -f $TMP/t12.mouse $TMP/t12.dst $TMP/t12.back $TMP/t12.touch
 
 # --- T13: un stick tocado al arrancar no deja deriva -------------------------------------------------
 
