@@ -233,6 +233,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setHomeMode(nextValue) }
+                MirrorStateStore.wake()
             } catch (error: Exception) {
                 _state.update { it.copy(homeMode = previous, message = error.message ?: error.toString()) }
             }
@@ -246,6 +247,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setComboHoldKillAppEnabled(nextValue) }
+                MirrorStateStore.wake()
             } catch (error: Exception) {
                 _state.update { it.copy(comboHoldKillApp = !nextValue, message = error.message ?: error.toString()) }
             }
@@ -259,6 +261,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
             try {
                 withContext(Dispatchers.IO) {
                     graph.setAutoMirrorEnabled(nextValue)
+                    MirrorStateStore.wake()
                     if (!nextValue) {
                         // Best-effort: the setting is already persisted and the supervisor also
                         // stops the mirror, so a stop hiccup (e.g. nothing was running) must not
@@ -319,6 +322,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setManualInternalController(guid) }
+                MirrorStateStore.wake()
                 _state.update { it.copy(manualInternalGuid = guid) }
                 refresh()
             } catch (error: Exception) {
@@ -336,18 +340,24 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { graph.setVirtualMouseEnabled(nextValue) }
+                MirrorStateStore.wake()
             } catch (error: Exception) {
                 _state.update { it.copy(virtualMouse = !nextValue, message = error.message ?: error.toString()) }
             }
         }
     }
 
+    // Guarded like MainApplication's: this runs after an IO hop, and if the app went to the
+    // background meanwhile the framework refuses a foreground start with an exception that would
+    // otherwise take the whole process down. The next time the screen opens, it tries again.
     private fun startSupervisor() {
-        val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            appContext.startForegroundService(intent)
-        } else {
-            appContext.startService(intent)
+        runCatching {
+            val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appContext.startForegroundService(intent)
+            } else {
+                appContext.startService(intent)
+            }
         }
     }
 

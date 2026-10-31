@@ -8,7 +8,9 @@ import android.util.Log
 
 class InputMirrorBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) {
+        // An update kills the supervisor but not the daemon it started, which then runs unwatched
+        // until the app is next opened; restarting here puts it back under supervision.
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED && intent?.action != Intent.ACTION_MY_PACKAGE_REPLACED) {
             return
         }
         // No PServerBinder probe here: onReceive runs on the main thread, the probe blocks on a

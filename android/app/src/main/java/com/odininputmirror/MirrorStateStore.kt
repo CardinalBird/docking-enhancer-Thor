@@ -60,6 +60,14 @@ object MirrorStateStore {
         }
     }
 
+    /** Cut the supervisor's sleep short: a setting changed, or a display came or went. */
+    fun wake() {
+        synchronized(tickMonitor) {
+            pendingWake = true
+            tickMonitor.notifyAll()
+        }
+    }
+
     // True while the Player 1 picker is open. The mirror grabs the external pad and replays it as the
     // built-in one, so while it runs nobody can tell pads apart; the supervisor stands it down until
     // the pick is made.

@@ -4,6 +4,7 @@ import com.odininputmirror.domain.model.HomeButtonMode
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.hardware.display.DisplayManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
@@ -25,6 +26,11 @@ class InputMirrorSupervisorService : Service() {
     private lateinit var graph: InputMirrorGraph
     private lateinit var notificationManager: NotificationManager
     private var supervisorState = SupervisorState.WaitingForDock
+    private val displayWake = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = MirrorStateStore.wake()
+        override fun onDisplayRemoved(displayId: Int) = MirrorStateStore.wake()
+        override fun onDisplayChanged(displayId: Int) = Unit
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -38,6 +44,8 @@ class InputMirrorSupervisorService : Service() {
         // outcome of the two, since everything the supervisor does still works without it.
         runCatching { startForeground(NOTIFICATION_ID, buildNotification(supervisorState)) }
             .onFailure { Log.w(TAG, "Could not enter the foreground", it) }
+        // Docking adds a display: tick now rather than at the end of an 8s idle sleep.
+        getSystemService(DisplayManager::class.java)?.registerDisplayListener(displayWake, null)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -49,6 +57,7 @@ class InputMirrorSupervisorService : Service() {
     }
 
     override fun onDestroy() {
+        getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayWake)
         running = false
         worker?.interrupt()
         worker = null
@@ -69,11 +78,28 @@ class InputMirrorSupervisorService : Service() {
         }
     }
 
+    // Asked a few times before giving up: at boot the firmware's service can come up after us, and
+    // a single failed probe used to stand the supervisor down until the app was next opened. A
+    // device that truly lacks it (the Odin 2 Mini) pays a minute of notification for this.
+    private fun awaitSupportedDevice(): Boolean {
+        repeat(PROBE_ATTEMPTS) { attempt ->
+            if (graph.isSupportedDevice) return true
+            if (attempt < PROBE_ATTEMPTS - 1) {
+                try {
+                    Thread.sleep(PROBE_RETRY_MS)
+                } catch (_: InterruptedException) {
+                    return false
+                }
+            }
+        }
+        return false
+    }
+
     private fun superviseUntilStopped() {
         // Without the PServerBinder service there is nothing to drive. Established HERE, on the
         // worker, because the probe blocks on a binder transact — the startup paths used to ask on
         // the main thread before starting us at all.
-        if (!graph.isSupportedDevice) {
+        if (!awaitSupportedDevice()) {
             // Stand down completely rather than idling. A stopped worker behind a live foreground
             // service would pin an ongoing notification the user cannot swipe away, saying only that
             // their device will never work. The screen surfaces that verdict on its own.
@@ -346,6 +372,8 @@ class InputMirrorSupervisorService : Service() {
 
     companion object {
         private const val TAG = "InputMirrorSupervisor"
+        private const val PROBE_ATTEMPTS = 6
+        private const val PROBE_RETRY_MS = 10_000L
         private const val NOTIFICATION_ID = 1001
         private const val NOTIFICATION_CHANNEL_ID = "input_mirror_supervisor"
         private const val SUPERVISOR_INTERVAL_MS = 2500L
