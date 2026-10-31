@@ -10,6 +10,7 @@
  *
  * Usage:
  *   vgamepad --path-file PATH [--name NAME] [--vendor HEX] [--product HEX] [--plain]
+ *            [--range MIN MAX]
  *
  * Creates the device, writes its /dev/input/eventN path to --path-file (so a test can wait for the
  * file rather than guess a delay), then executes one command per line of stdin:
@@ -20,6 +21,9 @@
  *   burst <n>              n frames of ABS_X wiggle — exercises multi-event batched reads
  *   sleep <ms>             pause
  *   quit                   destroy the device and exit (EOF does the same)
+ *
+ * --range sets the travel of every axis but the hat (default -32768..32767), for testing how the
+ * mirror rescales between two controllers that disagree about it.
  *
  * The default vendor is the Odin quirk id (0x2020) because that is what the mirror's hide path
  * requires: hide_node refuses to unlink anything else. Pass --vendor to test that refusal.
@@ -93,7 +97,7 @@ static int resolve_event_path(int fd, char *out, size_t out_len) {
     return found;
 }
 
-static int create_device(const char *name, int vendor, int product, int plain) {
+static int create_device(const char *name, int vendor, int product, int plain, int axis_min, int axis_max) {
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
     if (fd < 0) {
         perror("vgamepad: open /dev/uinput");
@@ -145,8 +149,8 @@ static int create_device(const char *name, int vendor, int product, int plain) {
             abs.code = (unsigned short)AXES[i];
             // A D-pad hat reports -1..1, as real pads do; the sticks use the full 16-bit travel.
             int hat = AXES[i] == ABS_HAT0X || AXES[i] == ABS_HAT0Y;
-            abs.absinfo.minimum = hat ? -1 : -32768;
-            abs.absinfo.maximum = hat ? 1 : 32767;
+            abs.absinfo.minimum = hat ? -1 : axis_min;
+            abs.absinfo.maximum = hat ? 1 : axis_max;
             abs.absinfo.value = 0;
             if (ioctl(fd, UI_ABS_SETUP, &abs) < 0) {
                 perror("vgamepad: UI_ABS_SETUP");
@@ -290,6 +294,8 @@ int main(int argc, char **argv) {
     int vendor = ODIN_VENDOR_ID;
     int product = 0x0111;
     int plain = 0;
+    int axis_min = -32768;
+    int axis_max = 32767;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--plain") == 0) {
@@ -300,6 +306,9 @@ int main(int argc, char **argv) {
             path_file = argv[++i];
         } else if (strcmp(argv[i], "--vendor") == 0 && i + 1 < argc) {
             vendor = (int)strtol(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--range") == 0 && i + 2 < argc) {
+            axis_min = (int)strtol(argv[++i], NULL, 0);
+            axis_max = (int)strtol(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--product") == 0 && i + 1 < argc) {
             product = (int)strtol(argv[++i], NULL, 0);
         } else {
@@ -308,7 +317,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    int fd = create_device(name, vendor, product, plain);
+    int fd = create_device(name, vendor, product, plain, axis_min, axis_max);
     if (fd < 0) {
         return 1;
     }

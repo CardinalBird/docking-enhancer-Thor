@@ -714,6 +714,83 @@ else
 fi
 rm -f $TMP/t13.out $CFG
 
+# --- T17: un eje sin mapear se reescala al rango del target -----------------------------------------
+
+echo ""
+echo "=== T17: un eje sin mapear se reescala entre rangos distintos ==="
+
+# A pad reporting its stick as 0..255 into a target expecting -32768..32767. Forwarded raw, full right
+# arrived as 255 — a hair right of centre — and full left as 0, dead centre. Rescaled, the limits land
+# on the limits and the source's rest (127) on the target's (0).
+NARROWFIFO=$TMP/narrow.fifo
+mkfifo $NARROWFIFO
+$VPAD --name "E2E Narrow Pad" --vendor 0x2020 --product 0x0111 --range 0 255 --path-file $TMP/narrow.path < $NARROWFIFO &
+exec 6> $NARROWFIFO
+wait_for_file $TMP/narrow.path
+NARROW=$(cat $TMP/narrow.path)
+
+if [ -z "$NARROW" ] || [ ! -e "$NARROW" ]; then
+    bad "se creo el pad de rango angosto"
+else
+    start_mirror "$NARROW" "$DST" --heartbeat-file $HEART
+    if [ -z "$(mirror_pid)" ]; then
+        bad "el daemon arranco para el test de reescalado"
+    else
+        getevent -lt "$DST" > $TMP/t17.out 2>&1 &
+        T17GE=$!
+        sleep 0.4
+        echo "abs 0 255" >&6; echo "syn" >&6
+        sleep 0.2
+        echo "abs 0 0" >&6; echo "syn" >&6
+        sleep 0.2
+        echo "abs 0 127" >&6; echo "syn" >&6
+        sleep 0.6
+        kill $T17GE 2>/dev/null
+
+        # getevent prints the value as 32-bit hex: 32767 = 00007fff, -32768 = ffff8000.
+        expect_contains $TMP/t17.out "ABS_X.*00007fff" "el tope del source llega como tope del target"
+        expect_contains $TMP/t17.out "ABS_X.*ffff8000" "el minimo del source llega como minimo del target"
+        if grep -q "ABS_X.*000000ff" $TMP/t17.out 2>/dev/null; then
+            bad "llego el valor crudo sin reescalar"
+        else
+            ok "el valor crudo no llega"
+        fi
+        LAST=$(grep "ABS_X" $TMP/t17.out | tail -n 1 | awk '{print $NF}')
+        if [ "$LAST" = "00000000" ]; then
+            ok "el reposo del source llega como reposo del target"
+        else
+            bad "el reposo del source llega descentrado [$LAST]"
+        fi
+        stop_mirror
+    fi
+fi
+exec 6>&-
+rm -f $TMP/t17.out $NARROWFIFO $TMP/narrow.path
+
+# --- T18: nunca oculta el nodo del target -----------------------------------------------------------
+
+echo ""
+echo "=== T18: se niega a ocultar el propio target ==="
+
+# On the Thor the built-in pad (the target) carries the same 0x2020 vendor as the external pad's twin,
+# so the vendor check T5 covers would let a wrong hide path unlink the node the mirror writes into.
+# Without su the unlink fails anyway, so the node surviving proves nothing there; the log line does.
+start_mirror "$SRC" "$DST" --hide-node "$DST" --hidden-state-file $STATE --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test del target"
+else
+    sleep 0.6
+    expect_exists "$DST" "el daemon NO desvincula el nodo del target"
+    expect_contains $LOG "is the mirror target" "y lo rechaza por ser el target"
+    P=$(mirror_pid)
+    as_root "kill -TERM $P" 2>/dev/null
+    wait_for_gone "/proc/$P" 30
+    stop_mirror
+fi
+# A daemon that did hide it put it back on SIGTERM; heal whatever a failure left behind regardless.
+as_root "$MIRROR --heal --hidden-state-file $STATE" 2>/dev/null
+rm -f $STATE
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""

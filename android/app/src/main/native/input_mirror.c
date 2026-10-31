@@ -876,8 +876,11 @@ int main(int argc, char **argv) {
     // so a crash before clean exit can be healed.
     struct hidden_node hidden[MAX_HIDE_NODES];
     memset(hidden, 0, sizeof(hidden));
+    // The target's device number, taken from the fd we write into, so hide_node can refuse it.
+    struct stat target_stat;
+    dev_t target_rdev = fstat(s.target_fd, &target_stat) == 0 ? target_stat.st_rdev : 0;
     for (int i = 0; i < hide_count; i++) {
-        hide_node(hide_paths[i], &hidden[i], ODIN_VENDOR_ID);
+        hide_node(hide_paths[i], &hidden[i], ODIN_VENDOR_ID, target_rdev);
     }
     write_hidden_state(hidden_state_path, hidden, hide_count);
 
