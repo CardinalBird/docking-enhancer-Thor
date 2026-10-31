@@ -1,6 +1,5 @@
 plugins {
     id "com.android.application"
-    id "org.jetbrains.kotlin.android"
     id "org.jetbrains.kotlin.plugin.compose"
 }
 
@@ -18,12 +17,17 @@ android {
         abortOnError = true
         disable += ["GradleDependency", "AndroidGradlePluginVersion"]
     }
-    namespace "com.odininputmirror"
-    compileSdk 35
+    namespace = "com.odininputmirror"
+    // Compose 1.12 / core 1.19 / activity 1.13 / lifecycle 2.11 refuse to build against less
+    // than 37. Compile-only; targetSdk below still decides runtime behaviour.
+    compileSdk 37
 
     defaultConfig {
         applicationId "com.odininputmirror"
         minSdk 28
+        // Newer lint flags any targetSdk below the latest release. Raising it changes runtime
+        // behaviour on the device, so it is its own PR, like the dependency-age checks above.
+        //noinspection OldTargetApi
         targetSdk 35
         versionCode 3
         versionName "0.1.2"
@@ -31,17 +35,13 @@ android {
     }
 
     buildFeatures {
-        buildConfig true
-        compose true
+        buildConfig = true
+        compose = true
     }
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 
     testOptions {
@@ -75,7 +75,7 @@ android {
                 signingConfig signingConfigs.release
             }
             minifyEnabled true
-            shrinkResources true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
     }

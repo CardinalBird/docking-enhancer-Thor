@@ -1,14 +1,14 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.0.21"
-coreKtx = "1.13.1"
+agp = "9.5.0"
+kotlin = "2.4.21"
+coreKtx = "1.19.1"
 junit = "4.13.2"
-# Matches what lifecycle 2.8.7 already pulls in transitively; declared only so the test artifact
+# Matches what lifecycle 2.11.0 already pulls in transitively; declared only so the test artifact
 # (which nothing brings in on its own) cannot drift away from the runtime one.
-coroutines = "1.8.1"
-activityCompose = "1.9.3"
-composeBom = "2024.10.01"
-lifecycle = "2.8.7"
+coroutines = "1.9.0"
+activityCompose = "1.13.0"
+composeBom = "2026.09.00"
+lifecycle = "2.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -28,6 +28,5 @@ androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "l
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
