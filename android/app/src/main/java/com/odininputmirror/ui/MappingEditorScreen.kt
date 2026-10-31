@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.SlotIcon
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -198,10 +199,10 @@ fun MappingEditorScreen(
                 Box(Modifier.weight(2f)) {
                     HintBar(
                         hints = listOfNotNull(
-                            HintAction(PromptGlyph.A, "Rebind", null),
-                            HintAction(PromptGlyph.X, "Clear", null),
-                            controller?.let { HintAction(PromptGlyph.Y, "Map all", it::mapAll) },
-                            HintAction(PromptGlyph.B, "Done", onClose),
+                            HintAction(SlotIcon.A, "Rebind", null),
+                            HintAction(SlotIcon.X, "Clear", null),
+                            controller?.let { HintAction(SlotIcon.Y, "Map all", it::mapAll) },
+                            HintAction(SlotIcon.B, "Done", onClose),
                         ),
                     )
                 }

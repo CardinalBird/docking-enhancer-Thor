@@ -1,5 +1,7 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.SlotIcon
+import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -109,6 +111,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    CompositionLocalProvider(LocalPadLayout provides if (editorState.open) editorState.layout else state.padLayout) {
     AnimatedContent(
         targetState = page,
         modifier = Modifier.fillMaxSize().background(Palette.screen),
@@ -145,6 +148,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             Page.Settings -> AdditionalSettingsScreen(state, viewModel, active, onBack = { settingsOpen = false })
             Page.Main -> MainPage(state, viewModel, active, onOpenSettings = { settingsOpen = true })
         }
+    }
     }
 
     if (state.unsupported) {
@@ -323,7 +327,7 @@ private fun MainPage(state: MirrorUiState, viewModel: MirrorViewModel, active: B
                 state.restartWaiting -> "Waiting for mirroring to start..."
                 else -> state.message
             },
-            hints = listOf(HintAction("B", "Back", null), HintAction("A", "OK", null)),
+            hints = listOf(HintAction(SlotIcon.B, "Back", null), HintAction(SlotIcon.A, "OK", null)),
         )
     }
 

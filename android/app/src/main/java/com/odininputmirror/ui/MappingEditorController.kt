@@ -54,6 +54,8 @@ data class MappingEditorUiState(
     val internalPadName: String? = null,
     /** evdev axis code -> Android axis name for the pad being mapped, to name its bound axes. */
     val sourceAxisLabels: Map<Int, String> = emptyMap(),
+    /** Which console's button icons to draw: the preset last applied to this pad, Xbox by default. */
+    val layout: PadLayout = PadLayout.XBOX,
 ) {
     val boundCount: Int get() = bindings.size
 }
@@ -105,6 +107,8 @@ class MappingEditorController(
     /** Whether the mirror was off when the editor opened, so captures listen in the app. */
     private var listenInAppOnOpen = false
 
+    private var layoutOnOpen = PadLayout.XBOX
+
     /** What the real external pad declares, for the auto-map presets. Null when unreadable. */
     private var sourceTraits: TargetTraits? = null
 
@@ -123,6 +127,7 @@ class MappingEditorController(
                 seedDefaultMapping(key)
                 val mapping = mappings.get(key)
                 seededOnOpen = runCatching { mappings.isSeeded(key) }.getOrDefault(false)
+                layoutOnOpen = runCatching { mappings.layout(key) }.getOrDefault(PadLayout.XBOX)
                 // Known now rather than after the first capture asks the daemon: the overlay is up
                 // before that answer comes back, and a press in the gap would reach the screen.
                 listenInAppOnOpen = runCatching { !process.isRunning() }.getOrDefault(false)
@@ -157,6 +162,7 @@ class MappingEditorController(
                 internalPadName = internalPadName,
                 listenInApp = listenInAppOnOpen,
                 sourceAxisLabels = sourceAxisLabels,
+                layout = layoutOnOpen,
             )
         }
     }
@@ -194,9 +200,11 @@ class MappingEditorController(
             val kept = it.slots.filter { s -> s.icon == SlotIcon.HOME || s.icon == SlotIcon.BACK }.map { s -> s.target }
             it.copy(
                 bindings = it.bindings.filterKeys { k -> k in kept } + presetBindings(layout, it.slots, sourceTraits),
-                capturing = null, walk = null, notice = null, seeded = false,
+                capturing = null, walk = null, notice = null, seeded = false, layout = layout,
             )
         }
+        // Icons only, so saved at once rather than with the mapping.
+        mappingKey?.let { key -> scope.launch(Dispatchers.IO) { mappings.setLayout(key, layout) } }
         scope.launch(fifo) { process.endCapture() }
     }
 

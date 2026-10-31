@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.PadLayout
 import com.odininputmirror.domain.model.AppTheme
 import com.odininputmirror.domain.model.HomeButtonMode
 import android.app.Notification
@@ -65,6 +66,8 @@ data class MirrorUiState(
     // Mirror handheld too, not only when docked.
     val mirrorWhenHandheld: Boolean = false,
     val theme: AppTheme = AppTheme.DARK,
+    // Which console's button icons to draw: the preset last applied to the external pad.
+    val padLayout: PadLayout = PadLayout.XBOX,
 ) {
     // On a recognised handheld (e.g. Odin) the native layer flags the internal controller by
     // hardware signature and locks it. Otherwise the internal defaults to the first detected
@@ -207,6 +210,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 // otherwise wear them out of the box.
                 mappedControlCount = externalDevice?.mappingKey?.let(::mappedCountFor),
                 hasSeededMapping = externalDevice?.mappingKey?.let(::isSeededFor) ?: false,
+                padLayout = externalDevice?.mappingKey?.let(graph.mappingRepository::layout) ?: PadLayout.XBOX,
                 message = buildStatusMessage(status, available, saved),
             )
         }
@@ -237,7 +241,8 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
             val (count, seeded) = withContext(Dispatchers.IO) {
                 mappedCountFor(key) to isSeededFor(key)
             }
-            _state.update { it.copy(mappedControlCount = count, hasSeededMapping = seeded) }
+            val layout = withContext(Dispatchers.IO) { graph.mappingRepository.layout(key) }
+            _state.update { it.copy(mappedControlCount = count, hasSeededMapping = seeded, padLayout = layout) }
         }
     }
 

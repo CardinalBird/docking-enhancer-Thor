@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.SlotIcon
 import com.odininputmirror.domain.model.AppTheme
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
@@ -114,6 +115,6 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
                 )
             }
         }
-        Footer(status = help, hints = listOf(HintAction("B", "Back", onBack), HintAction("A", "OK", null)))
+        Footer(status = help, hints = listOf(HintAction(SlotIcon.B, "Back", onBack), HintAction(SlotIcon.A, "OK", null)))
     }
 }

@@ -82,26 +82,6 @@ internal fun Rule(modifier: Modifier = Modifier) {
 internal fun Modifier.focusOutline(focused: Boolean, shape: RoundedCornerShape): Modifier =
     if (focused) border(3.dp, Teal, shape) else this
 
-/**
- * A Switch-style button icon: A, B, X, Y as round chips (A blue, the rest grey), L and R as rounded
- * blue keys. Drawn rather than taken from PromptFont, whose Xbox glyphs read as the wrong console.
- */
-@Composable
-internal fun ButtonIcon(label: String, size: Dp = 26.dp) {
-    val key = label == "L" || label == "R"
-    Box(
-        modifier = Modifier
-            .height(size)
-            .widthIn(min = size)
-            .clip(if (key) RoundedCornerShape(6.dp) else CircleShape)
-            .background(if (key || label == "A") Palette.accent else Palette.borderStrong)
-            .padding(horizontal = if (key) 8.dp else 0.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = if (key || label == "A") Palette.onAccent else Palette.textPrimary, fontSize = (size.value * 0.55f).sp, lineHeight = (size.value * 0.6f).sp)
-    }
-}
-
 /** A battery outline filled to [percent], and the number. */
 @Composable
 internal fun Battery(percent: Int) {

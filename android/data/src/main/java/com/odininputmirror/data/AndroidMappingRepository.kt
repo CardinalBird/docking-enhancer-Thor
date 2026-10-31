@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.PadLayout
 import android.content.Context
 import com.odininputmirror.domain.model.ControllerMapping
 import com.odininputmirror.domain.model.MappingKey
@@ -33,9 +34,18 @@ internal class AndroidMappingRepository(context: Context) : MappingRepository {
         }.apply()
     }
 
+    override fun layout(key: MappingKey): PadLayout =
+        PadLayout.entries.firstOrNull { it.name == prefs.getString(layoutKeyOf(key), null) } ?: PadLayout.XBOX
+
+    override fun setLayout(key: MappingKey, layout: PadLayout) {
+        prefs.edit().putString(layoutKeyOf(key), layout.name).apply()
+    }
+
     // Namespaced so a controller's mapping can never collide with the mirror's own settings, which
     // share this preferences file.
     private fun keyOf(key: MappingKey) = "$KEY_MAPPING_PREFIX${key.value}"
+
+    private fun layoutKeyOf(key: MappingKey) = "${KEY_MAPPING_PREFIX}layout_${key.value}"
 
     private fun seededKeyOf(key: MappingKey) = "${KEY_MAPPING_PREFIX}seeded_${key.value}"
 }

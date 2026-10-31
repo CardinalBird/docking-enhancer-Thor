@@ -96,7 +96,7 @@ internal fun SlotRow(
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SlotGlyph(slot)
+        Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) { PadIcon(slot.icon, 30.dp) }
         Spacer(Modifier.width(14.dp))
         Text(slot.label, color = Palette.textPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
         Text(
@@ -131,58 +131,6 @@ internal fun ActionRow(label: String, detail: String, onClick: () -> Unit) {
         Text(detail, color = Palette.textMuted, fontSize = 14.sp)
     }
     Rule(Modifier.padding(horizontal = 8.dp))
-}
-
-/**
- * The button as it is marked on the pad.
- *
- * Drawn rather than shipped as artwork: four coloured letters, four short labels and a handful of
- * arrows is less code than an asset pipeline, and it scales with the text size for free.
- */
-@Composable
-internal fun SlotGlyph(slot: MappingSlot) {
-    val glyph = when (slot.icon) {
-        SlotIcon.A -> PromptGlyph.A
-        SlotIcon.B -> PromptGlyph.B
-        SlotIcon.X -> PromptGlyph.X
-        SlotIcon.Y -> PromptGlyph.Y
-        SlotIcon.LEFT_BUMPER -> PromptGlyph.LEFT_BUMPER
-        SlotIcon.RIGHT_BUMPER -> PromptGlyph.RIGHT_BUMPER
-        SlotIcon.LEFT_TRIGGER -> PromptGlyph.LEFT_TRIGGER
-        SlotIcon.RIGHT_TRIGGER -> PromptGlyph.RIGHT_TRIGGER
-        SlotIcon.DPAD_UP -> PromptGlyph.DPAD_UP
-        SlotIcon.DPAD_DOWN -> PromptGlyph.DPAD_DOWN
-        SlotIcon.DPAD_LEFT -> PromptGlyph.DPAD_LEFT
-        SlotIcon.DPAD_RIGHT -> PromptGlyph.DPAD_RIGHT
-        SlotIcon.LEFT_STICK_UP -> PromptGlyph.LEFT_STICK_UP
-        SlotIcon.LEFT_STICK_DOWN -> PromptGlyph.LEFT_STICK_DOWN
-        SlotIcon.LEFT_STICK_LEFT -> PromptGlyph.LEFT_STICK_LEFT
-        SlotIcon.LEFT_STICK_RIGHT -> PromptGlyph.LEFT_STICK_RIGHT
-        SlotIcon.LEFT_STICK_CLICK -> PromptGlyph.LEFT_STICK_CLICK
-        SlotIcon.RIGHT_STICK_UP -> PromptGlyph.RIGHT_STICK_UP
-        SlotIcon.RIGHT_STICK_DOWN -> PromptGlyph.RIGHT_STICK_DOWN
-        SlotIcon.RIGHT_STICK_LEFT -> PromptGlyph.RIGHT_STICK_LEFT
-        SlotIcon.RIGHT_STICK_RIGHT -> PromptGlyph.RIGHT_STICK_RIGHT
-        SlotIcon.RIGHT_STICK_CLICK -> PromptGlyph.RIGHT_STICK_CLICK
-        SlotIcon.VIEW -> PromptGlyph.VIEW
-        SlotIcon.MENU -> PromptGlyph.MENU
-        SlotIcon.HOME -> "⌂"
-        SlotIcon.BACK -> "↩"
-    }
-    // Plain characters, not PromptFont remaps: the font would turn these into unrelated arrows.
-    val plainText = slot.icon == SlotIcon.HOME || slot.icon == SlotIcon.BACK
-    // The face buttons keep the colours they are printed in — on an Xbox pad "the green one" is as
-    // much the button's name as the letter is. Everything else is one ink, because it is on the pad.
-    val colour = when (slot.icon) {
-        SlotIcon.A -> Color(0xFF6CC24A)
-        SlotIcon.B -> Color(0xFFE5484D)
-        SlotIcon.X -> Color(0xFF3E7BFA)
-        SlotIcon.Y -> Color(0xFFF2C037)
-        else -> Palette.textSecondary
-    }
-    Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-        Text(glyph, color = colour, fontFamily = if (plainText) null else promptFontFamily(), fontSize = 26.sp)
-    }
 }
 
 /**
