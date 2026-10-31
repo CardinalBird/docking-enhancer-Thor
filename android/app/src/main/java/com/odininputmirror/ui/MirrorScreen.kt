@@ -145,7 +145,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         val activity = context.findMainActivity()
         // The Activity hook wants a plain callback; whether the anchor took is only the retry
         // loop's business.
-        activity?.onWindowFocused = { anchorFocus() }
+        activity?.onWindowFocused = { if (!screenHasFocus) anchorFocus() }
         onDispose { activity?.onWindowFocused = null }
     }
 
@@ -191,8 +191,10 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     // button busy, and starting/stopping it locks the cards and rows — Compose clears focus and
     // the D-pad has nothing to navigate from. Re-anchor to the first available control so gamepad
     // navigation keeps working after every transition.
+    // Only when focus was actually lost: re-anchoring while a row still holds it yanks the cursor
+    // to the top on every pad sleep/wake and every toggle.
     LaunchedEffect(state.enabled, state.autoMirrorEnabled, state.busy) {
-        anchorFocus()
+        if (!screenHasFocus) anchorFocus()
     }
 
     val externals = state.devices.filter { !it.isInternal }
@@ -300,18 +302,19 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                     subtitle = "Hold both for 3 seconds",
                     onClick = if (state.busy) null else ({ viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) }),
                 ) {
-                    RowSwitch(state.comboHoldKillApp, !state.busy) { viewModel.toggleComboHoldKillApp(it) }
+                    RowSwitch(state.comboHoldKillApp, !state.busy)
                 }
                 MenuRow(
                     title = "Virtual mouse",
                     subtitle = "Select + R3 toggles · A click · B right-click · R1 shade",
                     onClick = if (state.busy) null else ({ viewModel.toggleVirtualMouse(!state.virtualMouse) }),
                 ) {
-                    RowSwitch(state.virtualMouse, !state.busy) { viewModel.toggleVirtualMouse(it) }
+                    RowSwitch(state.virtualMouse, !state.busy)
                 }
                 // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
                 // can ask to be pinned itself. Shown only when the home app takes pin requests.
-                if (context.canPinShortcut()) {
+                val canPin = remember(context) { context.canPinShortcut() }
+                if (canPin) {
                     MenuRow(title = "Add to home screen", subtitle = "Pin this app to your launcher", onClick = { context.pinToHome() })
                 }
                 Spacer(Modifier.height(16.dp))

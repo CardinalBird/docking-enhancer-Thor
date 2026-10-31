@@ -8,7 +8,9 @@ import android.util.Log
 
 class InputMirrorBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) {
+        // An update kills the process but not the root daemon it was supervising; restart the
+        // supervisor so undocking and setting changes keep applying without opening the app.
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED && intent?.action != Intent.ACTION_MY_PACKAGE_REPLACED) {
             return
         }
         // No PServerBinder probe here: onReceive runs on the main thread, the probe blocks on a
@@ -21,6 +23,6 @@ class InputMirrorBootReceiver : BroadcastReceiver() {
             } else {
                 context.startService(serviceIntent)
             }
-        }.onFailure { Log.w("InputMirrorBootReceiver", "Could not start supervisor on boot", it) }
+        }.onFailure { Log.w("InputMirrorBootReceiver", "Could not start supervisor on boot/update", it) }
     }
 }

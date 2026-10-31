@@ -180,10 +180,12 @@ internal fun RowValue(text: String, accent: Boolean = false) {
 }
 
 @Composable
-internal fun RowSwitch(checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+internal fun RowSwitch(checked: Boolean, enabled: Boolean) {
+    // Display only: a Switch with its own handler is a second D-pad focus stop inside the row,
+    // with a focus ring that is nearly invisible. The row's click toggles the setting.
     Switch(
         checked = checked,
-        onCheckedChange = onCheckedChange,
+        onCheckedChange = null,
         enabled = enabled,
         colors = SwitchDefaults.colors(
             checkedThumbColor = Palette.textPrimary,

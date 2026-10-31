@@ -5,6 +5,7 @@ import android.content.Context
 import android.view.InputDevice
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -343,12 +344,17 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     }
 
     private fun startSupervisor() {
-        val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            appContext.startForegroundService(intent)
-        } else {
-            appContext.startService(intent)
-        }
+        // The init coroutine can land after the app was backgrounded, and on Android 12+ a
+        // foreground-service start from the background throws. Never crash the process over it:
+        // the next foreground entry retries, and any setting is already persisted.
+        runCatching {
+            val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appContext.startForegroundService(intent)
+            } else {
+                appContext.startService(intent)
+            }
+        }.onFailure { Log.w("MirrorViewModel", "Could not start supervisor", it) }
     }
 
     private fun buildStatusMessage(status: MirrorStatus, devices: List<ControllerDevice>): String = when {
