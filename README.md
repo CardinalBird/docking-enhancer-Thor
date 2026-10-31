@@ -47,7 +47,8 @@ It runs without root, using a privileged service the stock firmware already ship
 - **Home button that goes Home** — the external pad's Home/Guide button goes to the launcher, or
   Back, or passes through to games. Hold it for **Recents**
 - **Home and Back on any button** — bind either to a pad button in the mapping editor
-- **Select + Start** — a tap sends **Home**; hold it (3s) to close the current app
+- **Select + L3** — a tap sends **Home**
+- **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Guided button mapping** — the app asks for each button in turn and you press it; or pick
   **Nintendo** or **Xbox** layout to map in one go. Triggers and stick halves can fill button
