@@ -431,8 +431,20 @@ class AndroidInputDeviceRepositoryTest {
 
         assertEquals(
             MappingKey("2dc8:301b"),
-            repository.resolveMappingKey("8BitDo Ultimate 2C Wireless", entries),
+            repository.resolveMappingKey(entries[1], entries),
         )
+    }
+
+    @Test
+    fun anUntwinnedPadKeepsItsOwnKeyEvenBesideASameNamedPad() {
+        // A DS4 and a third-party clone both enumerate as "Wireless Controller". The clone is not
+        // twinned, so it resolves to its own entry; a name lookup used to hand it the DS4's key.
+        val entries = listOf(
+            procEntry("Wireless Controller", BUS_BLUETOOTH, 0x054c, 0x09cc),
+            procEntry("Wireless Controller", BUS_BLUETOOTH, 0x1234, 0x5678),
+        )
+
+        assertEquals(MappingKey("1234:5678"), repository.resolveMappingKey(entries[1], entries))
     }
 
     @Test
@@ -446,8 +458,8 @@ class AndroidInputDeviceRepositoryTest {
             procEntry("Xbox Wireless Controller", BUS_USB, 0x2020, 0x0111),
         )
 
-        val first = repository.resolveMappingKey("8BitDo Ultimate 2C Wireless", entries)
-        val second = repository.resolveMappingKey("Xbox Wireless Controller", entries)
+        val first = repository.resolveMappingKey(entries[1], entries)
+        val second = repository.resolveMappingKey(entries[3], entries)
 
         assertEquals(MappingKey("2dc8:301b"), first)
         assertEquals(MappingKey("045e:0b13"), second)
@@ -459,7 +471,7 @@ class AndroidInputDeviceRepositoryTest {
         // and it is never the controller being remapped.
         val entries = listOf(procEntry("Xbox Wireless Controller", BUS_USB, 0x2020, 0x0112))
 
-        assertNull(repository.resolveMappingKey("Xbox Wireless Controller", entries))
+        assertNull(repository.resolveMappingKey(entries[0], entries))
     }
 
     private fun procEntry(
