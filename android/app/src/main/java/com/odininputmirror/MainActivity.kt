@@ -2,6 +2,7 @@ package com.odininputmirror
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.graphics.Color
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -12,10 +13,14 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.odininputmirror.domain.model.AppTheme
 import com.odininputmirror.ui.MirrorScreen
 import com.odininputmirror.ui.MirrorViewModel
 import com.odininputmirror.ui.theme.DockingEnhancerTheme
@@ -59,8 +64,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         requestNotificationPermissionIfNeeded()
         setContent {
-            DockingEnhancerTheme {
-                val vm: MirrorViewModel = viewModel(factory = MirrorViewModel.factory(applicationContext))
+            val vm: MirrorViewModel = viewModel(factory = MirrorViewModel.factory(applicationContext))
+            val theme = vm.state.collectAsState().value.theme
+            // Status and navigation bar icons follow the app's theme, not the system's.
+            LaunchedEffect(theme) {
+                enableEdgeToEdge(
+                    if (theme == AppTheme.LIGHT) SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                    else SystemBarStyle.dark(Color.TRANSPARENT),
+                )
+            }
+            DockingEnhancerTheme(theme) {
                 MirrorScreen(viewModel = vm)
             }
         }

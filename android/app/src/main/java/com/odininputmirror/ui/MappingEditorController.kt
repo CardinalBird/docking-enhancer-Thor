@@ -1,6 +1,7 @@
 package com.odininputmirror.ui
 
 import com.odininputmirror.domain.model.Binding
+import com.odininputmirror.domain.model.Chord
 import com.odininputmirror.domain.model.CaptureKind
 import com.odininputmirror.domain.model.CaptureResult
 import com.odininputmirror.domain.model.ControlRef
@@ -37,6 +38,10 @@ data class MappingEditorUiState(
     val slots: List<MappingSlot> = emptyList(),
     /** What each slot currently reads, keyed by the slot's target. Absent means "forwarded as is". */
     val bindings: Map<ControlRef, ControlRef> = emptyMap(),
+    /** Slots driven by several controls held together, keyed by target. A target is in one map at most. */
+    val chords: Map<ControlRef, List<ControlRef>> = emptyMap(),
+    /** What the user is holding right now during a capture, shown live in the overlay. */
+    val pending: List<ControlRef> = emptyList(),
     /** The slot waiting for a press, when the capture overlay is up. */
     val capturing: MappingSlot? = null,
     /** Why the last press was refused, shown in the overlay. */
@@ -54,8 +59,10 @@ data class MappingEditorUiState(
     val internalPadName: String? = null,
     /** evdev axis code -> Android axis name for the pad being mapped, to name its bound axes. */
     val sourceAxisLabels: Map<Int, String> = emptyMap(),
+    /** Which console's button icons to draw: the preset last applied to this pad, Xbox by default. */
+    val layout: PadLayout = PadLayout.XBOX,
 ) {
-    val boundCount: Int get() = bindings.size
+    val boundCount: Int get() = bindings.size + chords.size
 }
 
 /**
@@ -96,6 +103,11 @@ class MappingEditorController(
     /** What was saved when the editor opened, to tell a real edit from a look around. */
     private var openedWith: Map<ControlRef, ControlRef> = emptyMap()
 
+    private var openedChords: Map<ControlRef, List<ControlRef>> = emptyMap()
+
+    /** Gathers a capture's presses until everything is let go. Main thread only. */
+    private val tracker = ChordTracker()
+
     /** Whether opening threw away bindings aimed at slots that no longer exist. */
     private var purgedOnOpen = false
 
@@ -104,6 +116,8 @@ class MappingEditorController(
 
     /** Whether the mirror was off when the editor opened, so captures listen in the app. */
     private var listenInAppOnOpen = false
+
+    private var layoutOnOpen = PadLayout.XBOX
 
     /** What the real external pad declares, for the auto-map presets. Null when unreadable. */
     private var sourceTraits: TargetTraits? = null
@@ -123,6 +137,7 @@ class MappingEditorController(
                 seedDefaultMapping(key)
                 val mapping = mappings.get(key)
                 seededOnOpen = runCatching { mappings.isSeeded(key) }.getOrDefault(false)
+                layoutOnOpen = runCatching { mappings.layout(key) }.getOrDefault(PadLayout.XBOX)
                 // Known now rather than after the first capture asks the daemon: the overlay is up
                 // before that answer comes back, and a press in the gap would reach the screen.
                 listenInAppOnOpen = runCatching { !process.isRunning() }.getOrDefault(false)
@@ -146,17 +161,22 @@ class MappingEditorController(
             // its source, so it swallows that event on the way past and hands it to a target the
             // kernel discards. Leaving it in the file would keep costing the user the control it
             // names long after the slot it aimed at stopped existing.
-            purgedOnOpen = openedWith.size != saved.bindings.size
+            openedChords = saved.chords
+                .filter { it.target in targets && it.target !in openedWith }
+                .associate { it.target to it.sources }
+            purgedOnOpen = openedWith.size != saved.bindings.size || openedChords.size != saved.chords.size
 
             _state.value = MappingEditorUiState(
                 open = true,
                 controllerName = controllerName,
                 slots = slots,
                 bindings = openedWith,
+                chords = openedChords,
                 seeded = seededOnOpen,
                 internalPadName = internalPadName,
                 listenInApp = listenInAppOnOpen,
                 sourceAxisLabels = sourceAxisLabels,
+                layout = layoutOnOpen,
             )
         }
     }
@@ -194,15 +214,18 @@ class MappingEditorController(
             val kept = it.slots.filter { s -> s.icon == SlotIcon.HOME || s.icon == SlotIcon.BACK }.map { s -> s.target }
             it.copy(
                 bindings = it.bindings.filterKeys { k -> k in kept } + presetBindings(layout, it.slots, sourceTraits),
-                capturing = null, walk = null, notice = null, seeded = false,
+                chords = it.chords.filterKeys { k -> k in kept },
+                capturing = null, walk = null, notice = null, seeded = false, layout = layout,
             )
         }
+        // Icons only, so saved at once rather than with the mapping.
+        mappingKey?.let { key -> scope.launch(Dispatchers.IO) { mappings.setLayout(key, layout) } }
         scope.launch(fifo) { process.endCapture() }
     }
 
-    /** A press the app heard itself (mirror off). Main thread only. */
-    fun captured(source: ControlRef) {
-        if (accept(source) == CaptureVerdict.Next) startCapture()
+    /** A press or release the app heard itself (mirror off). Main thread only. */
+    fun captured(source: ControlRef, pressed: Boolean) {
+        if (edge(source, pressed) == CaptureVerdict.Next) startCapture()
     }
 
     /** The key layout of a pad the app hears directly, to name its axes by evdev code. */
@@ -224,7 +247,10 @@ class MappingEditorController(
     fun clear(slot: MappingSlot) {
         if (!_state.value.open) return
         _state.update {
-            it.copy(bindings = it.bindings - slot.target, capturing = null, walk = null, notice = null, seeded = false)
+            it.copy(
+                bindings = it.bindings - slot.target, chords = it.chords - slot.target,
+                capturing = null, walk = null, notice = null, seeded = false,
+            )
         }
         stopPolling()
         scope.launch(fifo) { process.endCapture() }
@@ -236,7 +262,9 @@ class MappingEditorController(
         stopPolling()
         // No longer "the profile as it came": what is on screen is the user's doing from here on,
         // even though clearing it all is what will hand the profile back on the way out.
-        _state.update { it.copy(bindings = emptyMap(), capturing = null, walk = null, notice = null, seeded = false) }
+        _state.update {
+            it.copy(bindings = emptyMap(), chords = emptyMap(), capturing = null, walk = null, notice = null, seeded = false)
+        }
         scope.launch(fifo) { process.endCapture() }
     }
 
@@ -254,9 +282,10 @@ class MappingEditorController(
         stopPolling()
         val key = mappingKey
         val bindings = _state.value.bindings
+        val chords = _state.value.chords
         // A visit that changed nothing writes nothing: bumping the generation would make the daemon
         // re-read a document identical to the one it is already running.
-        val edited = bindings != openedWith || purgedOnOpen
+        val edited = bindings != openedWith || chords != openedChords || purgedOnOpen
 
         scope.launch(Dispatchers.IO) {
             process.endCapture()
@@ -266,7 +295,10 @@ class MappingEditorController(
                 // bump stored the mapping and told nobody: the badge showed the new mapping while the
                 // pad went on using the old one until something unrelated restarted the daemon.
                 withContext(NonCancellable) {
-                    val mapping = ControllerMapping(bindings.map { Binding(it.value, it.key) })
+                    val mapping = ControllerMapping(
+                        bindings.map { Binding(it.value, it.key) },
+                        chords.map { Chord(it.value, it.key) },
+                    )
                     if (mapping.isEmpty) {
                         mappings.clear(key)
                         // Clearing everything means "back to how this should be", and for a pad the
@@ -305,49 +337,55 @@ class MappingEditorController(
      */
     private fun startCapture() {
         poller?.cancel()
+        tracker.reset()
+        _state.update { it.copy(pending = emptyList()) }
         poller = scope.launch(fifo) {
             process.clearCaptures()
             var offset = 0L
-            // Always the button mode, even for a stick direction: what a slot wants is one control
-            // pushed one way, and that is exactly what this mode reports — a code for a button, a
-            // code and a direction for an axis.
+            // Chord mode for every slot: it reports presses AND releases, and the slot is filled once
+            // everything is let go. One control pressed and released is an ordinary binding; several
+            // held together are a chord. A stick direction is half an axis, like a trigger.
             // The daemon listens when it runs. With the mirror off it cannot, but then the pad is not
             // grabbed either and reaches the app, so the screen listens instead.
-            val daemon = process.beginCapture(CaptureKind.BUTTON)
+            val daemon = process.beginCapture(CaptureKind.CHORD)
             withContext(Dispatchers.Main) { _state.update { it.copy(listenInApp = !daemon) } }
             if (!daemon) return@launch
             var lastBegin = System.currentTimeMillis()
 
             while (isActive && _state.value.capturing != null) {
                 // The daemon closes an idle capture after 30s so a dead wizard can't mute the pad
-                // for good. Renew it while the overlay is genuinely still waiting.
+                // for good. Renew it while the overlay is genuinely still waiting; renewing a chord
+                // capture keeps what it knows is held.
                 if (System.currentTimeMillis() - lastBegin > RENEW_CAPTURE_MS) {
-                    process.beginCapture(CaptureKind.BUTTON)
+                    process.beginCapture(CaptureKind.CHORD)
                     lastBegin = System.currentTimeMillis()
                 }
                 val read = process.readCaptures(offset)
                 offset = read.offset
-                val source = when (val result = read.results.firstOrNull()) {
-                    is CaptureResult.Button -> ControlRef.button(result.code)
-                    // The pad reports this control as an axis — a trigger, usually, or a stick being
-                    // pushed at a slot. Half of that axis's travel is the source, so it fills any slot.
-                    is CaptureResult.AxisButton -> ControlRef.half(result.code, result.sign)
-                    is CaptureResult.Stick, null -> null
-                }
-                if (source != null) {
-                    when (withContext(Dispatchers.Main) { accept(source) }) {
+                for (result in read.results) {
+                    val (source, pressed) = when (result) {
+                        is CaptureResult.Button -> ControlRef.button(result.code) to true
+                        is CaptureResult.Release -> ControlRef.button(result.code) to false
+                        is CaptureResult.AxisButton -> ControlRef.half(result.code, result.sign) to true
+                        is CaptureResult.AxisRelease -> ControlRef.half(result.code, result.sign) to false
+                        is CaptureResult.Stick -> continue
+                    }
+                    when (withContext(Dispatchers.Main) { edge(source, pressed) }) {
                         CaptureVerdict.Accepted -> {
                             process.endCapture()
                             return@launch
                         }
-                        // Reopen: the daemon latches as soon as it has a result, so without this the
-                        // overlay would sit there refusing to see the next press (or, in a walk,
-                        // the next slot's). Done HERE rather than from accept() so it cannot race
-                        // the loop that is still reading.
+                        // Start over on a clean log: what is left in this read belonged to the press
+                        // that was just refused, or to the slot the walk has moved on from.
                         CaptureVerdict.Refused, CaptureVerdict.Next -> {
+                            withContext(Dispatchers.Main) {
+                                tracker.reset()
+                                _state.update { it.copy(pending = emptyList()) }
+                            }
                             process.clearCaptures()
                             offset = 0L
-                            process.beginCapture(CaptureKind.BUTTON)
+                            process.beginCapture(CaptureKind.CHORD)
+                            break
                         }
                         CaptureVerdict.Ignored -> Unit
                     }
@@ -384,6 +422,44 @@ class MappingEditorController(
      * dispatcher), so cancelling the poller or reopening the capture from in here would be the loop
      * reaching around itself — in the reopen case, resetting the offset of a read still in flight.
      */
+    private fun edge(source: ControlRef, pressed: Boolean): CaptureVerdict {
+        if (_state.value.capturing == null) return CaptureVerdict.Ignored
+        val done = tracker.edge(source, pressed)
+        _state.update { it.copy(pending = tracker.gathered) }
+        return when {
+            done == null -> CaptureVerdict.Ignored
+            done.size == 1 -> accept(done.single())
+            else -> acceptChord(done)
+        }
+    }
+
+    private fun acceptChord(sources: List<ControlRef>): CaptureVerdict {
+        val slot = _state.value.capturing ?: return CaptureVerdict.Ignored
+        val set = sources.toSet()
+        // The same combination on two slots would fire both; refused like a single control is.
+        val taken = _state.value.chords.entries.firstOrNull { it.value.toSet() == set && it.key != slot.target }
+        val walk = _state.value.walk
+        val ownerIndex = taken?.let { t -> _state.value.slots.indexOfFirst { it.target == t.key } } ?: -1
+        if (taken != null && walk != null && ownerIndex > walk) {
+            _state.update { it.copy(chords = it.chords - taken.key) }
+        } else if (taken != null) {
+            val owner = _state.value.slots.firstOrNull { it.target == taken.key }?.label ?: "another slot"
+            _state.update { it.copy(notice = "That combination is already bound to $owner") }
+            return CaptureVerdict.Refused
+        }
+        if (slot.target !in _state.value.chords && _state.value.chords.size >= Chord.MAX_PER_MAPPING) {
+            _state.update { it.copy(notice = "Up to ${Chord.MAX_PER_MAPPING} combinations per controller") }
+            return CaptureVerdict.Refused
+        }
+        _state.update {
+            it.copy(
+                chords = it.chords + (slot.target to sources), bindings = it.bindings - slot.target,
+                capturing = null, notice = null, seeded = false,
+            )
+        }
+        return if (advanceWalk()) CaptureVerdict.Next else CaptureVerdict.Accepted
+    }
+
     private fun accept(source: ControlRef): CaptureVerdict {
         val slot = _state.value.capturing ?: return CaptureVerdict.Ignored
 
@@ -406,7 +482,10 @@ class MappingEditorController(
         }
 
         _state.update {
-            it.copy(bindings = it.bindings + (slot.target to source), capturing = null, notice = null, seeded = false)
+            it.copy(
+                bindings = it.bindings + (slot.target to source), chords = it.chords - slot.target,
+                capturing = null, notice = null, seeded = false,
+            )
         }
         return if (advanceWalk()) CaptureVerdict.Next else CaptureVerdict.Accepted
     }
@@ -423,5 +502,32 @@ class MappingEditorController(
     private companion object {
         const val POLL_INTERVAL_MS = 80L
         const val RENEW_CAPTURE_MS = 20_000L
+    }
+}
+
+/**
+ * Gathers one capture's presses: everything held at once, up to [Chord.MAX_MEMBERS], becomes the
+ * answer when the last of it is let go. A single press and release is a plain one-control binding.
+ * A release of something pressed before the capture began is ignored.
+ */
+internal class ChordTracker {
+    private val held = mutableSetOf<ControlRef>()
+    private val members = mutableListOf<ControlRef>()
+
+    val gathered: List<ControlRef> get() = members.toList()
+
+    /** The finished set once everything is let go, else null. */
+    fun edge(source: ControlRef, pressed: Boolean): List<ControlRef>? {
+        if (pressed) {
+            if (held.add(source) && source !in members && members.size < Chord.MAX_MEMBERS) members += source
+            return null
+        }
+        if (!held.remove(source) || held.isNotEmpty() || members.isEmpty()) return null
+        return members.toList().also { members.clear() }
+    }
+
+    fun reset() {
+        held.clear()
+        members.clear()
     }
 }

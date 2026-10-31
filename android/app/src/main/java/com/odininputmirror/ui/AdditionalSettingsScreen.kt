@@ -1,5 +1,7 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.SlotIcon
+import com.odininputmirror.domain.model.AppTheme
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
@@ -85,6 +87,23 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
                     else "Only when docked.",
                 ),
             ) { RowValue("‹  " + (if (always) "Always" else "Only when docked") + "  ›", accent = true) }
+            val themes = AppTheme.entries
+            val step = { by: Int -> viewModel.setTheme(themes[(state.theme.ordinal + by + themes.size) % themes.size]) }
+            MenuRow(
+                title = "Theme",
+                minHeight = 52.dp,
+                onClick = { step(1) },
+                onLeft = { step(-1) },
+                onRight = { step(1) },
+                modifier = explains("Left and right to change the colours."),
+            ) {
+                val name = when (state.theme) {
+                    AppTheme.DARK -> "Dark"
+                    AppTheme.SUPER_DARK -> "Super dark"
+                    AppTheme.LIGHT -> "Light"
+                }
+                RowValue("‹  $name  ›", accent = true)
+            }
             // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
             // can ask to be pinned itself. Shown only when the home app takes pin requests.
             if (canPin) {
@@ -96,6 +115,6 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
                 )
             }
         }
-        Footer(status = help, hints = listOf(HintAction("B", "Back", onBack), HintAction("A", "OK", null)))
+        Footer(status = help, hints = listOf(HintAction(SlotIcon.B, "Back", onBack), HintAction(SlotIcon.A, "OK", null)))
     }
 }

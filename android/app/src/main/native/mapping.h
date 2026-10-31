@@ -20,8 +20,13 @@ struct axis_range {
 };
 
 // Most bindings produce one event; the ceiling exists because several bindings may name the same
-// source, and a source event must never be able to overrun the caller's buffer.
-#define MAX_MAPPED_EVENTS 8
+// source, and a source event must never be able to overrun the caller's buffer. A firing chord can
+// add a release per member that leaked through before it completed, plus its own press.
+#define MAX_MAPPED_EVENTS 16
+
+// Per output event, from mapping_apply.
+#define MAPPED_BOUND 1  // a binding or chord produced it: no layout guesswork on top
+#define MAPPED_LEAK 2   // takes back a chord member's press the target saw before the chord completed
 
 /*
  * The mapping in force, plus the little state that applying it needs.
@@ -36,10 +41,36 @@ struct mapping_table {
     int count;
     float drive[MAX_BINDINGS];           // 0..1, how hard each binding is currently driven
     unsigned char pressed[MAX_BINDINGS]; // for button targets: the edge detector's last answer
+
+    struct chord chords[MAX_CHORDS];
+    int chord_count;
+    unsigned char chord_held[MAX_CHORDS];     // bit per member: held right now
+    unsigned char chord_fired[MAX_CHORDS];    // the target has been pressed
+    unsigned char chord_suppress[MAX_CHORDS]; // bit per member: swallowed until it is released
 };
 
-/** Adopt a binding table, clearing the drive state so nothing carries over from the old mapping. */
-void mapping_load(struct mapping_table *table, const struct binding *entries, int count);
+/** Adopt a binding and chord table, clearing all state so nothing carries over from the old mapping. */
+void mapping_load(struct mapping_table *table,
+                  const struct binding *entries, int count,
+                  const struct chord *chords, int chord_count);
+
+/** Forget every press in progress (after the target was told to release everything). */
+void mapping_reset_state(struct mapping_table *table);
+
+/**
+ * Feed one event to the chords only, for a control something earlier in the pipeline swallows (Guide,
+ * under the Home button setting). Returns the events written, all chord output.
+ */
+int mapping_chords_only(struct mapping_table *table,
+                        const struct axis_range *source,
+                        const struct axis_range *target,
+                        const struct input_event *in,
+                        struct input_event *out,
+                        unsigned char *flags,
+                        int max_out);
+
+/** True while a fired chord owns this key: its events are swallowed until it is released. */
+int mapping_key_in_chord(const struct mapping_table *table, unsigned short code);
 
 /**
  * Resolve one event from the source controller into what the target should be told.
@@ -49,16 +80,20 @@ void mapping_load(struct mapping_table *table, const struct binding *entries, in
  * that changes nothing returns 0: an analog source sends a stream of values, and a button target only
  * wants the two transitions in it.
  *
- * `bound` (optional) reports whether a binding claimed this event. Callers need it because a binding
- * is the user saying exactly where a control goes: a layout correction applied afterwards would be
+ * `flags[i]` says how out[i] came about (MAPPED_*). Callers need MAPPED_BOUND because a binding is
+ * the user saying exactly where a control goes: a layout correction applied afterwards would be
  * second-guessing them, and in the face-button case would invert precisely what they just set.
+ *
+ * Chords run first. When every member of one is held its target is pressed and the members are
+ * swallowed until each is released; members pressed before the last one already reached the target,
+ * so they are released there (MAPPED_LEAK). Releasing any member releases the target.
  */
 int mapping_apply(struct mapping_table *table,
                   const struct axis_range *source,
                   const struct axis_range *target,
                   const struct input_event *in,
                   struct input_event *out,
-                  int max_out,
-                  int *bound);
+                  unsigned char *flags,
+                  int max_out);
 
 #endif  // MAPPING_H

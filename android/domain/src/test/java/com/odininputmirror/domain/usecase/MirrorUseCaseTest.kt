@@ -641,6 +641,8 @@ private class FakeMirrorSettingsRepository(
         state = state.copy(autoMirrorEnabled = enabled)
     }
 
+    override fun setTheme(theme: com.odininputmirror.domain.model.AppTheme) = Unit
+
     override fun setMirrorWhenHandheld(enabled: Boolean) {
         state = state.copy(mirrorWhenHandheld = enabled)
     }

@@ -102,6 +102,23 @@ class DefaultMappingSeederTest {
         assertEquals("a user's own mapping triggered a database lookup", 0, databaseReads)
     }
 
+    @Test
+    fun aPadWithOnlyChordsIsNotReseeded() {
+        val mappings = FakeMappingRepository()
+        val chordsOnly = ControllerMapping(
+            chords = listOf(
+                com.odininputmirror.domain.model.Chord(
+                    listOf(com.odininputmirror.domain.model.ControlRef.button(304), com.odininputmirror.domain.model.ControlRef.button(305)),
+                    com.odininputmirror.domain.model.ControlRef.button(102),
+                ),
+            ),
+        )
+        mappings.saved[known] = chordsOnly
+        DefaultMappingSeeder({ sequenceOf(eightBitDo) }, FakeDeviceRepository { padTraits }, mappings).seedIfEmpty(known)
+
+        assertEquals(chordsOnly, mappings.saved[known])
+    }
+
     private fun mappingSlotsSample() = GameControllerDb(sequenceOf(eightBitDo))
         .entryFor(0x2dc8, 0x3106)!!
         .let { entry ->

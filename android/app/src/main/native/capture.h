@@ -16,6 +16,8 @@ enum capture_want {
     CAPTURE_OFF = 0,
     CAPTURE_BUTTON,
     CAPTURE_STICK,
+    // Presses AND releases, never latching: the app builds a chord from what was held together.
+    CAPTURE_CHORD,
 };
 
 struct capture {
@@ -24,10 +26,14 @@ struct capture {
     int first_axis;        // stick capture: the axis seen first, waiting for a different second
     int first_axis_sign;
     long long last_command_ms;
+    signed char axis_held[ABS_CNT];  // chord capture: which way each axis is reported held, 0 none
     const char *log_path;
 };
 
-/** Open a capture step, clearing the latch and any half-captured stick. */
+/**
+ * Open a capture step, clearing the latch and any half-captured stick. Renewing a chord capture keeps
+ * which axes are held, so a trigger held across the renewal still reports its release.
+ */
 void capture_begin(struct capture *c, enum capture_want want, long long now_ms);
 
 /** Close capture and resume normal forwarding. */

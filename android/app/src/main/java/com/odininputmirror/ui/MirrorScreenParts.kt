@@ -50,7 +50,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.odininputmirror.R
 import com.odininputmirror.domain.model.ControllerDevice
+import com.odininputmirror.ui.theme.ControlSwitchLogo
 import com.odininputmirror.ui.theme.Palette
+import com.odininputmirror.ui.theme.Teal
 import kotlin.math.roundToInt
 
 // The pieces the pages lay out, Switch 2 "Controllers" style: a title with a rule under it, the
@@ -64,7 +66,8 @@ internal fun Header(title: String = stringResource(R.string.app_name), loading: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 32.dp, height = 24.dp))
+        // The app's own mark (the launcher icon's tile), so it reads the same on every theme.
+        Image(ControlSwitchLogo.Tile, contentDescription = null, modifier = Modifier.size(36.dp))
         Text(title, color = Palette.textPrimary, fontSize = 22.sp)
         if (loading) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Palette.cyan, strokeWidth = 2.dp)
@@ -77,29 +80,9 @@ internal fun Rule(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(Palette.border))
 }
 
-/** The focus outline every selectable item wears: thick, rounded, the Cocoon gradient. */
+/** The focus outline every selectable item wears: thick, rounded, teal in every theme. */
 internal fun Modifier.focusOutline(focused: Boolean, shape: RoundedCornerShape): Modifier =
-    if (focused) border(3.dp, Palette.focusBrush, shape) else this
-
-/**
- * A Switch-style button icon: A, B, X, Y as round chips (A blue, the rest grey), L and R as rounded
- * blue keys. Drawn rather than taken from PromptFont, whose Xbox glyphs read as the wrong console.
- */
-@Composable
-internal fun ButtonIcon(label: String, size: Dp = 26.dp) {
-    val key = label == "L" || label == "R"
-    Box(
-        modifier = Modifier
-            .height(size)
-            .widthIn(min = size)
-            .clip(if (key) RoundedCornerShape(6.dp) else CircleShape)
-            .background(if (key || label == "A") Palette.accent else Palette.borderStrong)
-            .padding(horizontal = if (key) 8.dp else 0.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = Palette.textPrimary, fontSize = (size.value * 0.55f).sp, lineHeight = (size.value * 0.6f).sp)
-    }
-}
+    if (focused) border(3.dp, Teal, shape) else this
 
 /** A battery outline filled to [percent], and the number. */
 @Composable
@@ -266,7 +249,7 @@ internal fun RowSwitch(checked: Boolean, enabled: Boolean) {
         onCheckedChange = null,
         enabled = enabled,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = Palette.textPrimary,
+            checkedThumbColor = Palette.onAccent,
             checkedTrackColor = Palette.accent,
             uncheckedThumbColor = Palette.textMuted,
             uncheckedTrackColor = Palette.surfaceRaised,

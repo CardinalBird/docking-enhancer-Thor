@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="88" alt="Control Switch icon">
+<img src="docs/launcher-icon/png/control-switch-icon-512.png" width="88" alt="Control Switch icon">
 
 # Control Switch for AYN Thor
 

@@ -181,6 +181,7 @@ internal class RootMirrorProcessRepository(
         val command = when (kind) {
             CaptureKind.BUTTON -> CAPTURE_BUTTON_COMMAND
             CaptureKind.STICK -> CAPTURE_STICK_COMMAND
+            CaptureKind.CHORD -> CAPTURE_CHORD_COMMAND
         }
         return sendCommand(files.ensureControlFifo(), command)
     }
@@ -277,6 +278,15 @@ private fun parseCaptureLine(line: String): CaptureResult? {
             if (code != null && sign != null) CaptureResult.AxisButton(code, sign) else null
         }
 
+        parts.size == 2 && parts[0] == "release" ->
+            parts[1].toIntOrNull()?.let { CaptureResult.Release(it) }
+
+        parts.size == 3 && parts[0] == "axis_release" -> {
+            val code = parts[1].toIntOrNull()
+            val sign = parts[2].toIntOrNull()
+            if (code != null && sign != null) CaptureResult.AxisRelease(code, sign) else null
+        }
+
         parts.size == 5 && parts[0] == "stick" -> {
             val values = parts.drop(1).map { it.toIntOrNull() }
             if (values.any { it == null }) {
@@ -309,7 +319,8 @@ private fun configJson(
       "combo_hold_kill_app": $comboHoldKillApp,
       "virtual_mouse": $virtualMouse,
       "mapping": {
-        "bindings": [${mapping.configBindingRows()}]
+        "bindings": [${mapping.configBindingRows()}],
+        "chords": [${mapping.configChordRows()}]
       }
     }
 """.trimIndent()

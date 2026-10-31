@@ -7,7 +7,13 @@ package com.odininputmirror.domain.model
  * button was asked for, and half of a stick when a stick was. Asking, rather than guessing from what
  * arrives, is what lets a d-pad fill a stick slot and an analog trigger fill a button slot.
  */
-enum class CaptureKind { BUTTON, STICK }
+enum class CaptureKind {
+    BUTTON,
+    STICK,
+
+    /** Every press and release, never latching: the editor builds a chord from what is held together. */
+    CHORD,
+}
 
 /** One control the user pressed, as the daemon saw it on the grabbed controller. */
 sealed interface CaptureResult {
@@ -15,6 +21,12 @@ sealed interface CaptureResult {
 
     /** A control the user's pad reports as an axis where a button was asked for (a trigger). */
     data class AxisButton(val code: Int, val sign: Int) : CaptureResult
+
+    /** CHORD capture: a button let go. */
+    data class Release(val code: Int) : CaptureResult
+
+    /** CHORD capture: an axis back near rest after an [AxisButton] the same way. */
+    data class AxisRelease(val code: Int, val sign: Int) : CaptureResult
 
     /** Both axes of a stick, captured from one gesture: the user rolls it and two axes move. */
     data class Stick(val axisX: Int, val axisY: Int, val signX: Int, val signY: Int) : CaptureResult

@@ -43,6 +43,23 @@ struct binding {
     signed char target_dir;
 };
 
+// Chords: one target fired by 2..CHORD_MAX_MEMBERS controls held together.
+#define MAX_CHORDS 16
+#define CHORD_MAX_MEMBERS 4
+
+// One control a chord listens to (a button, or one half of an axis), or the key it fires.
+struct bind_ref {
+    unsigned char kind;
+    unsigned short code;
+    signed char dir;
+};
+
+struct chord {
+    int count;
+    struct bind_ref members[CHORD_MAX_MEMBERS];
+    struct bind_ref target;  // always a key
+};
+
 struct config {
     int home_mode;  // enum home_mode in input_mirror.c: 0 pass through, 1 Back, 2 Home
     int combo_hold_kill_app;
@@ -51,6 +68,9 @@ struct config {
 
     struct binding bindings[MAX_BINDINGS];
     int binding_count;
+
+    struct chord chords[MAX_CHORDS];
+    int chord_count;
 };
 
 /**

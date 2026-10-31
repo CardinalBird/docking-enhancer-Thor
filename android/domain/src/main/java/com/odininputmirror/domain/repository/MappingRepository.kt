@@ -1,5 +1,6 @@
 package com.odininputmirror.domain.repository
 
+import com.odininputmirror.domain.model.PadLayout
 import com.odininputmirror.domain.model.ControllerMapping
 import com.odininputmirror.domain.model.MappingKey
 
@@ -27,4 +28,9 @@ interface MappingRepository {
     fun isSeeded(key: MappingKey): Boolean = false
 
     fun setSeeded(key: MappingKey, seeded: Boolean) {}
+
+    /** The layout preset last applied to this controller; picks which console's button icons to show. */
+    fun layout(key: MappingKey): PadLayout = PadLayout.XBOX
+
+    fun setLayout(key: MappingKey, layout: PadLayout) {}
 }

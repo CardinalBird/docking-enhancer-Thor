@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.SlotIcon
 import android.view.InputDevice
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -135,9 +136,9 @@ fun Player1Screen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Press  ", color = Palette.textPrimary, fontSize = 19.sp)
-                ButtonIcon("L")
+                PadIcon(SlotIcon.LEFT_BUMPER, 34.dp)
                 Text("  +  ", color = Palette.textPrimary, fontSize = 19.sp)
-                ButtonIcon("R")
+                PadIcon(SlotIcon.RIGHT_BUMPER, 34.dp)
                 Text("  on the controller you'd like to use.", color = Palette.textPrimary, fontSize = 19.sp)
             }
             Spacer(Modifier.height(20.dp))
@@ -153,7 +154,7 @@ fun Player1Screen(
             if (pendingName != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Press  ", color = Palette.textPrimary, fontSize = 17.sp)
-                    ButtonIcon("A")
+                    PadIcon(SlotIcon.A, 32.dp)
                     Text("  when you're ready.", color = Palette.textPrimary, fontSize = 17.sp)
                 }
             } else {
@@ -168,8 +169,8 @@ fun Player1Screen(
 
         HintBar(
             hints = listOfNotNull(
-                HintAction("B", "Back", onClose),
-                if (pendingName != null) HintAction("A", "OK", onConfirm) else null,
+                HintAction(SlotIcon.B, "Back", onClose),
+                if (pendingName != null) HintAction(SlotIcon.A, "OK", onConfirm) else null,
             ),
         )
     }
@@ -214,19 +215,11 @@ private fun Slot(filled: Boolean, modifier: Modifier, content: @Composable () ->
     ) { content() }
 }
 
-internal data class HintAction(val glyph: String, val label: String, val onClick: (() -> Unit)?)
-
-// Hints naming a face button or bumper get the drawn Switch-style icon, whether the caller passes the
-// letter or the PromptFont glyph; anything else still renders as its PromptFont glyph.
-private val iconFor = mapOf(
-    PromptGlyph.A to "A", PromptGlyph.B to "B", PromptGlyph.X to "X", PromptGlyph.Y to "Y",
-    PromptGlyph.LEFT_BUMPER to "L", PromptGlyph.RIGHT_BUMPER to "R",
-)
+internal data class HintAction(val icon: SlotIcon, val label: String, val onClick: (() -> Unit)?)
 
 /** The Switch-style hints along the bottom, on the page: which pad button does what. Tappable too. */
 @Composable
 internal fun HintBar(hints: List<HintAction>) {
-    val glyphs = promptFontFamily()
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.End),
@@ -239,12 +232,7 @@ internal fun HintBar(hints: List<HintAction>) {
                     .let { m -> hint.onClick?.let { m.clickable(onClick = it) } ?: m }.padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val icon = iconFor[hint.glyph] ?: hint.glyph.takeIf { it in iconFor.values }
-                if (icon != null) {
-                    ButtonIcon(icon, size = 24.dp)
-                } else {
-                    Text(hint.glyph, color = Palette.textPrimary, fontFamily = glyphs, fontSize = 24.sp)
-                }
+                PadIcon(hint.icon, 30.dp)
                 Spacer(Modifier.size(8.dp))
                 Text(hint.label, color = Palette.textPrimary, fontSize = 15.sp)
             }

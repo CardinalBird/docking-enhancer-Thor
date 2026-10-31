@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.SlotIcon
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -162,6 +163,7 @@ fun MappingEditorScreen(
                     SlotRow(
                         slot = slot,
                         source = state.bindings[slot.target],
+                        chord = state.chords[slot.target],
                         axisLabels = state.sourceAxisLabels,
                         onBind = {
                             focusedRow = index
@@ -198,10 +200,10 @@ fun MappingEditorScreen(
                 Box(Modifier.weight(2f)) {
                     HintBar(
                         hints = listOfNotNull(
-                            HintAction(PromptGlyph.A, "Rebind", null),
-                            HintAction(PromptGlyph.X, "Clear", null),
-                            controller?.let { HintAction(PromptGlyph.Y, "Map all", it::mapAll) },
-                            HintAction(PromptGlyph.B, "Done", onClose),
+                            HintAction(SlotIcon.A, "Rebind", null),
+                            HintAction(SlotIcon.X, "Clear", null),
+                            controller?.let { HintAction(SlotIcon.Y, "Map all", it::mapAll) },
+                            HintAction(SlotIcon.B, "Done", onClose),
                         ),
                     )
                 }
@@ -212,6 +214,8 @@ fun MappingEditorScreen(
             CaptureOverlay(
                 slot = state.capturing,
                 source = state.bindings[state.capturing.target],
+                chord = state.chords[state.capturing.target],
+                pending = state.pending,
                 axisLabels = state.sourceAxisLabels,
                 notice = state.notice,
                 onCancel = onCancelBind,

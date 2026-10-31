@@ -39,17 +39,33 @@ data class ControlRef(val kind: ControlKind, val code: Int, val direction: Int =
 data class Binding(val source: ControlRef, val target: ControlRef)
 
 /**
+ * A target driven by 2 to [MAX_MEMBERS] controls held together. Kept apart from [Binding] so code that
+ * reads one source per binding can never mistake a chord for its first member.
+ */
+data class Chord(val sources: List<ControlRef>, val target: ControlRef) {
+    companion object {
+        const val MAX_MEMBERS = 4
+
+        /** The daemon's MAX_CHORDS: rows past it are never read. */
+        const val MAX_PER_MAPPING = 16
+    }
+}
+
+/**
  * A user-captured correction for a controller whose layout doesn't match what the mirror assumes.
  *
  * Codes are raw evdev codes on both sides, because that is what the daemon forwards. A control the
  * user skipped simply isn't here, and the daemon forwards it untouched — which is what makes "skip"
  * mean "leave this one alone" rather than "break it".
  */
-data class ControllerMapping(val bindings: List<Binding> = emptyList()) {
-    val isEmpty: Boolean get() = bindings.isEmpty()
+data class ControllerMapping(
+    val bindings: List<Binding> = emptyList(),
+    val chords: List<Chord> = emptyList(),
+) {
+    val isEmpty: Boolean get() = bindings.isEmpty() && chords.isEmpty()
 
     /** What the card reports: how many controls the user actually pinned down. */
-    val boundControlCount: Int get() = bindings.size
+    val boundControlCount: Int get() = bindings.size + chords.size
 
     /** True when some binding already reads this exact control, so a second one would fight it. */
     fun claims(source: ControlRef): Boolean = bindings.any { it.source == source }

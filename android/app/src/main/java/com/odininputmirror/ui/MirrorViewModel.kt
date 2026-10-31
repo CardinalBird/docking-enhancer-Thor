@@ -1,5 +1,7 @@
 package com.odininputmirror.ui
 
+import com.odininputmirror.domain.model.PadLayout
+import com.odininputmirror.domain.model.AppTheme
 import com.odininputmirror.domain.model.HomeButtonMode
 import android.app.Notification
 import android.app.NotificationChannel
@@ -63,6 +65,9 @@ data class MirrorUiState(
     val pendingPlayer1Path: String? = null,
     // Mirror handheld too, not only when docked.
     val mirrorWhenHandheld: Boolean = false,
+    val theme: AppTheme = AppTheme.DARK,
+    // Which console's button icons to draw: the preset last applied to the external pad.
+    val padLayout: PadLayout = PadLayout.XBOX,
 ) {
     // On a recognised handheld (e.g. Odin) the native layer flags the internal controller by
     // hardware signature and locks it. Otherwise the internal defaults to the first detected
@@ -79,7 +84,8 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     // verdict and one seeding cache instead of two that can disagree.
     private val graph = InputMirrorGraph.of(appContext, forceDockMode = BuildConfig.FORCE_DOCK_MODE_FOR_DEV)
 
-    private val _state = MutableStateFlow(MirrorUiState())
+    // The theme is read up front (one small prefs file) so a Light user never sees a dark first frame.
+    private val _state = MutableStateFlow(MirrorUiState(theme = graph.settingsRepository.getSettings().theme))
     val state: StateFlow<MirrorUiState> = _state.asStateFlow()
 
     // Owned rather than injected as a second ViewModel: it lives and dies with this screen, and
@@ -204,6 +210,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 // otherwise wear them out of the box.
                 mappedControlCount = externalDevice?.mappingKey?.let(::mappedCountFor),
                 hasSeededMapping = externalDevice?.mappingKey?.let(::isSeededFor) ?: false,
+                padLayout = externalDevice?.mappingKey?.let(graph.mappingRepository::layout) ?: PadLayout.XBOX,
                 message = buildStatusMessage(status, available, saved),
             )
         }
@@ -234,7 +241,8 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
             val (count, seeded) = withContext(Dispatchers.IO) {
                 mappedCountFor(key) to isSeededFor(key)
             }
-            _state.update { it.copy(mappedControlCount = count, hasSeededMapping = seeded) }
+            val layout = withContext(Dispatchers.IO) { graph.mappingRepository.layout(key) }
+            _state.update { it.copy(mappedControlCount = count, hasSeededMapping = seeded, padLayout = layout) }
         }
     }
 
@@ -381,6 +389,11 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 _state.update { it.copy(virtualMouse = !nextValue, message = error.message ?: error.toString()) }
             }
         }
+    }
+
+    fun setTheme(theme: AppTheme) {
+        _state.update { it.copy(theme = theme) }
+        viewModelScope.launch(Dispatchers.IO) { graph.settingsRepository.setTheme(theme) }
     }
 
     fun setMirrorWhenHandheld(nextValue: Boolean) {

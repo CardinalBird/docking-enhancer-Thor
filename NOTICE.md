@@ -37,3 +37,8 @@ requires it.
 The app's typeface is Poppins SemiBold, copyright 2020 The Poppins Project Authors
 (https://github.com/itfoundry/Poppins), under the SIL Open Font License 1.1. See
 [third-party/poppins/NOTICE.md](third-party/poppins/NOTICE.md).
+
+### Kenney Input Prompts
+
+The button and controller prompts (`android/app/src/main/res/drawable/kp_*.xml`) are converted from
+Kenney Input Prompts 1.5 by Kenney (https://kenney.nl), released under CC0 1.0 (public domain).

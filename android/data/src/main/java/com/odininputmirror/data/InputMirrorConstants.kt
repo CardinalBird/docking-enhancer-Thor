@@ -52,6 +52,7 @@ internal const val KEY_COMBO_HOLD_KILL_APP = "combo_hold_kill_app"
 internal const val KEY_VIRTUAL_MOUSE = "virtual_mouse"
 internal const val KEY_AUTO_MIRROR_ENABLED = "auto_mirror_enabled"
 internal const val KEY_MIRROR_WHEN_HANDHELD = "mirror_when_handheld"
+internal const val KEY_THEME = "theme"
 // Generation of the live options (see MirrorSettings.configGeneration docs).
 internal const val KEY_CONFIG_GENERATION = "config_generation"
 internal const val KEY_EXPECTED_RUNNING = "expected_running"
@@ -74,6 +75,7 @@ internal const val RELOAD_COMMAND = "reload\n"
 // crashed cannot leave the controller mute.
 internal const val CAPTURE_BUTTON_COMMAND = "capture button\n"
 internal const val CAPTURE_STICK_COMMAND = "capture stick\n"
+internal const val CAPTURE_CHORD_COMMAND = "capture chord\n"
 internal const val CAPTURE_OFF_COMMAND = "capture off\n"
 // Give the daemon time to run its cleanup (restore hidden nodes, destroy uinput devices) on SIGTERM
 // before escalating to SIGKILL. 0.5s comfortably covers the restore (a handful of syscalls) even
