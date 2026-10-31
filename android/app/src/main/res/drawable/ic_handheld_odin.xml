@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimalist AYN Odin: one wide body, screen in the middle, controls either side. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="140dp"
+    android:height="64dp"
+    android:viewportWidth="140"
+    android:viewportHeight="64">
+    <path android:pathData="M24,4 H116 A20,20 0 0 1 136,24 V40 A20,20 0 0 1 116,60 H24 A20,20 0 0 1 4,40 V24 A20,20 0 0 1 24,4 Z"
+        android:fillColor="#FF2A2A2A"
+        android:strokeColor="#FFB8B8B8" android:strokeWidth="2" />
+    <path android:pathData="M37,9 H103 A3,3 0 0 1 106,12 V52 A3,3 0 0 1 103,55 H37 A3,3 0 0 1 34,52 V12 A3,3 0 0 1 37,9 Z"
+        android:fillColor="#FF0C0C0C" />
+    <path android:pathData="M12,22 a7,7 0 1 0 14,0 a7,7 0 1 0 -14,0 Z"
+        android:strokeColor="#FFB4F2FD" android:strokeWidth="2" />
+    <path android:pathData="M17.5,39 H20.5 V42.5 H24 V45.5 H20.5 V49 H17.5 V45.5 H14 V42.5 H17.5 Z"
+        android:fillColor="#FFB8B8B8" />
+    <path android:pathData="M119,17 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z M124,22 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z M119,27 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z M114,22 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z"
+        android:fillColor="#FFB8B8B8" />
+    <path android:pathData="M114,44 a7,7 0 1 0 14,0 a7,7 0 1 0 -14,0 Z"
+        android:strokeColor="#FFB4F2FD" android:strokeWidth="2" />
+</vector>
