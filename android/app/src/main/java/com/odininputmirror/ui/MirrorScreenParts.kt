@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.odininputmirror.R
 import com.odininputmirror.domain.model.ControllerDevice
+import com.odininputmirror.ui.theme.ControlSwitchLogo
 import com.odininputmirror.ui.theme.Palette
 import com.odininputmirror.ui.theme.Teal
 import kotlin.math.roundToInt
@@ -65,7 +66,8 @@ internal fun Header(title: String = stringResource(R.string.app_name), loading: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 32.dp, height = 24.dp))
+        // The app's own mark (the launcher icon's tile), so it reads the same on every theme.
+        Image(ControlSwitchLogo.Tile, contentDescription = null, modifier = Modifier.size(36.dp))
         Text(title, color = Palette.textPrimary, fontSize = 22.sp)
         if (loading) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Palette.cyan, strokeWidth = 2.dp)
