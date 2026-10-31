@@ -3,12 +3,12 @@
 Docking Enhancer (Odin Input Mirror)
 Copyright (C) 2026 Ezequiel-CE
 
-Docking Enhancer for AYN Thor
+Control Switch (formerly Docking Enhancer for AYN Thor)
 Modified from the above for the AYN Thor by CardinalBird
 (https://github.com/CardinalBird/docking-enhancer-Thor), 2026. Changes include
 the Home button modes, the L+R player 1 lock, Thor dock detection, the
-controller-matching fixes, the redesigned UI and launcher icon; the git history
-records each one.
+controller-matching fixes, the redesigned UI and launcher icon and the rename;
+the git history records each one.
 
 This program is free software, distributed under the terms of the GNU General
 Public License v2.0. See [LICENSE](LICENSE) for the full text.

@@ -1,5 +1,5 @@
 #!/system/bin/sh
-# Docking Enhancer — on-device e2e suite.
+# Control Switch — on-device e2e suite.
 #
 # Exercises the shipped daemon against synthetic controllers, so every run is identical and no
 # physical pad has to stay awake. Run it from the host with:
@@ -67,7 +67,7 @@ start_mirror() {
 echo "=== setup ==="
 
 # The app's supervisor would fight the suite for the controllers, so park it first.
-am force-stop com.odininputmirror 2>/dev/null
+am force-stop com.controlswitch 2>/dev/null
 stop_mirror
 
 rm -rf $TMP
@@ -75,7 +75,7 @@ mkdir -p $TMP
 
 # Test the binary the app actually ships, not a rebuild that might drift from it.
 # Without su the app's private copy is unreadable; build-harness.sh pushes the same committed binary.
-if ! as_root "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
+if ! as_root "cp /data/data/com.controlswitch/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
     ! [ -x $MIRROR ]; then
     echo "  ABORT: no pude copiar el binario del daemon (esta instalada la app?)"
     exit 1
