@@ -228,6 +228,7 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(config.contains("\"home_mode\": 1"))
         assertTrue(config.contains("\"virtual_mouse\": false"))
         assertTrue(config.contains("\"bindings\": [[0, 304, 0, 0, 307, 0]]"))
+        assertTrue("an empty chord table must still be written, or a cleared chord lingers", config.contains("\"chords\": []"))
         // The reload must never travel through PServer: that queue is serialized process-wide, and
         // keeping a toggle off it is the whole reason the fifo exists.
         assertTrue(shell.executed.isEmpty())

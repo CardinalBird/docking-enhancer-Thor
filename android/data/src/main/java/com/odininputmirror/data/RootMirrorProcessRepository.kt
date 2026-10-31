@@ -309,7 +309,8 @@ private fun configJson(
       "combo_hold_kill_app": $comboHoldKillApp,
       "virtual_mouse": $virtualMouse,
       "mapping": {
-        "bindings": [${mapping.configBindingRows()}]
+        "bindings": [${mapping.configBindingRows()}],
+        "chords": [${mapping.configChordRows()}]
       }
     }
 """.trimIndent()
