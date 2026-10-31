@@ -13,11 +13,11 @@ This is CardinalBird's fork of Ezequiel-CE/Docking-Enhancer, retargeted to the *
 
 ## Repo layout that matters
 - Android multi-module project under `android/`.
-- `:app` — Compose UI + `MainActivity` (ComponentActivity) + `MainApplication` (plain Application; starts the supervisor only when `isPServerSupported()`) + supervisor service + boot receiver. UI lives in `android/app/src/main/java/com/odininputmirror/ui/`.
+- `:app` — Compose UI + `MainActivity` (ComponentActivity) + `MainApplication` (plain Application; starts the supervisor unconditionally, and the supervisor decides) + supervisor service + boot receiver. UI lives in `android/app/src/main/java/com/odininputmirror/ui/`.
 - `:data` — Android/process impl (`InputMirrorGraph`, repositories, `MirrorShell` → `PServerShell` over PServerBinder, `PServerExec`).
 - `:domain` — pure Kotlin use cases + interfaces + models.
 - Dependency direction is `app -> data -> domain`.
-- `MirrorViewModel` (in `:app` `ui`) wraps `InputMirrorGraph`, exposes a `MirrorUiState` StateFlow, and runs the 2s/6s status poll. `MirrorScreen` renders it.
+- `MirrorViewModel` (in `:app` `ui`) wraps `InputMirrorGraph` and exposes a `MirrorUiState` StateFlow built from the snapshot the supervisor publishes to `MirrorStateStore` (no poll loop of its own). `MirrorScreen` renders it. Settings writes call `MirrorStateStore.wake()` so the supervisor acts at once.
 
 ## Commands (source of truth: Gradle files)
 Run from `android/`. On Windows use `gradlew.bat` and the `.ps1` scripts; on macOS/Linux, `./gradlew`
@@ -57,7 +57,7 @@ Run from `android/`. On Windows use `gradlew.bat` and the `.ps1` scripts; on mac
 - At runtime Kotlin copies that asset to app files dir and launches it via the no-root PServer shell (`RootMirrorProcessRepository` → `MirrorShell.launchDaemon`). The daemon runs foreground inside a backgrounded `sh` script — never `setsid`/inline `&` (input_mirror catches SIGHUP and would exit).
 
 ## Runtime/ops constraints
-- No root. Privileged commands go through PServerBinder (`PServerShell`), which returns only the first stdout line and no exit code — reads stage output through a file, status checks use a stdout token. On devices without the service, `isPServerSupported()` is false: the UI shows an "Unsupported device" dialog and the supervisor idles.
+- No root. Privileged commands go through PServerBinder (`PServerShell`), which returns only the first stdout line and no exit code — reads stage output through a file, status checks use a stdout token. On devices without the service the UI shows an "Unsupported device" dialog; the supervisor retries the probe for about a minute (it can lose a race with the firmware at boot), then stops itself.
 - Mirroring writes directly to `/dev/input/eventX` (the pservice SELinux domain can open input/uinput nodes).
 - Event node paths are unstable across reconnects/reboots; device resolution matches by GUID first, then path (`findSavedControllerDevice`).
 - Start/stop/restart is decided every tick by `ResolveAutoMirrorDecisionUseCase`, driven from the foreground service `InputMirrorSupervisorService`; it only acts while `autoMirrorEnabled` is true and the device is docked.
