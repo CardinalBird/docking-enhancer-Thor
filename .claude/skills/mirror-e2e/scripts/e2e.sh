@@ -642,7 +642,8 @@ else
 
         # Leaving must hide the cursor WITHOUT touching the screen: the helper may hover (a tracking
         # id) but never press BTN_TOUCH, which is what used to tap (0,0) and dismiss open dialogs.
-        TOUCHN=$(awk '/Name="Control Switch Mirror"/{f=1} f && /Handlers=/ { sub(/.*Handlers=/, ""); for (i = 1; i <= NF; i++) if ($i ~ /^event/) { print "/dev/input/" $i; exit } }' /proc/bus/input/devices 2>/dev/null)
+        # Last match, not first: the installed app's own helper carries the same name since the rename.
+        TOUCHN=$(awk '/Name="Control Switch Mirror"/{f=1} f && /Handlers=/ { sub(/.*Handlers=/, ""); for (i = 1; i <= NF; i++) if ($i ~ /^event/) { p = "/dev/input/" $i; f = 0 } } END { if (p) print p }' /proc/bus/input/devices 2>/dev/null)
         # Launched bare, not behind a `[ ] &&`: killing the pid of a backgrounded list kills the
         # subshell and orphans getevent, which then holds adb's output open and the run never returns.
         T12T=
