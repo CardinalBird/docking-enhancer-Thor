@@ -15,6 +15,7 @@ import com.odininputmirror.domain.repository.MirrorProcessRepository
 import com.odininputmirror.domain.repository.MirrorSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
@@ -68,6 +69,12 @@ class MappingEditorController(
     val state: StateFlow<MappingEditorUiState> = _state.asStateFlow()
 
     private var poller: Job? = null
+
+    // One lane for everything that writes the control FIFO. cancelBind/clear used to fire
+    // "capture off" on a free IO thread, unordered with the next bind's "capture button": B then A
+    // quickly could land the off AFTER the new capture opened, and the overlay waited forever.
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val fifo = Dispatchers.IO.limitedParallelism(1)
     private var mappingKey: MappingKey? = null
 
     /** What was saved when the editor opened, to tell a real edit from a look around. */
@@ -131,7 +138,7 @@ class MappingEditorController(
     /** Close the overlay without changing anything. */
     fun cancelBind() {
         stopPolling()
-        scope.launch(Dispatchers.IO) { process.endCapture() }
+        scope.launch(fifo) { process.endCapture() }
         _state.update { it.copy(capturing = null, notice = null) }
     }
 
@@ -142,7 +149,7 @@ class MappingEditorController(
             it.copy(bindings = it.bindings - slot.target, capturing = null, notice = null, seeded = false)
         }
         stopPolling()
-        scope.launch(Dispatchers.IO) { process.endCapture() }
+        scope.launch(fifo) { process.endCapture() }
     }
 
     /** Throw the whole mapping away. Stays open, so the user can see it emptied and start over. */
@@ -152,7 +159,7 @@ class MappingEditorController(
         // No longer "the profile as it came": what is on screen is the user's doing from here on,
         // even though clearing it all is what will hand the profile back on the way out.
         _state.update { it.copy(bindings = emptyMap(), capturing = null, notice = null, seeded = false) }
-        scope.launch(Dispatchers.IO) { process.endCapture() }
+        scope.launch(fifo) { process.endCapture() }
     }
 
     /**
@@ -217,7 +224,7 @@ class MappingEditorController(
      */
     private fun startCapture() {
         poller?.cancel()
-        poller = scope.launch(Dispatchers.IO) {
+        poller = scope.launch(fifo) {
             process.clearCaptures()
             var offset = 0L
             // Always the button mode, even for a stick direction: what a slot wants is one control

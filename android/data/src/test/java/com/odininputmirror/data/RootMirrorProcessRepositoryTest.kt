@@ -154,6 +154,25 @@ class RootMirrorProcessRepositoryTest {
     }
 
     @Test
+    fun startLeavesALiveDaemonsHeartbeatAlone() {
+        // The shell guard decides whether a daemon survives; the app must not have deleted its
+        // heartbeat before that decision is made.
+        writeHeartbeat(ageMs = 1_000L)
+
+        repository.start(
+            MirrorStartRequest(
+                source = "/dev/input/event9",
+                target = "/dev/input/event2",
+                homeMode = HomeButtonMode.HOME,
+                comboHoldKillApp = false,
+                virtualMouse = false,
+            )
+        )
+
+        assertTrue(files.heartbeatFile.exists())
+    }
+
+    @Test
     fun startWritesTheConfigTheDaemonWillRead() {
         // The request is stale on purpose: the user changed every option after the supervisor read
         // them. The config must carry the stored values with the generation they were stored under,

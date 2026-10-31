@@ -9,6 +9,7 @@
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "capture.h"
@@ -19,6 +20,8 @@
 #include "mouse.h"
 
 static volatile sig_atomic_t keep_running = 1;
+// The mask the main loop waits under (the stop signals open) while they stay blocked everywhere else.
+static sigset_t wait_mask;
 static const long long COMBO_HOLD_KILL_APP_MS = 3000;
 // Holding Home this long opens Recents instead of the tap action.
 static const long long HOME_HOLD_RECENTS_MS = 500;
@@ -40,6 +43,13 @@ static const int HEARTBEAT_MISSING_LIMIT = 5;
 // coalesces a frame's worth of axis+button+SYN events instead of one syscall each. 32 is ample —
 // a single frame rarely exceeds ~10 events; any overflow is drained by the next loop.
 #define EVENT_BATCH_SIZE 32
+
+// Target-bound events held back so a whole source batch reaches the target in one write(). A batch can
+// fan out past this (mappings, a resync); the buffer then just flushes early, order intact.
+#define TARGET_BUFFER_SIZE 64
+
+#define LONG_BITS (8 * sizeof(unsigned long))
+#define LONGS_FOR(bits) (((bits) + LONG_BITS - 1) / LONG_BITS)
 
 // Virtual mouse mode (opt-in via --virtual-mouse). Select+R3 held this long toggles the mode; while
 // on, the grabbed controller drives a self-created uinput pointer instead of the target node. The
@@ -115,6 +125,9 @@ static void run_detached(const char *command) {
     if (pid == 0) {
         // Restore default SIGCHLD so system()'s internal waitpid works in the child.
         signal(SIGCHLD, SIG_DFL);
+        // The mirror loop keeps the stop signals blocked, and a blocked mask survives exec: without
+        // this, every `input`/`am` we spawn would shrug off SIGTERM.
+        sigprocmask(SIG_SETMASK, &wait_mask, NULL);
         _exit(system(command) == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
     }
     // Parent: with SIGCHLD ignored (set in main) the child is auto-reaped; never wait on it.
@@ -199,8 +212,8 @@ static int write_pid_file(const char *pid_file_path) {
 // Open the heartbeat file once, to be rewritten in place for the life of the run. Keeping the fd
 // avoids an open/close pair every second in the mirror loop.
 //
-// `create` is false for every reopen after the first: the file's absence is how the app orders this
-// daemon to stop, so only the opening beat may bring it into existence.
+// `create` is true only for the startup call, before the grab: the file's absence is how the app orders
+// this daemon to stop, so no later reopen may bring it back into existence.
 static int open_heartbeat_file(const char *heartbeat_file_path, int create) {
     if (heartbeat_file_path == NULL) {
         return -1;
@@ -276,8 +289,7 @@ struct mirror_state {
     long long config_generation;
 
     const char *heartbeat_file_path;
-    int heartbeat_fd;  // held open for the whole run; rewritten in place each beat
-    int heartbeat_created;  // the opening beat made the file; later reopens must never re-create it
+    int heartbeat_fd;  // created before the grab, held open for the whole run; rewritten in place
     int heartbeat_missing_beats;  // consecutive beats the heartbeat PATH has been gone
     int home_mode;
     int combo_hold_kill_app;
@@ -322,7 +334,68 @@ struct mirror_state {
     int abs_present[ABS_CNT];
     int abs_neutral[ABS_CNT];
     int abs_last[ABS_CNT];
+
+    // What the SOURCE last reported per key, and whether we are discarding up to the SYN_REPORT
+    // after a SYN_DROPPED: together they are what lets resync_source replay only what was lost.
+    unsigned char source_key_down[KEY_CNT];
+    int source_dropped;
+
+    // Target-bound events not yet written (see target_write). Empty between batches: the batch loop
+    // flushes at its end and release_target_holds flushes itself, so no other path that writes or
+    // changes mode has anything to order against.
+    struct input_event target_out[TARGET_BUFFER_SIZE];
+    size_t target_out_count;
+
+    // The codes the target declares, read once at startup. The kernel drops anything else without a
+    // word; a code's bit is set once we have said so, so each is reported once.
+    unsigned long target_key_bits[LONGS_FOR(KEY_CNT)];
+    unsigned long target_abs_bits[LONGS_FOR(ABS_CNT)];
 };
+
+// Write out everything target_write has queued, in one write(). The buffer is emptied on failure too:
+// the caller ends the run, and a later retry would only replay events the target already refused.
+static int flush_target(struct mirror_state *s) {
+    if (s->target_out_count == 0) {
+        return 0;
+    }
+    int result = write_events_tolerant(s->target_fd, s->target_out, s->target_out_count);
+    s->target_out_count = 0;
+    return result;
+}
+
+// Say once per code that the target will never see it. Logged rather than translated: the Thor's own
+// pad declares every code a pad sends, so this is a diagnostic for some other target, not a feature.
+static void note_undeclared(struct mirror_state *s, unsigned short type, unsigned short code) {
+    unsigned long *bits;
+    const char *kind;
+    if (type == EV_KEY && code < KEY_CNT) {
+        bits = s->target_key_bits;
+        kind = "KEY";
+    } else if (type == EV_ABS && code < ABS_CNT) {
+        bits = s->target_abs_bits;
+        kind = "ABS";
+    } else {
+        return;
+    }
+    unsigned long bit = 1UL << ((size_t)code % LONG_BITS);
+    if (bits[(size_t)code / LONG_BITS] & bit) {
+        return;
+    }
+    bits[(size_t)code / LONG_BITS] |= bit;
+    fprintf(stderr, "target does not declare %s 0x%x; dropped by the kernel\n", kind, (unsigned)code);
+}
+
+// Queue one event for the target. Every target-bound event goes through here, so a source batch costs
+// one write() instead of one per event. Returns -1 only if an early flush (buffer full) failed.
+static int target_write(struct mirror_state *s, unsigned short type, unsigned short code, int value) {
+    note_undeclared(s, type, code);
+    struct input_event *ev = &s->target_out[s->target_out_count++];
+    memset(ev, 0, sizeof(*ev));
+    ev->type = type;
+    ev->code = code;
+    ev->value = value;
+    return s->target_out_count == TARGET_BUFFER_SIZE ? flush_target(s) : 0;
+}
 
 // Stamp the heartbeat by rewriting the held-open file in place. The watchdog on the app side only
 // checks that the file is non-empty and its mtime is recent, and a write updates mtime — so this is
@@ -332,25 +405,19 @@ static void write_heartbeat(struct mirror_state *s) {
     if (s->heartbeat_file_path == NULL) {
         return;
     }
-    // Only the FIRST beat is allowed to create the file. After that its absence is the app's way of
-    // saying this daemon should be gone, and re-creating it would be us answering our own summons:
-    // a write error drops the fd below, and a reopen with O_CREAT on the next beat would put back the
-    // very file the app had just deleted, reset the counter, and leave a root daemon holding the
-    // user's controller with nothing left to stop it.
-    if (s->heartbeat_fd < 0 && !s->heartbeat_created) {
-        s->heartbeat_fd = open_heartbeat_file(s->heartbeat_file_path, 1);
-        if (s->heartbeat_fd >= 0) {
-            s->heartbeat_created = 1;
-        }
-    }
+    // The file was created in main, before the grab, and is never created again. Its absence is the
+    // app's way of saying this daemon should be gone, and re-creating it would be us answering our own
+    // summons: put back the very file the app had just deleted, reset the counter, and leave a root
+    // daemon holding the user's controller with nothing left to stop it.
 
     // Owner watchdog. Deliberately tests the PATH, never the fd: unlinking a file does not disturb an
     // open description, so a daemon whose app was uninstalled goes on writing happily to an inode
     // nobody can reach — grabbing the user's controller and keeping its node hidden with no app left
     // to stop or heal it. The app deletes this path only when it wants this daemon gone, so treat a
     // sustained absence as our cue to leave through the normal shutdown, which restores what we hid.
-    // Placed after the create above so the first beat makes the file instead of tripping on it.
-    if (access(s->heartbeat_file_path, F_OK) != 0) {
+    // Only ENOENT counts: an EACCES (an SELinux denial, say) says nothing about the app being gone, and
+    // reading it as an uninstall would kill a healthy mirror. The fd keeps beating through it.
+    if (access(s->heartbeat_file_path, F_OK) != 0 && errno == ENOENT) {
         if (++s->heartbeat_missing_beats >= HEARTBEAT_MISSING_LIMIT) {
             fprintf(stderr, "heartbeat file %s missing for %d beats; shutting down\n",
                     s->heartbeat_file_path, s->heartbeat_missing_beats);
@@ -360,9 +427,8 @@ static void write_heartbeat(struct mirror_state *s) {
     }
     s->heartbeat_missing_beats = 0;
 
-    // A previous write failed and dropped the fd. The file is still there — the access() above just
-    // proved it — so take it back WITHOUT O_CREAT, which keeps the recovery from doubling as a way to
-    // resurrect a heartbeat the app deleted between the two checks.
+    // A previous write failed and dropped the fd. Take the file back WITHOUT O_CREAT, which keeps the
+    // recovery from doubling as a way to resurrect a heartbeat the app deleted between the two checks.
     if (s->heartbeat_fd < 0) {
         s->heartbeat_fd = open_heartbeat_file(s->heartbeat_file_path, 0);
         if (s->heartbeat_fd < 0) {
@@ -404,17 +470,25 @@ static void write_heartbeat(struct mirror_state *s) {
 static void release_target_holds(struct mirror_state *s) {
     for (int code = 0; code < KEY_CNT; code++) {
         if (s->key_down[code]) {
-            emit_event(s->target_fd, EV_KEY, (unsigned short)code, 0);
+            target_write(s, EV_KEY, (unsigned short)code, 0);
             s->key_down[code] = 0;
         }
     }
     for (int code = 0; code < ABS_CNT; code++) {
         if (s->abs_present[code] && s->abs_last[code] != s->abs_neutral[code]) {
-            emit_event(s->target_fd, EV_ABS, (unsigned short)code, s->abs_neutral[code]);
+            target_write(s, EV_ABS, (unsigned short)code, s->abs_neutral[code]);
             s->abs_last[code] = s->abs_neutral[code];
         }
     }
-    emit_event(s->target_fd, EV_SYN, SYN_REPORT, 0);
+    target_write(s, EV_SYN, SYN_REPORT, 0);
+    // Out now, not with the next batch: every caller is about to stop forwarding (mouse, capture,
+    // shutdown) or change the table, and a release left queued would never be sent or sent too late.
+    // Failures are ignored as before; at worst this is the shutdown after the target already failed.
+    (void)flush_target(s);
+    // The mapping's edge detectors still describe what was just released. Left alone, a bound trigger
+    // released while nothing was forwarded would make its next real press look like no change.
+    memset(s->mapping.drive, 0, sizeof(s->mapping.drive));
+    memset(s->mapping.pressed, 0, sizeof(s->mapping.pressed));
 }
 
 // Hand control to the pointer, then quiesce the target — in that order, because a pointer that fails
@@ -477,45 +551,67 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
     s->virtual_mouse = next->virtual_mouse;
     s->config_generation = next->generation;
 
-    // Adopting a mapping needs no unwinding: it only decides what the NEXT event is forwarded as.
-    // A key already down was forwarded under the old table and will be released under the new one,
-    // which is the one case worth knowing about — and it costs a stuck key only if the user remaps
-    // mid-press, which the wizard makes impossible because it stops forwarding while it captures.
+    // A control held now was forwarded under the old table and its release would be resolved under
+    // the new one, which may route it elsewhere and leave the target holding it forever. So a table
+    // that actually changed releases everything first. memcmp also compares padding, so at worst it
+    // sees a change that is not there and releases for nothing. Mouse mode already released on entry.
+    if (!s->mouse.mode &&
+        (s->mapping.count != next->binding_count ||
+         memcmp(s->mapping.entries, next->bindings,
+                (size_t)s->mapping.count * sizeof(struct binding)) != 0)) {
+        release_target_holds(s);
+    }
     mapping_load(&s->mapping, next->bindings, next->binding_count);
 }
 
-// Read whatever the app queued on the control fifo and report whether a reload was asked for.
-// Commands are one per line and unknown ones are ignored, so a newer app talking to an older daemon
-// degrades to "no-op" rather than to a parse error.
+// Read whatever the app queued on the control fifo. Returns the capture command in force and sets
+// `*reload` if a reload was asked for. Commands are one per line and unknown ones are ignored, so a
+// newer app talking to an older daemon degrades to "no-op" rather than to a parse error.
 enum control_command {
     CONTROL_NONE = 0,
-    CONTROL_RELOAD,
     CONTROL_CAPTURE_BUTTON,
     CONTROL_CAPTURE_STICK,
     CONTROL_CAPTURE_OFF,
 };
 
-static enum control_command drain_control(int fd) {
-    char buffer[256];
+static enum control_command drain_control(int fd, int *reload) {
+    // Kept across calls: a burst longer than one read() can split a line, and its head has to wait
+    // for its tail rather than be matched (or lost) on its own.
+    static char pending[256];
+    static size_t pending_len;
     enum control_command command = CONTROL_NONE;
 
     for (;;) {
-        ssize_t got = read(fd, buffer, sizeof(buffer) - 1);
+        ssize_t got = read(fd, pending + pending_len, sizeof(pending) - 1 - pending_len);
         if (got <= 0) {
             break;
         }
-        buffer[got] = '\0';
-        // A command is a short word written in one call, and a write below PIPE_BUF is atomic, so a
-        // command never arrives split across two reads. Where several arrived between polls the last
-        // one read wins, which is the state the app most recently asked for.
-        if (strstr(buffer, "capture button") != NULL) {
-            command = CONTROL_CAPTURE_BUTTON;
-        } else if (strstr(buffer, "capture stick") != NULL) {
-            command = CONTROL_CAPTURE_STICK;
-        } else if (strstr(buffer, "capture off") != NULL) {
-            command = CONTROL_CAPTURE_OFF;
-        } else if (strstr(buffer, "reload") != NULL) {
-            command = CONTROL_RELOAD;
+        pending_len += (size_t)got;
+        pending[pending_len] = '\0';
+        // Line by line, in the order written. Matching the whole buffer against a fixed priority list
+        // used to merge a batch wrongly: "capture button\ncapture off" left capture ON, and a reload
+        // sharing a read with a capture command was dropped. Now the last capture command wins and a
+        // reload anywhere in the batch is honoured, since the two never touch the same state.
+        char *line = pending;
+        char *end;
+        while ((end = strchr(line, '\n')) != NULL) {
+            *end = '\0';
+            if (strstr(line, "capture button") != NULL) {
+                command = CONTROL_CAPTURE_BUTTON;
+            } else if (strstr(line, "capture stick") != NULL) {
+                command = CONTROL_CAPTURE_STICK;
+            } else if (strstr(line, "capture off") != NULL) {
+                command = CONTROL_CAPTURE_OFF;
+            } else if (strstr(line, "reload") != NULL) {
+                *reload = 1;
+            }
+            line = end + 1;
+        }
+        pending_len = (size_t)(pending + pending_len - line);
+        memmove(pending, line, pending_len);
+        // A buffer-long line with no newline is nothing we know; drop it so it cannot wedge the fifo.
+        if (pending_len == sizeof(pending) - 1) {
+            pending_len = 0;
         }
     }
     return command;
@@ -536,8 +632,10 @@ static void maybe_toggle_mouse_mode(struct mirror_state *s) {
     }
 }
 
-// Fire the kill-app combo when it completes on a poll timeout (no new event to carry it over).
-static void maybe_kill_combo_on_timeout(struct mirror_state *s) {
+// Fire the kill-app combo once Select+Start has been held past the threshold. Checked every loop, not
+// only on a poll timeout: a pad streaming stick noise never lets poll time out, and the release event
+// can't carry it either because update_combo_tracking has already cleared the pressed flags by then.
+static void maybe_fire_kill_combo(struct mirror_state *s) {
     if (s->combo_hold_kill_app && s->select_pressed && s->start_pressed && !s->combo_triggered &&
         now_ms() - s->combo_pressed_at_ms >= COMBO_HOLD_KILL_APP_MS) {
         force_stop_foreground_app();
@@ -624,8 +722,8 @@ static void handle_kill_combo_event(struct mirror_state *s, const struct input_e
 }
 
 // Forward one event to the target: apply the Nintendo face-button swap, record what the target now
-// believes held/deflected (for mouse-mode entry), and write it tolerantly. Returns 0, or -1 if the
-// target write kept failing.
+// believes held/deflected (for mouse-mode entry), and queue it for the batch's single write. Returns 0,
+// or -1 if the target write kept failing.
 static int forward_event(struct mirror_state *s, const struct input_event *ev) {
     // One event in, several possibly out: a mapping may change an event's very type, and more than
     // one binding may name the same source.
@@ -651,11 +749,93 @@ static int forward_event(struct mirror_state *s, const struct input_event *ev) {
         } else if (out->type == EV_ABS && out->code < ABS_CNT) {
             s->abs_last[out->code] = out->value;
         }
-        if (write_event_tolerant(s->target_fd, out) != 0) {
+        if (target_write(s, out->type, out->code, out->value) != 0) {
             return -1;
         }
     }
     return 0;
+}
+
+// Run one source event through everything that may claim it, in priority order. Returns -1 only when
+// the target write kept failing.
+static int handle_source_event(struct mirror_state *s, const struct input_event *event) {
+    if (event->type == EV_KEY && event->code < KEY_CNT) {
+        s->source_key_down[event->code] = event->value != 0;
+    }
+
+    // Capture first and alone: while the wizard has a step open the controller drives the
+    // wizard and nothing else — not the combos, not the mouse, and above all not the target.
+    if (capture_feed(&s->capture, event, s->source_axes, s->abs_neutral, now_ms())) {
+        return 0;
+    }
+
+    // Track Select/Start/R3 for both combos, regardless of which feature is enabled.
+    if (event->type == EV_KEY) {
+        update_combo_tracking(s, event);
+    }
+
+    if (handle_home_button(s, event)) {
+        return 0;
+    }
+
+    handle_kill_combo_event(s, event);
+
+    if (s->mouse.mode) {
+        // The pointer reports back what it cannot do itself. R1 asks for the notification
+        // shade because a mouse has no way to drag it down; the commands are idempotent
+        // enough that a stale view of it just costs the user one extra press.
+        if (mouse_handle_event(&s->mouse, event) == MOUSE_ACTION_TOGGLE_SHADE) {
+            run_detached(s->shade_open ? "cmd statusbar collapse"
+                                       : "cmd statusbar expand-notifications");
+            s->shade_open = !s->shade_open;
+        }
+        return 0;
+    }
+
+    return forward_event(s, event);
+}
+
+// After a SYN_DROPPED: replay, as ordinary events, every key whose real state differs from the last
+// one we saw, and every axis's current value, so the combos, mouse, mapping and target all catch up.
+// ponytail: the queried state may run ahead of events still queued behind it, costing a brief
+// duplicate transition; libevdev-style reconciliation if that is ever seen on a real pad.
+static int resync_source(struct mirror_state *s) {
+    unsigned long keys[(KEY_CNT + 8 * sizeof(unsigned long) - 1) / (8 * sizeof(unsigned long))];
+    memset(keys, 0, sizeof(keys));
+    if (ioctl(s->source_fd, EVIOCGKEY(sizeof(keys)), keys) < 0) {
+        return 0;
+    }
+    struct input_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = EV_KEY;
+    for (int code = 0; code < KEY_CNT; code++) {
+        size_t word = (size_t)code / (8 * sizeof(unsigned long));
+        unsigned long bit = 1UL << ((size_t)code % (8 * sizeof(unsigned long)));
+        int down = (keys[word] & bit) != 0;
+        if (down != s->source_key_down[code]) {
+            ev.code = (unsigned short)code;
+            ev.value = down;
+            if (handle_source_event(s, &ev) != 0) {
+                return -1;
+            }
+        }
+    }
+    ev.type = EV_ABS;
+    for (int code = 0; code < ABS_CNT; code++) {
+        struct input_absinfo info;
+        if (!s->abs_present[code] || ioctl(s->source_fd, EVIOCGABS(code), &info) != 0) {
+            continue;
+        }
+        ev.code = (unsigned short)code;
+        ev.value = info.value;
+        if (handle_source_event(s, &ev) != 0) {
+            return -1;
+        }
+    }
+    ev.type = EV_SYN;
+    ev.code = SYN_REPORT;
+    ev.value = 0;
+    return handle_source_event(s, &ev);
 }
 
 int main(int argc, char **argv) {
@@ -828,6 +1008,15 @@ int main(int argc, char **argv) {
     query_axis_ranges(s.source_fd, s.source_axes);
     query_axis_ranges(s.target_fd, s.target_axes);
 
+    // What the target declares, so an event it would silently drop is at least logged. An unreadable
+    // map reads as "declares everything": no answer is no grounds for a warning.
+    if (ioctl(s.target_fd, EVIOCGBIT(EV_KEY, sizeof(s.target_key_bits)), s.target_key_bits) < 0) {
+        memset(s.target_key_bits, 0xff, sizeof(s.target_key_bits));
+    }
+    if (ioctl(s.target_fd, EVIOCGBIT(EV_ABS, sizeof(s.target_abs_bits)), s.target_abs_bits) < 0) {
+        memset(s.target_abs_bits, 0xff, sizeof(s.target_abs_bits));
+    }
+
     // A config file, when present, is the authority; the command-line flags are only what to start
     // from if it is missing or unreadable. Reading it here also means a daemon restarted for an
     // unrelated reason (a reconnect, a crash) comes back with whatever the user last chose rather
@@ -853,8 +1042,24 @@ int main(int argc, char **argv) {
     // each start. Created once and kept for the whole session so the toast doesn't repeat per toggle.
     mouse_create_touch_device(&s.mouse);
 
-    if (ioctl(s.source_fd, EVIOCGRAB, 1) < 0) {
+    // Create the heartbeat BEFORE the grab. It is both how the app sees us alive and the only way it can
+    // stop us (by deleting it), so a daemon that cannot make it must not take the controller at all.
+    int start_failed = 0;
+    if (heartbeat_file_path != NULL) {
+        s.heartbeat_fd = open_heartbeat_file(heartbeat_file_path, 1);
+        if (s.heartbeat_fd < 0) {
+            fprintf(stderr, "No heartbeat, so nothing could stop this daemon; not grabbing the source\n");
+            start_failed = 1;
+        }
+    }
+    if (!start_failed && ioctl(s.source_fd, EVIOCGRAB, 1) < 0) {
         fprintf(stderr, "Failed to grab source %s: %s\n", source_path, strerror(errno));
+        start_failed = 1;
+    }
+    if (start_failed) {
+        if (s.heartbeat_fd >= 0) {
+            close(s.heartbeat_fd);
+        }
         mouse_destroy(&s.mouse);
         if (s.control_fd >= 0) {
             close(s.control_fd);
@@ -883,6 +1088,17 @@ int main(int argc, char **argv) {
         hide_node(hide_paths[i], &hidden[i], ODIN_VENDOR_ID, target_rdev);
     }
     write_hidden_state(hidden_state_path, hidden, hide_count);
+
+    // Block the stop signals everywhere except inside the wait. Left open, one landing between the
+    // keep_running check and poll() went unnoticed until the poll timed out (up to a second), past the
+    // app's 500 ms SIGKILL escalation, which then left the hidden node hidden. ppoll() opens them
+    // atomically for the wait only, so such a signal is pending and interrupts it at once.
+    sigset_t stop_signals;
+    sigemptyset(&stop_signals);
+    sigaddset(&stop_signals, SIGINT);
+    sigaddset(&stop_signals, SIGTERM);
+    sigaddset(&stop_signals, SIGHUP);
+    sigprocmask(SIG_BLOCK, &stop_signals, &wait_mask);
 
     while (keep_running) {
         int timeout_ms = compute_loop_timeout(&s);
@@ -919,7 +1135,8 @@ int main(int argc, char **argv) {
             poll_count = 2;
         }
 
-        int poll_result = poll(fds, (nfds_t)poll_count, timeout_ms);
+        struct timespec timeout = {timeout_ms / 1000, (timeout_ms % 1000) * 1000000L};
+        int poll_result = ppoll(fds, (nfds_t)poll_count, &timeout, &wait_mask);
         if (poll_result < 0) {
             if (errno == EINTR) {
                 continue;
@@ -930,12 +1147,19 @@ int main(int argc, char **argv) {
 
         // The mouse toggle may complete on a poll timeout with no new event, so check it every loop.
         maybe_toggle_mouse_mode(&s);
+        maybe_fire_kill_combo(&s);
 
         // Settings first: applying them before this batch of events means the events are handled
         // under the config the user has already asked for, never under the one they just replaced.
         enum control_command command = CONTROL_NONE;
+        int reload = 0;
         if (control_index >= 0 && (fds[control_index].revents & POLLIN)) {
-            command = drain_control(s.control_fd);
+            command = drain_control(s.control_fd, &reload);
+        }
+        if ((command == CONTROL_CAPTURE_BUTTON || command == CONTROL_CAPTURE_STICK) && !s.mouse.mode) {
+            // Capture stops forwarding, so a stick deflected right now would stay deflected on the
+            // target for the whole wizard step. Release before the target goes quiet.
+            release_target_holds(&s);
         }
         if (command == CONTROL_CAPTURE_BUTTON) {
             capture_begin(&s.capture, CAPTURE_BUTTON, now_ms());
@@ -944,7 +1168,7 @@ int main(int argc, char **argv) {
         } else if (command == CONTROL_CAPTURE_OFF) {
             capture_end(&s.capture);
         }
-        if (command == CONTROL_RELOAD) {
+        if (reload) {
             struct config running = {
                 .home_mode = s.home_mode,
                 .combo_hold_kill_app = s.combo_hold_kill_app,
@@ -977,7 +1201,6 @@ int main(int argc, char **argv) {
         }
 
         if (!(fds[0].revents & POLLIN)) {
-            maybe_kill_combo_on_timeout(&s);
             continue;
         }
 
@@ -1006,40 +1229,35 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < event_count; i++) {
             struct input_event *event = &events[i];
 
-            // Capture first and alone: while the wizard has a step open the controller drives the
-            // wizard and nothing else — not the combos, not the mouse, and above all not the target.
-            if (capture_feed(&s.capture, event, s.source_axes, s.abs_neutral, now_ms())) {
+            // The source overflowed and dropped events, a release possibly among them. Per the evdev
+            // contract everything up to the next SYN_REPORT is unreliable; after it, the device's own
+            // state is the truth to re-sync from. Forwarding on regardless left a lost release stuck.
+            if (event->type == EV_SYN && event->code == SYN_DROPPED) {
+                s.source_dropped = 1;
                 continue;
             }
-
-            // Track Select/Start/R3 for both combos, regardless of which feature is enabled.
-            if (event->type == EV_KEY) {
-                update_combo_tracking(&s, event);
-            }
-
-            if (handle_home_button(&s, event)) {
-                continue;
-            }
-
-            handle_kill_combo_event(&s, event);
-
-            if (s.mouse.mode) {
-                // The pointer reports back what it cannot do itself. R1 asks for the notification
-                // shade because a mouse has no way to drag it down; the commands are idempotent
-                // enough that a stale view of it just costs the user one extra press.
-                if (mouse_handle_event(&s.mouse, event) == MOUSE_ACTION_TOGGLE_SHADE) {
-                    run_detached(s.shade_open ? "cmd statusbar collapse"
-                                              : "cmd statusbar expand-notifications");
-                    s.shade_open = !s.shade_open;
+            if (s.source_dropped) {
+                if (event->type == EV_SYN && event->code == SYN_REPORT) {
+                    s.source_dropped = 0;
+                    if (resync_source(&s) != 0) {
+                        fprintf(stderr, "Write error to %s: %s\n", target_path, strerror(errno));
+                        fatal_write_error = 1;
+                        break;
+                    }
                 }
                 continue;
             }
 
-            if (forward_event(&s, event) != 0) {
+            if (handle_source_event(&s, event) != 0) {
                 fprintf(stderr, "Write error to %s: %s\n", target_path, strerror(errno));
                 fatal_write_error = 1;
                 break;
             }
+        }
+        // The whole batch's target events, in one write.
+        if (!fatal_write_error && flush_target(&s) != 0) {
+            fprintf(stderr, "Write error to %s: %s\n", target_path, strerror(errno));
+            fatal_write_error = 1;
         }
         if (fatal_write_error) {
             break;
@@ -1059,6 +1277,14 @@ int main(int argc, char **argv) {
         } else {
             unlink(hidden_state_path);
         }
+    }
+
+    // Every exit from the loop lands here: a stop signal, the source going away, a read error. The
+    // target is the internal pad and outlives us, so anything still held on it would stay held into
+    // handheld play. Skipped in mouse mode, which released on entry and forwards nothing since. After
+    // a fatal target write error these writes just fail too; there is nothing else left to try.
+    if (!s.mouse.mode) {
+        release_target_holds(&s);
     }
 
     if (ioctl(s.source_fd, EVIOCGRAB, 0) < 0) {
