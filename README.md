@@ -132,8 +132,8 @@ What's different from the Odin, all found on a real device:
   Controller doesn't expose its Bluetooth address to the system.
 - **Recents** opens when Home is released after a long hold, not at the moment the hold counts.
 
-Tested with a Nintendo Switch Pro Controller and an 8BitDo Ultimate 2 (Switch mode) over
-Bluetooth. Not yet tested: a real HDMI dock.
+Tested handheld and on a real HDMI dock, with a Nintendo Switch Pro Controller and an 8BitDo
+Ultimate 2 (Switch mode) over Bluetooth.
 
 ## How it works
 
