@@ -6,9 +6,9 @@ This is CardinalBird's fork of Ezequiel-CE/Docking-Enhancer, retargeted to the *
 
 ## Stack
 - Native Android (Kotlin) with Jetpack Compose + Material 3. No React Native.
-- Gradle 8.11.1, Android Gradle Plugin 8.7.3, Kotlin 2.0.21, Java/JVM 17.
-- Compose BOM 2024.10.01, activity-compose 1.9.3, lifecycle 2.8.7.
-- No root: privileged commands run through the stock firmware's PServerBinder service (reflection + binder transact). minSdk 28, target/compileSdk 35.
+- Gradle 9.8.2, Android Gradle Plugin 9.5.0 (Kotlin is built in: no `kotlin.android` plugin, no `kotlinOptions`), Kotlin 2.4.21, Java/JVM 17 bytecode for `:app`/`:data`.
+- Compose BOM 2026.09.00, activity-compose 1.13.0, lifecycle 2.11.0 (kotlinx-coroutines pinned to what lifecycle pulls: 1.9.0). Versions live ONLY in `android/gradle/libs.versions.toml`; the root `build.gradle` uses the catalog aliases.
+- No root: privileged commands run through the stock firmware's PServerBinder service (reflection + binder transact). minSdk 28, targetSdk 35, compileSdk 37 for `:app` (Compose 1.12 / core 1.19 / activity 1.13 refuse less) and 35 for `:data`. Raising targetSdk is its own PR; lint's `OldTargetApi` is suppressed at the site.
 - App id is `com.odininputmirror`. App label is `Docking Enhancer` (`strings.xml`).
 
 ## Repo layout that matters
@@ -36,7 +36,7 @@ Run from `android/`. On Windows use `gradlew.bat` and the `.ps1` scripts; on mac
   exists — deliberate, so a missing keystore never silently ships a debug-signed build.
 
 ## Bringing the project up
-- Needs Android SDK (compileSdk 35) and an NDK for the native binary (26.3 is what the Thor work
+- Needs an Android SDK with `platforms;android-37` (for `:app`) and `platforms;android-35` (for `:data`) and an NDK for the native binary (26.3 is what the Thor work
   used). The code targets Java 17, but `gradle/gradle-daemon-jvm.properties` asks for a **JDK 21** to
   run Gradle itself; without one the build stops before compiling anything.
 - The `.sh` build scripts require `ANDROID_NDK_HOME`. The `.ps1` ones fall back to the newest NDK
