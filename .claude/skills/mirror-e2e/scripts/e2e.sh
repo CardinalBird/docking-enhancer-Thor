@@ -669,6 +669,51 @@ else
 fi
 rm -f $TMP/t12.mouse $TMP/t12.dst $TMP/t12.back
 
+# --- T13: un stick tocado al arrancar no deja deriva -------------------------------------------------
+
+echo ""
+echo "=== T13: un stick tocado al arrancar no queda descentrado ==="
+
+# Reported from the field as drift to the right. The daemon used to take an axis's resting point
+# from wherever it sat at startup, and it starts the moment a pad connects, i.e. in someone's hands.
+# Hold the stick right at startup, let go, and the target must read centre, not an offset.
+cat > $CFG.tmp <<'EOF'
+{
+  "generation": 1,
+  "home_mode": 0,
+  "combo_hold_kill_app": false,
+  "virtual_mouse": false,
+  "mapping": { "bindings": [[2, 0, 1, 2, 0, 1], [2, 0, -1, 2, 0, -1]] }
+}
+EOF
+mv $CFG.tmp $CFG
+
+move_source 0 12000
+sleep 0.2
+start_mirror "$SRC" "$DST" --config-file $CFG --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de deriva"
+else
+    timeout 3 getevent -lc 4 "$DST" > $TMP/t13.out 2>&1 &
+    T13GE=$!
+    sleep 0.5
+    # Through the left first: the input core drops an event repeating the target's current value,
+    # and the target already reads centre, so a correct release would otherwise send nothing at all.
+    move_source 0 -6000
+    sleep 0.2
+    move_source 0 0
+    sleep 1.5
+    kill $T13GE 2>/dev/null
+    LAST=$(grep "ABS_X" $TMP/t13.out | tail -n 1 | awk '{print $NF}')
+    if [ "$LAST" = "00000000" ]; then
+        ok "el stick suelto llega centrado"
+    else
+        bad "el stick suelto llega descentrado [$LAST]"
+    fi
+    stop_mirror
+fi
+rm -f $TMP/t13.out $CFG
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""

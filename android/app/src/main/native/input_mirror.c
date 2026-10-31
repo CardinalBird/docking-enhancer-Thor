@@ -217,6 +217,25 @@ static int open_heartbeat_file(const char *heartbeat_file_path, int create) {
     return fd;
 }
 
+// Where an axis rests. Sticks and hats rest mid-travel by definition, so they get the midpoint of their
+// range rather than whatever they read at startup: the daemon starts the moment a pad connects, which
+// is to say in someone's hands, and a stick nudged at that instant became a permanent offset (reported
+// as drift). The mouse already centres this way. Triggers rest at their minimum; Z/RZ are a stick on
+// some pads and a trigger on others, so only those keep the value read at startup, clamped.
+static int axis_rest(int code, const struct input_absinfo *info) {
+    if (code == ABS_X || code == ABS_Y || code == ABS_RX || code == ABS_RY ||
+        (code >= ABS_HAT0X && code <= ABS_HAT3Y)) {
+        return (int)(((long)info->minimum + (long)info->maximum) / 2);
+    }
+    if (code == ABS_GAS || code == ABS_BRAKE) {
+        return info->minimum;
+    }
+    int value = info->value;
+    if (value < info->minimum) value = info->minimum;
+    if (value > info->maximum) value = info->maximum;
+    return value;
+}
+
 // Record every absolute axis a device declares, with its travel, so a remapped axis can be rescaled
 // between the two controllers. Asked once per device at startup: the source is grabbed straight
 // afterwards, and neither device's ranges change while it is connected.
@@ -238,14 +257,8 @@ static void query_axis_ranges(int fd, struct axis_range *out) {
             out[code].present = 1;
             out[code].minimum = info.minimum;
             out[code].maximum = info.maximum;
-            // Where the axis sits untouched, asked for rather than assumed: a stick rests mid-travel
-            // and a trigger at its minimum, and a binding that pushes an axis one way has to know
-            // which end it is pushing from. Clamped because a stick held at this instant would
-            // otherwise be recorded as its own resting place.
-            int resting = info.value;
-            if (resting < info.minimum) resting = info.minimum;
-            if (resting > info.maximum) resting = info.maximum;
-            out[code].rest = resting;
+            // A binding that pushes an axis one way has to know which end it is pushing from.
+            out[code].rest = axis_rest(code, &info);
         }
     }
 }
@@ -803,7 +816,7 @@ int main(int argc, char **argv) {
                 struct input_absinfo info;
                 if (ioctl(s.source_fd, EVIOCGABS(code), &info) == 0) {
                     s.abs_present[code] = 1;
-                    s.abs_neutral[code] = info.value;
+                    s.abs_neutral[code] = axis_rest(code, &info);
                     s.abs_last[code] = info.value;
                 }
             }
