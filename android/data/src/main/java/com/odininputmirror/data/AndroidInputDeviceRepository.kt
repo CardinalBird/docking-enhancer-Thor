@@ -86,10 +86,12 @@ internal class AndroidInputDeviceRepository(
             .toList()
             .let(::dropForeignHideNodes)
 
-        val devices = (framework + hiddenSourceDevice(framework, procEntries))
-            .sortedBy { it.controllerNumber }
-
-        return resolveInternalController(devices, manualInternalGuidProvider())
+        // The hidden source is the external pad being mirrored, so it never takes part in choosing
+        // the internal one. It used to: rebuilt with controller number 0 it sorted first, and on a
+        // Thor it shares the built-in pad's 2020:0111 guid, so a manual pick of the built-in pad
+        // matched it instead and the mirror swapped source and target every few seconds.
+        val internalResolved = resolveInternalController(framework.sortedBy { it.controllerNumber }, manualInternalGuidProvider())
+        return (internalResolved + hiddenSourceDevice(framework, procEntries)).sortedBy { it.controllerNumber }
     }
 
     // When the hide-external feature has unlinked the mirror source's /dev node, the framework drops
@@ -138,7 +140,11 @@ internal class AndroidInputDeviceRepository(
             return devices
         }
 
-        val manualMatch = manualGuid?.let { guid -> devices.firstOrNull { it.guid == guid } }
+        // Several devices can share a guid (it is only vendor:product, and the Thor's firmware gives
+        // an external pad the built-in pad's), so a recognised built-in pad wins among them.
+        val manualMatch = manualGuid?.let { guid ->
+            devices.filter { it.guid == guid }.maxByOrNull { it.isKnownInternal }
+        }
         if (manualMatch != null) {
             return devices.map { device -> device.copy(isInternal = device.path == manualMatch.path) }
         }
@@ -197,8 +203,7 @@ internal class AndroidInputDeviceRepository(
         knownPath: String? = null,
     ): ControllerDevice? {
         val normalizedName = candidate.name.lowercase()
-        val exact = entries.filter { it.path == knownPath && pathExists(it.path) }
-        val candidates = exact.ifEmpty { entries }.filter { entry ->
+        val candidates = entries.filter { entry ->
             if (!pathExists(entry.path)) {
                 return@filter false
             }
@@ -214,7 +219,10 @@ internal class AndroidInputDeviceRepository(
             sameVendorProduct || sameName
         }
 
-        return candidates
+        // The node the input service named wins outright, but only among nodes that pass the checks
+        // above: narrowing to it first dropped the pad entirely whenever that node was a sibling
+        // (a motion sensor, say) that failed them.
+        return (candidates.filter { it.path == knownPath }.ifEmpty { candidates })
             .sortedWith(
                 compareByDescending<ProcInputEntry> {
                     candidate.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&

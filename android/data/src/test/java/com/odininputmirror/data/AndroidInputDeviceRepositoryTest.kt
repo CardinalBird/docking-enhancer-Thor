@@ -581,4 +581,17 @@ Input Reader State:
         assertNull(result[1].hideNodePath)
         assertEquals("/dev/input/event16", result[2].hideNodePath)
     }
+
+    // On a Thor the built-in pad and the external pad's twin are both 2020:0111, so they share a
+    // guid. A manual pick of that guid must land on the built-in one.
+    @Test
+    fun manualPickOfASharedGuidPrefersTheRecognisedBuiltInPad() {
+        val twin = ControllerDevice("Pro Controller", "/dev/input/event12", "shared", 0)
+        val builtIn = ControllerDevice("Odin Controller", "/dev/input/event9", "shared", 1, isKnownInternal = true)
+
+        val result = repository.resolveInternalController(listOf(twin, builtIn), manualGuid = "shared")
+
+        assertTrue(result.single { it.path == "/dev/input/event9" }.isInternal)
+        assertFalse(result.single { it.path == "/dev/input/event12" }.isInternal)
+    }
 }
