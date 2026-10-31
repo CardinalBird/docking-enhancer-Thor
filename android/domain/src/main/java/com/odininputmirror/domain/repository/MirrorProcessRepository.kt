@@ -8,6 +8,12 @@ import com.odininputmirror.domain.model.MirrorStartRequest
 
 interface MirrorProcessRepository {
     /**
+     * Put the daemon this build ships in place. True when it differed from what was installed, which
+     * means a daemon still running is the previous one.
+     */
+    fun refreshBinary(): Boolean = false
+
+    /**
      * Launch the mirror daemon. Throws when the privileged backend could not even deliver the
      * launch command (so callers can surface/back off a failed start); a delivered launch that
      * then dies is detected later via [isRunning].

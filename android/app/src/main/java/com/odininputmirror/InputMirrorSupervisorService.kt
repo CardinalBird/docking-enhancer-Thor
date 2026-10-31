@@ -107,6 +107,16 @@ class InputMirrorSupervisorService : Service() {
             return
         }
 
+        // A root daemon outlives the app, so after an update the previous binary keeps running and
+        // a matching daemon is never restarted. Extracting the shipped one says whether it changed;
+        // if it did, whatever is running is stale. Here rather than on MY_PACKAGE_REPLACED, which a
+        // force-stopped app never receives.
+        if (runCatching { graph.processRepository.refreshBinary() }.getOrDefault(false) &&
+            runCatching { graph.processRepository.isRunning() }.getOrDefault(false)
+        ) {
+            runCatching { graph.stopMirror() }
+        }
+
         var nextRestartAllowedAt = 0L
         var nextStartRetryAllowedAt = 0L
         var sleepMs = SUPERVISOR_INTERVAL_MS

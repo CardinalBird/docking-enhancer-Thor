@@ -129,6 +129,8 @@ internal class RootMirrorProcessRepository(
         }
     }
 
+    override fun refreshBinary(): Boolean = files.installBinary()
+
     override fun isRunning(): Boolean {
         val settings = mirrorSettingsRepository.getSettings()
         val startingGrace = settings.expectedRunning &&
