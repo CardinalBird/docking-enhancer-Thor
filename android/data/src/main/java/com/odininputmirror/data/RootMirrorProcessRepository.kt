@@ -78,9 +78,11 @@ internal class RootMirrorProcessRepository(
             append("keep=; for p in \$(pidof input_mirror 2>/dev/null); do ")
             // The daemon's own argv, where $1 is the binary and $2/$3 are the source and target it
             // opened. Compared exactly rather than by pattern: a substring match would call a daemon
-            // on /dev/input/event1 a match for a request for event10.
+            // on /dev/input/event1 a match for a request for event10. The binary path is part of the
+            // match so a daemon left behind by another install (the app under its old id) is replaced
+            // rather than kept: a root daemon outlives the app that started it.
             append("set -- \$(tr '\\0' ' ' < /proc/\$p/cmdline 2>/dev/null); ")
-            append("if [ \"\$2\" = ${request.source.shellQuote()} ] && [ \"\$3\" = ${request.target.shellQuote()} ]; ")
+            append("if [ \"\$1\" = ${binary.absolutePath.shellQuote()} ] && [ \"\$2\" = ${request.source.shellQuote()} ] && [ \"\$3\" = ${request.target.shellQuote()} ]; ")
             append("then keep=1; else kill -TERM \$p 2>/dev/null; fi; ")
             append("done; ")
             // Decided after the loop. Exiting on the first match left every stale daemon behind it
