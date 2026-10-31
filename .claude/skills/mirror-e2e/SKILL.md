@@ -17,7 +17,7 @@ proof, not inspection.
 
 ## Prerequisites
 
-- The Odin connected over adb, **unlocked and awake**.
+- The handheld (AYN Thor, or an Odin 2) connected over adb, **unlocked and awake**.
 - The app installed (the suite copies and tests *its* daemon binary, not a fresh build, so what runs
   is what ships).
 - `ANDROID_NDK_HOME`, or an NDK under `%LOCALAPPDATA%\Android\Sdk\ndk` (the build script finds it).
@@ -25,6 +25,15 @@ proof, not inspection.
 No physical external controller is needed. That is the point of the harness.
 
 ## Running it
+
+macOS / Linux:
+
+```sh
+ANDROID_NDK_HOME=/path/to/ndk .claude/skills/mirror-e2e/scripts/build-harness.sh
+adb shell sh /data/local/tmp/e2e.sh
+```
+
+Windows:
 
 ```powershell
 .\.claude\skills\mirror-e2e\scripts\build-harness.ps1
@@ -35,8 +44,13 @@ The runner prints `PASS`/`FAIL` per assertion and exits non-zero if anything fai
 the app first (its supervisor would otherwise fight the suite for the controllers) and cleans up
 after itself. **Relaunch the app afterwards** if you want the mirror back.
 
+The Thor has no `su`, so the three assertions that unlink `/dev/input` nodes directly (hide/restore and orphan heal) fail
+there by design: the app does that step through `PServerBinder`. A clean Thor run is 81 of 84.
+
 From Git Bash, invoke adb through PowerShell — Git Bash mangles `/data/local/tmp/...` into a Windows
 path.
+
+The chord engine also has a standalone check, `scripts/mapping_test.c`; the build line is at its top.
 
 ## What each test proves
 
@@ -54,6 +68,11 @@ path.
 | T10 button→axis | A button bound to a stick direction arriving at partial deflection, or sticking at full. |
 | T11 capture expiry | A wizard that died mid-step leaving the pad permanently mute, with no way to revive it from the controller itself. |
 | T12 virtual mouse | The pointer failing to appear on Select+R3, the pad still driving the game while the cursor is up, or — worst — a uinput pointer outliving the daemon with nothing left to destroy it. |
+| T13 stick at startup | A stick already deflected when the mirror starts reaching the target wrong, through half-axis bindings. |
+| T14 holds released on stop | A button or stick held when the mirror stops staying held on the target forever. |
+| T15 control command order | Two fifo commands in one write merged wrongly (a capture left on, a reload dropped). |
+| T19 Select + Start | Holding Select + Start for 3 s not closing the foreground app, or the two buttons no longer reaching the game. |
+| T20 Home / Back targets | A button bound to Home or Back not tapping it, holding it not opening Recents, or the original button leaking through. |
 | T17 pass-through rescale | An axis no binding names arriving raw on a target with a different range — a 0..255 stick barely moving a -32768..32767 one, its rest landing off centre. |
 | T21 chords | A chord not firing, a member leaking into the game (the one that completes it, or one left held after it), a single binding broken beside a chord, or Guide doing its own Home on top of a Guide chord. |
 | T18 target refusal | A wrong hide path unlinking the mirror's own target — on the Thor the built-in pad shares the 0x2020 vendor, so the vendor check alone would let it through. |
