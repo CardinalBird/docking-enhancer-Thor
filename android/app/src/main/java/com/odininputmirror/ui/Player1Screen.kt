@@ -5,6 +5,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +59,7 @@ import com.odininputmirror.ui.theme.Palette
  * The supervisor holds the mirror off while this is open, so every external pad reports as itself.
  * B leaves, X unlocks (back to "first connected").
  */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun Player1Screen(
     externals: List<ControllerDevice>,
@@ -81,18 +89,27 @@ fun Player1Screen(
     val ordered = externals.sortedByDescending { it == locked }
     val glyphs = promptFontFamily()
 
+    // Nothing on this screen is focusable, and Compose routes keys to the focused node's ancestors
+    // only, so X never arrived. The screen itself is the focus target. Both halves of X are taken:
+    // Android otherwise turns an unhandled X press into a select.
+    val anchor = remember { FocusRequester() }
+    val inputModeManager = LocalInputModeManager.current
+    LaunchedEffect(Unit) {
+        inputModeManager.requestInputMode(InputMode.Keyboard)
+        runCatching { anchor.requestFocus() }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Palette.screen)
+            .focusRequester(anchor)
             .onPreviewKeyEvent {
-                if (it.type == KeyEventType.KeyUp && it.key == Key.ButtonX) {
-                    onUnlock()
-                    true
-                } else {
-                    false
-                }
-            },
+                if (it.key != Key.ButtonX) return@onPreviewKeyEvent false
+                if (it.type == KeyEventType.KeyUp) onUnlock()
+                true
+            }
+            .focusable(),
     ) {
         Box(
             modifier = Modifier.fillMaxWidth().background(Palette.band)

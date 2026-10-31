@@ -145,7 +145,9 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
         val activity = context.findMainActivity()
         // The Activity hook wants a plain callback; whether the anchor took is only the retry
         // loop's business.
-        activity?.onWindowFocused = { anchorFocus() }
+        // Only when nothing here holds focus: returning from a dialog or the shade used to throw the
+        // user back to the top row from wherever they were.
+        activity?.onWindowFocused = { if (!screenHasFocus) anchorFocus() }
         onDispose { activity?.onWindowFocused = null }
     }
 
@@ -192,10 +194,12 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     // the D-pad has nothing to navigate from. Re-anchor to the first available control so gamepad
     // navigation keeps working after every transition.
     LaunchedEffect(state.enabled, state.autoMirrorEnabled, state.busy) {
-        anchorFocus()
+        if (!screenHasFocus) anchorFocus()
     }
 
     val externals = state.devices.filter { !it.isInternal }
+    // A binder call; asked once, not on every recomposition.
+    val canPin = remember(context) { context.canPinShortcut() }
     val lockedPad = externals.lockedPlayer1(state.player1Name, state.player1Path)
     val homeModes = HomeButtonMode.entries
     fun cycleHome(step: Int) {
@@ -311,7 +315,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                 }
                 // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
                 // can ask to be pinned itself. Shown only when the home app takes pin requests.
-                if (context.canPinShortcut()) {
+                if (canPin) {
                     MenuRow(title = "Add to home screen", subtitle = "Pin this app to your launcher", onClick = { context.pinToHome() })
                 }
                 Spacer(Modifier.height(16.dp))

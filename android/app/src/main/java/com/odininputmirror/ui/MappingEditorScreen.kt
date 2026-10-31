@@ -115,12 +115,10 @@ fun MappingEditorScreen(
 
     Box(
         modifier = Modifier.fillMaxSize().background(Palette.screen).onPreviewKeyEvent {
-            if (it.type == KeyEventType.KeyUp && it.key == Key.ButtonY && state.capturing == null) {
-                onClearAll()
-                true
-            } else {
-                false
-            }
+            // Both halves: Android turns an unhandled Y press into Back.
+            if (it.key != Key.ButtonY || state.capturing != null) return@onPreviewKeyEvent false
+            if (it.type == KeyEventType.KeyUp) onClearAll()
+            true
         },
     ) {
         Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -181,7 +179,8 @@ fun MappingEditorScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    if (state.boundCount == 0) "Nothing bound yet." else "${state.boundCount} bound — applied when you leave.",
+                    state.notice
+                        ?: if (state.boundCount == 0) "Nothing bound yet." else "${state.boundCount} bound — applied when you leave.",
                     color = Palette.textMuted,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(start = 28.dp).weight(1f),

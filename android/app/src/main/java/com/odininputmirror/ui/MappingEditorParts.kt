@@ -1,6 +1,10 @@
 package com.odininputmirror.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -81,12 +85,11 @@ internal fun SlotRow(
             .background(if (focused) Palette.focusBg else Palette.screen)
             .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
             .onPreviewKeyEvent {
-                if (it.type == KeyEventType.KeyUp && it.key == Key.ButtonX && source != null) {
-                    onClear()
-                    true
-                } else {
-                    false
-                }
+                // Both halves, even on an unbound row: Android turns an unhandled X press into a
+                // select, which opened a capture on the row instead of doing nothing.
+                if (it.key != Key.ButtonX) return@onPreviewKeyEvent false
+                if (it.type == KeyEventType.KeyUp && source != null) onClear()
+                true
             }
             .clickable(interactionSource = interaction, indication = null) { onBind() }
             .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -210,12 +213,19 @@ internal fun CaptureOverlay(
         }
     }
 
+    // A trap on purpose: focus that wandered to a row behind and pressed A re-bound a different
+    // slot, and so did a tap through the scrim.
     Box(
-        modifier = Modifier.fillMaxSize().background(Palette.scrim),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Palette.scrim)
+            .pointerInput(Unit) { detectTapGestures { } },
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = Modifier
+                .focusProperties { exit = { FocusRequester.Cancel } }
+                .focusGroup()
                 .widthIn(max = 460.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Palette.surface)

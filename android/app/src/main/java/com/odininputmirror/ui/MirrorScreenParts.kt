@@ -152,6 +152,10 @@ internal fun MenuRow(
                 .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, shape)
                 .onPreviewKeyEvent {
                     if (it.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    // One step per press: a held D-pad auto-repeats, and spun through every mode.
+                    if (it.nativeKeyEvent.repeatCount > 0 && (onLeft != null || onRight != null)) {
+                        return@onPreviewKeyEvent it.key == Key.DirectionLeft || it.key == Key.DirectionRight
+                    }
                     when {
                         it.key == Key.DirectionLeft && onLeft != null -> { onLeft(); true }
                         it.key == Key.DirectionRight && onRight != null -> { onRight(); true }

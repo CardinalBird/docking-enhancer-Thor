@@ -223,9 +223,25 @@ class MappingEditorController(
             // Always the button mode, even for a stick direction: what a slot wants is one control
             // pushed one way, and that is exactly what this mode reports — a code for a button, a
             // code and a direction for an axis.
-            process.beginCapture(CaptureKind.BUTTON)
+            // The daemon is what listens. With the mirror off nobody does, and the overlay waited for
+            // a press that could never arrive; say why instead.
+            if (!process.beginCapture(CaptureKind.BUTTON)) {
+                withContext(Dispatchers.Main) {
+                    _state.update {
+                        it.copy(capturing = null, notice = "Can't listen for a press while the mirror is off. Dock, or turn it on.")
+                    }
+                }
+                return@launch
+            }
+            var lastBegin = System.currentTimeMillis()
 
             while (isActive && _state.value.capturing != null) {
+                // The daemon closes an idle capture after 30s so a dead wizard can't mute the pad
+                // for good. Renew it while the overlay is genuinely still waiting.
+                if (System.currentTimeMillis() - lastBegin > RENEW_CAPTURE_MS) {
+                    process.beginCapture(CaptureKind.BUTTON)
+                    lastBegin = System.currentTimeMillis()
+                }
                 val read = process.readCaptures(offset)
                 offset = read.offset
                 val result = read.results.firstOrNull()
@@ -310,5 +326,6 @@ class MappingEditorController(
 
     private companion object {
         const val POLL_INTERVAL_MS = 80L
+        const val RENEW_CAPTURE_MS = 20_000L
     }
 }
