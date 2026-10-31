@@ -61,10 +61,10 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
         Rule(Modifier.padding(horizontal = 28.dp))
         Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 120.dp, vertical = 8.dp)) {
             MenuRow(
-                title = "Select + Start sends Home",
+                title = "Select + L3 sends Home",
                 minHeight = 52.dp,
                 onClick = { viewModel.toggleComboTapHome(!state.comboTapHome) },
-                modifier = Modifier.focusRequester(first).then(explains("Tap both together to go to the home screen.")),
+                modifier = Modifier.focusRequester(first).then(explains("Tap Select and L3 together to go to the home screen.")),
             ) { RowSwitch(state.comboTapHome, !state.busy) }
             MenuRow(
                 title = "Select + Start closes app",

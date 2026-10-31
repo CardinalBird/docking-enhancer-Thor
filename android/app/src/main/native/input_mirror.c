@@ -305,10 +305,12 @@ struct mirror_state {
     // When a bound Home / Back press went down (index 0 Home, 1 Back); 0 when none is held.
     long long nav_pressed_at_ms[2];
 
-    // Select+Start: tapped is Home, held is "close app".
+    // Select+Start "close app" combo.
     int select_pressed;
     int start_pressed;
+    int thumbl_pressed;
     int thumbr_pressed;
+    int home_combo_armed;  // Select+L3 were down together; Home goes out once both are up
     int combo_triggered;
     long long combo_pressed_at_ms;
 
@@ -543,8 +545,10 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
         s->mouse_combo_triggered = 0;
         s->mouse_combo_pressed_at_ms = 0;
     }
-    if ((s->combo_hold_kill_app && !next->combo_hold_kill_app) ||
-        (s->combo_tap_home && !next->combo_tap_home)) {
+    if (s->combo_tap_home && !next->combo_tap_home) {
+        s->home_combo_armed = 0;
+    }
+    if (s->combo_hold_kill_app && !next->combo_hold_kill_app) {
         // Drop a hold in progress so re-enabling later doesn't inherit a stale, already-expired
         // timer and fire the moment both buttons are next seen down.
         s->combo_triggered = 0;
@@ -649,7 +653,7 @@ static void maybe_fire_kill_combo(struct mirror_state *s) {
     }
 }
 
-// Track Select/Start/R3 press state (read by both combos) and (re)arm the mouse-toggle hold. Only a
+// Track Select/Start/L3/R3 press state (read by the combos) and (re)arm the mouse-toggle hold. Only a
 // combo key's own press may (re)arm the timer, so another button pressed while both are held can't
 // reset an in-progress hold. Called for every EV_KEY event.
 static void update_combo_tracking(struct mirror_state *s, const struct input_event *ev) {
@@ -659,6 +663,9 @@ static void update_combo_tracking(struct mirror_state *s, const struct input_eve
     } else if (is_start_button(ev->code)) {
         if (ev->value == 1) s->start_pressed = 1;
         else if (ev->value == 0) s->start_pressed = 0;
+    } else if (ev->code == BTN_THUMBL) {
+        if (ev->value == 1) s->thumbl_pressed = 1;
+        else if (ev->value == 0) s->thumbl_pressed = 0;
     } else if (ev->code == BTN_THUMBR) {
         if (ev->value == 1) s->thumbr_pressed = 1;
         else if (ev->value == 0) s->thumbr_pressed = 0;
@@ -706,10 +713,25 @@ static int handle_home_button(struct mirror_state *s, const struct input_event *
     return 1;
 }
 
-// Advance the Select+Start combo on a Select/Start event: held past the threshold it closes the app,
-// released before it it is Home. The buttons themselves are still forwarded either way.
+// Select+L3 tapped together sends Home, for pads without a Guide button. Not Select+Start: Cocoon
+// Shell keeps that for its own quick settings. The buttons are still forwarded.
+static void handle_home_combo_event(struct mirror_state *s, const struct input_event *ev) {
+    if (!s->combo_tap_home || ev->type != EV_KEY ||
+        !(is_select_button(ev->code) || ev->code == BTN_THUMBL)) {
+        return;
+    }
+    if (ev->value == 1 && s->select_pressed && s->thumbl_pressed) {
+        s->home_combo_armed = 1;
+    }
+    if (ev->value == 0 && !s->select_pressed && !s->thumbl_pressed && s->home_combo_armed) {
+        s->home_combo_armed = 0;
+        run_detached("input keyevent 3");  // KEYCODE_HOME
+    }
+}
+
+// Advance the Select+Start "close app" combo on a Select/Start event.
 static void handle_kill_combo_event(struct mirror_state *s, const struct input_event *ev) {
-    if (!(s->combo_hold_kill_app || s->combo_tap_home) || ev->type != EV_KEY ||
+    if (!s->combo_hold_kill_app || ev->type != EV_KEY ||
         !(is_select_button(ev->code) || is_start_button(ev->code))) {
         return;
     }
@@ -717,17 +739,12 @@ static void handle_kill_combo_event(struct mirror_state *s, const struct input_e
         s->combo_pressed_at_ms = now_ms();
         s->combo_triggered = 0;
     }
-    if (s->combo_hold_kill_app && (ev->value == 2 || ev->value == 0) && s->select_pressed && s->start_pressed &&
+    if ((ev->value == 2 || ev->value == 0) && s->select_pressed && s->start_pressed &&
         !s->combo_triggered && now_ms() - s->combo_pressed_at_ms >= COMBO_HOLD_KILL_APP_MS) {
         force_stop_foreground_app();
         s->combo_triggered = 1;
     }
     if (ev->value == 0 && !s->select_pressed && !s->start_pressed) {
-        // combo_pressed_at_ms is only set once both were down together.
-        if (s->combo_tap_home && s->combo_pressed_at_ms != 0 && !s->combo_triggered &&
-            now_ms() - s->combo_pressed_at_ms < COMBO_HOLD_KILL_APP_MS) {
-            run_detached("input keyevent 3");  // KEYCODE_HOME
-        }
         s->combo_triggered = 0;
         s->combo_pressed_at_ms = 0;
     }
@@ -815,6 +832,7 @@ static int handle_source_event(struct mirror_state *s, const struct input_event 
         return 0;
     }
 
+    handle_home_combo_event(s, event);
     handle_kill_combo_event(s, event);
 
     if (s->mouse.mode) {
