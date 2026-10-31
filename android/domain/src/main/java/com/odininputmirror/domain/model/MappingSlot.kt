@@ -222,9 +222,10 @@ fun mappingSlots(traits: TargetTraits): List<MappingSlot> {
     labelled("BUTTON_THUMBR", BTN_THUMBR)?.let {
         slots += MappingSlot("Right stick click", ControlRef.button(it), SlotIcon.RIGHT_STICK_CLICK)
     }
-    // Always offered: these never reach the target node, so what it declares is irrelevant.
-    slots += MappingSlot("Home", ControlRef.button(KEY_HOME), SlotIcon.HOME)
-    slots += MappingSlot("Back", ControlRef.button(KEY_BACK), SlotIcon.BACK)
+    // The daemon writes these to the target node (the Thor declares and maps them), so a target
+    // without them would silently drop the press: offered only when declared.
+    if (key(KEY_HOME)) slots += MappingSlot("Home", ControlRef.button(KEY_HOME), SlotIcon.HOME)
+    if (key(KEY_BACK)) slots += MappingSlot("Back", ControlRef.button(KEY_BACK), SlotIcon.BACK)
 
     return slots
 }

@@ -47,7 +47,12 @@ internal class AxisEdges {
     private val pushed = mutableMapOf<Int, Int>()
 
     fun feed(code: Int, value: Float): ControlRef? {
-        val was = pushed[code] ?: 0
+        // The first value seen is the baseline: a trigger reported as a centred axis rests at -1, and
+        // measuring from 0 would bind it the moment any axis moved.
+        val was = pushed[code] ?: run {
+            pushed[code] = if (value >= PUSH) 1 else if (value <= -PUSH) -1 else 0
+            return null
+        }
         val now = when {
             value >= PUSH -> 1
             value <= -PUSH -> -1
@@ -98,11 +103,16 @@ internal fun PadCaptureEffect(
             device.isSource(event).also { mine ->
                 if (!mine || device == null) return@also
                 val layout = layouts.getOrPut(device.id) { axisLabels(device.vendorId, device.productId) }
+                // One control per event: a diagonal push crosses two edges at once, and during a walk the
+                // second would fill the next slot. Every axis is still fed so its edge state stays current.
+                var hit: ControlRef? = null
                 for (range in device.motionRanges) {
                     if (range.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) continue
                     val code = evdevAxis(MotionEvent.axisToString(range.axis).removePrefix("AXIS_"), layout) ?: continue
-                    edges.feed(code, event.getAxisValue(range.axis))?.let(capture)
+                    val crossed = edges.feed(code, event.getAxisValue(range.axis))
+                    if (hit == null) hit = crossed
                 }
+                hit?.let(capture)
             }
         }
         onDispose {

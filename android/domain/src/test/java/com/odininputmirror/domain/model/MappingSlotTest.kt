@@ -115,7 +115,9 @@ class MappingSlotTest {
     fun presetsMakeThePrintedLetterProduceThatAndroidButtonOnTheThor() {
         // The Thor target's layout puts BUTTON_A..Y on 0x130/0x131/0x133/0x134, and a bound event
         // skips the daemon's Nintendo swap, so slot target == what Android reads.
-        val slots = mappingSlots(odinFallbackTraits())
+        // The Thor also declares KEY_HOME and KEY_BACK, which is what makes the Home and Back slots appear.
+        val thor = odinFallbackTraits().let { it.copy(keys = it.keys + setOf(KEY_HOME, KEY_BACK)) }
+        val slots = mappingSlots(thor)
         val target = slots.associate { it.label to it.target }
         val xbox = presetBindings(PadLayout.XBOX, slots, null)
         val nintendo = presetBindings(PadLayout.NINTENDO, slots, null)

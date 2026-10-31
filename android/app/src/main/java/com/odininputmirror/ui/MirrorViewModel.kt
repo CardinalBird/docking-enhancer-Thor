@@ -314,9 +314,15 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     fun confirmPlayer1() {
         val current = _state.value
         val name = current.pendingPlayer1Name ?: return
-        setPlayer1(name, current.pendingPlayer1Path)
-        closePlayer1Picker()
-        notifyControlsSwitched(name)
+        val path = current.pendingPlayer1Path
+        _state.update { it.copy(player1Name = name, player1Path = path) }
+        viewModelScope.launch {
+            // Saved BEFORE the picker closes: closing wakes the supervisor, and a tick that read the
+            // settings first would start the previous player 1.
+            withContext(Dispatchers.IO) { graph.settingsRepository.setPlayer1(name, path) }
+            closePlayer1Picker()
+            notifyControlsSwitched(name)
+        }
     }
 
     // One-shot and self-dismissing, on its own channel so muting it leaves the supervisor's alone.

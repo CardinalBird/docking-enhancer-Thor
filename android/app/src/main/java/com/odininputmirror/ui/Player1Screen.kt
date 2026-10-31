@@ -58,6 +58,7 @@ import com.odininputmirror.R
 import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.ui.theme.Palette
+import kotlinx.coroutines.delay
 
 /**
  * Change Input Order: "Press L + R on the controller you'd like to use." Slot 1 stays empty until a
@@ -100,9 +101,14 @@ fun Player1Screen(
     // and the confirm waits for the release: the A that opened this page lifts after it appears.
     val anchor = remember { FocusRequester() }
     val inputModeManager = LocalInputModeManager.current
+    // Retried: the node is not necessarily placed on the first frame, and without focus here A
+    // (confirm) never arrives.
     LaunchedEffect(Unit) {
-        inputModeManager.requestInputMode(InputMode.Keyboard)
-        runCatching { anchor.requestFocus() }
+        repeat(10) {
+            inputModeManager.requestInputMode(InputMode.Keyboard)
+            if (runCatching { anchor.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(50)
+        }
     }
 
     Column(

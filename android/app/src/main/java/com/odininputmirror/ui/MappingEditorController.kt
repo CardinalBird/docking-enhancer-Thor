@@ -99,6 +99,9 @@ class MappingEditorController(
     /** Whether the mapping on screen came from the database untouched. */
     private var seededOnOpen = false
 
+    /** Whether the mirror was off when the editor opened, so captures listen in the app. */
+    private var listenInAppOnOpen = false
+
     /** What the real external pad declares, for the auto-map presets. Null when unreadable. */
     private var sourceTraits: TargetTraits? = null
 
@@ -117,6 +120,9 @@ class MappingEditorController(
                 seedDefaultMapping(key)
                 val mapping = mappings.get(key)
                 seededOnOpen = runCatching { mappings.isSeeded(key) }.getOrDefault(false)
+                // Known now rather than after the first capture asks the daemon: the overlay is up
+                // before that answer comes back, and a press in the gap would reach the screen.
+                listenInAppOnOpen = runCatching { !process.isRunning() }.getOrDefault(false)
                 val traits = runCatching { devices.targetTraits() }.getOrNull()
                 sourceTraits = runCatching { devices.sourceTraits(key) }.getOrNull()
                 mapping to mappingSlots(traits ?: odinFallbackTraits())
@@ -142,6 +148,7 @@ class MappingEditorController(
                 bindings = openedWith,
                 seeded = seededOnOpen,
                 internalPadName = internalPadName,
+                listenInApp = listenInAppOnOpen,
             )
         }
     }
@@ -228,6 +235,9 @@ class MappingEditorController(
      * reload per press — twenty of them to remap a pad, each one a chance to be caught half-applied.
      */
     fun close() {
+        // The page lingers for its exit animation, so a second B can land here: the state is then
+        // already empty and a second write would wipe what the first one saved.
+        if (!_state.value.open) return
         stopPolling()
         val key = mappingKey
         val bindings = _state.value.bindings
@@ -370,7 +380,13 @@ class MappingEditorController(
         val taken = _state.value.bindings.entries.firstOrNull {
             it.value == source && it.key != slot.target
         }
-        if (taken != null) {
+        // Except mid-walk, from a slot still ahead: the walk is going to ask for that one anyway, and
+        // refusing would make swapping two buttons impossible without clearing first.
+        val walk = _state.value.walk
+        val ownerIndex = taken?.let { t -> _state.value.slots.indexOfFirst { it.target == t.key } } ?: -1
+        if (taken != null && walk != null && ownerIndex > walk) {
+            _state.update { it.copy(bindings = it.bindings - taken.key) }
+        } else if (taken != null) {
             val owner = _state.value.slots.firstOrNull { it.target == taken.key }?.label ?: "another slot"
             _state.update { it.copy(notice = "That control is already bound to $owner") }
             return CaptureVerdict.Refused

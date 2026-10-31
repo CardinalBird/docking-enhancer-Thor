@@ -63,7 +63,7 @@ fun MappingEditorScreen(
 ) {
     // Back means "close the overlay" while one is up, and "leave" otherwise — anything else would
     // make the overlay a trap, since the pad that would normally dismiss it is the one being captured.
-    BackHandler { if (state.capturing != null) onCancelBind() else onClose() }
+    BackHandler(enabled = state.open) { if (state.capturing != null) onCancelBind() else onClose() }
 
     // One anchor per row, and a memory of which row opened the overlay.
     //

@@ -12,6 +12,7 @@ import com.odininputmirror.domain.model.MappingKey
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
 import com.odininputmirror.domain.model.PadLayout
+import com.odininputmirror.domain.model.SlotIcon
 import com.odininputmirror.domain.model.mappingSlots
 import com.odininputmirror.domain.model.odinFallbackTraits
 import com.odininputmirror.domain.repository.InputDeviceRepository
@@ -226,7 +227,9 @@ class MappingEditorControllerTest {
         controller.close()
 
         awaitUntil("the preset was never saved") { mappings.saved != null }
-        assertEquals(slots.size - 2, mappings.saved?.bindings?.size)
+        // Everything but Home and Back, which a preset leaves alone (when the target offers them at all).
+        val bindable = slots.count { it.icon != SlotIcon.HOME && it.icon != SlotIcon.BACK }
+        assertEquals(bindable, mappings.saved?.bindings?.size)
     }
 
     // ---- harness ----------------------------------------------------------------------------
