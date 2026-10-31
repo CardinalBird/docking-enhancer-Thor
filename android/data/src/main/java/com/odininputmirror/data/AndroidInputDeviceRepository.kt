@@ -73,6 +73,24 @@ internal class AndroidInputDeviceRepository(
             .split(PROC_BLOCK_SEPARATOR)
             .mapNotNull { parseProcInputBlock(it) }
 
+    // `dumpsys input` is a heavy dump that takes the input locks, and two identically named pads
+    // (the normal Thor state: the firmware twins one external pad, so it and the real pad share a
+    // name) made it run on every 2.5s tick. The id→node map only changes when the framework's
+    // device set does, so it is keyed on the candidate ids and re-read only when they change. Kept
+    // only when every id resolved: a dump taken mid-registration must not pin a miss.
+    @Volatile
+    private var dumpsysPaths: Pair<List<Int>, Map<Int, String>>? = null
+
+    internal fun knownPathsFor(candidateIds: List<Int>): Map<Int, String> {
+        val key = candidateIds.sorted()
+        dumpsysPaths?.let { (ids, paths) -> if (ids == key) return paths }
+        val paths = parseDumpsysInputPaths(shell.read("dumpsys input"))
+        if (key.all { it in paths }) {
+            dumpsysPaths = key to paths
+        }
+        return paths
+    }
+
     override fun getConnectedControllers(): List<ControllerDevice> {
         val procEntries = readProcEntries()
 
@@ -89,7 +107,7 @@ internal class AndroidInputDeviceRepository(
         // below then drops one. Only then is the input service asked which node each device really
         // reads, so the common case costs no extra privileged call.
         val sharedName = candidates.groupBy { it.name.lowercase() }.any { it.value.size > 1 }
-        val knownPaths = if (sharedName) parseDumpsysInputPaths(shell.read("dumpsys input")) else emptyMap()
+        val knownPaths = if (sharedName) knownPathsFor(candidates.map { it.id }) else emptyMap()
 
         val framework = candidates
             .mapNotNull { candidate ->
