@@ -7,6 +7,19 @@ import com.odininputmirror.domain.model.TargetTraits
 import com.odininputmirror.domain.repository.InputDeviceRepository
 import java.io.File
 
+// Compiled once: these run on every supervisor tick, several times per /proc block and dumpsys line.
+private val PROC_BLOCK_SEPARATOR = Regex("\\n\\s*\\n")
+private val PROC_IDENTITY = Regex("I: Bus=([0-9A-Fa-f]+) Vendor=([0-9A-Fa-f]+) Product=([0-9A-Fa-f]+)")
+private val PROC_NAME = Regex("N: Name=\"([^\"]+)\"")
+private val PROC_HANDLERS = Regex("H: Handlers=(.+)")
+private val PROC_EVENT_NAME = Regex("\\bevent\\d+\\b")
+private val PROC_KEY_BITS = Regex("B: KEY=(.+)")
+private val PROC_ABS_BITS = Regex("B: ABS=(.+)")
+private val DUMPSYS_HUB_ID = Regex("""^\s+(-?\d+): """)
+private val DUMPSYS_HUB_PATH = Regex("""^\s+Path: (/dev/input/\S+)""")
+private val DUMPSYS_READER_DEVICE = Regex("""^\s+Device (-?\d+): """)
+private val DUMPSYS_READER_HUBS = Regex("""EventHub Devices: \[\s*(-?\d+)""")
+
 internal class AndroidInputDeviceRepository(
     private val shell: MirrorShell = UnavailableShell,
     private val pathExists: (String) -> Boolean = { File(it).exists() },
@@ -57,7 +70,7 @@ internal class AndroidInputDeviceRepository(
 
     private fun readProcEntries(): List<ProcInputEntry> =
         shell.read("cat /proc/bus/input/devices")
-            .split(Regex("\\n\\s*\\n"))
+            .split(PROC_BLOCK_SEPARATOR)
             .mapNotNull { parseProcInputBlock(it) }
 
     override fun getConnectedControllers(): List<ControllerDevice> {
@@ -274,28 +287,27 @@ internal class AndroidInputDeviceRepository(
     }
 
     internal fun parseProcInputBlock(block: String): ProcInputEntry? {
-        val identityMatch = Regex("I: Bus=([0-9A-Fa-f]+) Vendor=([0-9A-Fa-f]+) Product=([0-9A-Fa-f]+)")
-            .find(block)
+        val identityMatch = PROC_IDENTITY.find(block)
             ?: return null
-        val name = Regex("N: Name=\"([^\"]+)\"").find(block)?.groupValues?.getOrNull(1) ?: return null
-        val handlersLine = Regex("H: Handlers=(.+)").find(block)?.groupValues?.getOrNull(1) ?: return null
-        val eventName = Regex("\\bevent\\d+\\b").find(handlersLine)?.value ?: return null
+        val name = PROC_NAME.find(block)?.groupValues?.getOrNull(1) ?: return null
+        val handlersLine = PROC_HANDLERS.find(block)?.groupValues?.getOrNull(1) ?: return null
+        val eventName = PROC_EVENT_NAME.find(handlersLine)?.value ?: return null
 
         return ProcInputEntry(
             name = name,
-            handlers = handlersLine.split(Regex("\\s+")).filter { it.isNotBlank() },
+            handlers = handlersLine.split(WHITESPACE).filter { it.isNotBlank() },
             path = "/dev/input/$eventName",
             eventName = eventName,
             bus = identityMatch.groupValues[1].toInt(16),
             vendorId = identityMatch.groupValues[2].toInt(16),
             productId = identityMatch.groupValues[3].toInt(16),
-            keyBits = capabilityBits(block, "KEY"),
-            absBits = capabilityBits(block, "ABS"),
+            keyBits = capabilityBits(block, PROC_KEY_BITS),
+            absBits = capabilityBits(block, PROC_ABS_BITS),
         )
     }
 
-    private fun capabilityBits(block: String, kind: String): Set<Int> =
-        Regex("B: $kind=(.+)").find(block)?.groupValues?.getOrNull(1)
+    private fun capabilityBits(block: String, pattern: Regex): Set<Int> =
+        pattern.find(block)?.groupValues?.getOrNull(1)
             ?.let(::parseCapabilityBits)
             ?: emptySet()
 
@@ -383,17 +395,17 @@ internal fun parseDumpsysInputPaths(dump: String): Map<Int, String> {
             continue
         }
         if (section.startsWith("Event Hub State")) {
-            Regex("""^\s+(-?\d+): """).find(line)?.let { hubId = it.groupValues[1].toInt() }
-            Regex("""^\s+Path: (/dev/input/\S+)""").find(line)?.let { match ->
+            DUMPSYS_HUB_ID.find(line)?.let { hubId = it.groupValues[1].toInt() }
+            DUMPSYS_HUB_PATH.find(line)?.let { match ->
                 hubId?.let { hubPaths[it] = match.groupValues[1] }
             }
         } else if (section.startsWith("Input Reader State")) {
-            Regex("""^\s+Device (-?\d+): """).find(line)?.let {
+            DUMPSYS_READER_DEVICE.find(line)?.let {
                 val id = it.groupValues[1].toInt()
                 readerId = id
                 readerHub[id] = id
             }
-            Regex("""EventHub Devices: \[\s*(-?\d+)""").find(line)?.let { match ->
+            DUMPSYS_READER_HUBS.find(line)?.let { match ->
                 readerId?.let { readerHub[it] = match.groupValues[1].toInt() }
             }
         }

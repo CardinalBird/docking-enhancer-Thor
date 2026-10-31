@@ -13,6 +13,8 @@ import java.io.File
  * The files are world-readable text under the system partitions, so the app reads them directly; no
  * shell involved.
  */
+private val KEY_LABEL = Regex("[A-Z][A-Z0-9_]*")
+
 internal class KeyLayoutFiles(
     private val readFile: (String) -> String? = { path ->
         runCatching { File(path).takeIf { it.canRead() }?.readText() }.getOrNull()
@@ -41,7 +43,7 @@ internal class KeyLayoutFiles(
 
         text.lineSequence().forEach { raw ->
             val line = raw.substringBefore('#').trim()
-            val tokens = line.split(Regex("\\s+")).filter { it.isNotBlank() }
+            val tokens = line.split(WHITESPACE).filter { it.isNotBlank() }
             if (tokens.size < 3) {
                 return@forEach
             }
@@ -51,7 +53,7 @@ internal class KeyLayoutFiles(
             // Axis lines can carry modifiers (`split`, `invert`, `flat`) where the label would be.
             // Those axes are doing something more complicated than "this axis is X", so no label is
             // recorded and the caller falls back to the plain code conventions.
-            if (!label.matches(Regex("[A-Z][A-Z0-9_]*"))) {
+            if (!label.matches(KEY_LABEL)) {
                 return@forEach
             }
             when (tokens[0]) {

@@ -10,8 +10,10 @@ package com.odininputmirror.data
  * These bits are the ground truth for what a device can receive: the kernel silently drops an event
  * whose code the device does not declare, so anything offering targets must start here.
  */
+internal val WHITESPACE = Regex("\\s+")
+
 internal fun parseCapabilityBits(mask: String): Set<Int> {
-    val words = mask.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    val words = mask.trim().split(WHITESPACE).filter { it.isNotBlank() }
     if (words.isEmpty()) {
         return emptySet()
     }
