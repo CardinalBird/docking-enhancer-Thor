@@ -60,8 +60,9 @@ It runs without root, using a privileged service the stock firmware already ship
 
 ## Install
 
-1. Install the APK (allow "unknown sources" if prompted). Until this fork publishes releases, build
-   it yourself — see [Building](#building). Upstream's releases don't include the Thor changes.
+1. Install the APK from this fork's [Releases](https://github.com/CardinalBird/docking-enhancer-Thor/releases)
+   (allow "unknown sources" if prompted), or build it yourself — see [Building](#building).
+   Upstream's releases don't include the Thor changes.
 2. Open it once. Check that the built-in controller ("Odin Controller" on the Thor) shows on the
    left — tap it to fix it if not — then turn on **Automatic Mirror** and allow notifications.
 3. Pair a controller and dock. It takes over on its own.
