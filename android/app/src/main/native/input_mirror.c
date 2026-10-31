@@ -293,7 +293,6 @@ struct mirror_state {
     int heartbeat_missing_beats;  // consecutive beats the heartbeat PATH has been gone
     int home_mode;
     int combo_hold_kill_app;
-    int combo_tap_home;
     int virtual_mouse;
     int swap_nintendo_layout;
     // A Home press we swallowed and still owe a release for. Tracked so switching to pass-through
@@ -308,9 +307,7 @@ struct mirror_state {
     // Select+Start "close app" combo.
     int select_pressed;
     int start_pressed;
-    int thumbl_pressed;
     int thumbr_pressed;
-    int home_combo_armed;  // Start+L3 were down together; Home goes out once both are up
     int combo_triggered;
     long long combo_pressed_at_ms;
 
@@ -545,9 +542,6 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
         s->mouse_combo_triggered = 0;
         s->mouse_combo_pressed_at_ms = 0;
     }
-    if (s->combo_tap_home && !next->combo_tap_home) {
-        s->home_combo_armed = 0;
-    }
     if (s->combo_hold_kill_app && !next->combo_hold_kill_app) {
         // Drop a hold in progress so re-enabling later doesn't inherit a stale, already-expired
         // timer and fire the moment both buttons are next seen down.
@@ -557,7 +551,6 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
 
     s->home_mode = next->home_mode;
     s->combo_hold_kill_app = next->combo_hold_kill_app;
-    s->combo_tap_home = next->combo_tap_home;
     s->virtual_mouse = next->virtual_mouse;
     s->config_generation = next->generation;
 
@@ -653,7 +646,7 @@ static void maybe_fire_kill_combo(struct mirror_state *s) {
     }
 }
 
-// Track Select/Start/L3/R3 press state (read by the combos) and (re)arm the mouse-toggle hold. Only a
+// Track Select/Start/R3 press state (read by both combos) and (re)arm the mouse-toggle hold. Only a
 // combo key's own press may (re)arm the timer, so another button pressed while both are held can't
 // reset an in-progress hold. Called for every EV_KEY event.
 static void update_combo_tracking(struct mirror_state *s, const struct input_event *ev) {
@@ -663,9 +656,6 @@ static void update_combo_tracking(struct mirror_state *s, const struct input_eve
     } else if (is_start_button(ev->code)) {
         if (ev->value == 1) s->start_pressed = 1;
         else if (ev->value == 0) s->start_pressed = 0;
-    } else if (ev->code == BTN_THUMBL) {
-        if (ev->value == 1) s->thumbl_pressed = 1;
-        else if (ev->value == 0) s->thumbl_pressed = 0;
     } else if (ev->code == BTN_THUMBR) {
         if (ev->value == 1) s->thumbr_pressed = 1;
         else if (ev->value == 0) s->thumbr_pressed = 0;
@@ -711,23 +701,6 @@ static int handle_home_button(struct mirror_state *s, const struct input_event *
         }
     }
     return 1;
-}
-
-// Start+L3 tapped together sends Home, for pads without a Guide button. Not Select+Start (Cocoon
-// Shell's quick settings) nor Select+L3 (the Thor firmware's bottom-screen layout). The buttons are
-// still forwarded.
-static void handle_home_combo_event(struct mirror_state *s, const struct input_event *ev) {
-    if (!s->combo_tap_home || ev->type != EV_KEY ||
-        !(is_start_button(ev->code) || ev->code == BTN_THUMBL)) {
-        return;
-    }
-    if (ev->value == 1 && s->start_pressed && s->thumbl_pressed) {
-        s->home_combo_armed = 1;
-    }
-    if (ev->value == 0 && !s->start_pressed && !s->thumbl_pressed && s->home_combo_armed) {
-        s->home_combo_armed = 0;
-        run_detached("input keyevent 3");  // KEYCODE_HOME
-    }
 }
 
 // Advance the Select+Start "close app" combo on a Select/Start event.
@@ -833,7 +806,6 @@ static int handle_source_event(struct mirror_state *s, const struct input_event 
         return 0;
     }
 
-    handle_home_combo_event(s, event);
     handle_kill_combo_event(s, event);
 
     if (s->mouse.mode) {
@@ -915,7 +887,7 @@ int main(int argc, char **argv) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--combo-tap-home] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
+        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -929,7 +901,6 @@ int main(int argc, char **argv) {
     const char *capture_file_path = NULL;
     int home_mode = HOME_MODE_PASS;
     int combo_hold_kill_app = 0;
-    int combo_tap_home = 0;
     int virtual_mouse = 0;
     const char *hide_paths[MAX_HIDE_NODES];
     int hide_count = 0;
@@ -956,11 +927,6 @@ int main(int argc, char **argv) {
 
         if (strcmp(argv[index], "--combo-hold-kill-app") == 0) {
             combo_hold_kill_app = 1;
-            continue;
-        }
-
-        if (strcmp(argv[index], "--combo-tap-home") == 0) {
-            combo_tap_home = 1;
             continue;
         }
 
@@ -1012,7 +978,6 @@ int main(int argc, char **argv) {
     s.heartbeat_file_path = heartbeat_file_path;
     s.home_mode = home_mode;
     s.combo_hold_kill_app = combo_hold_kill_app;
-    s.combo_tap_home = combo_tap_home;
     s.virtual_mouse = virtual_mouse;
     s.capture.first_axis = -1;
     s.capture.log_path = capture_file_path;
@@ -1088,7 +1053,6 @@ int main(int argc, char **argv) {
         struct config from_flags = {
             .home_mode = s.home_mode,
             .combo_hold_kill_app = s.combo_hold_kill_app,
-            .combo_tap_home = s.combo_tap_home,
             .virtual_mouse = s.virtual_mouse,
             .generation = 0,
         };
@@ -1236,7 +1200,6 @@ int main(int argc, char **argv) {
             struct config running = {
                 .home_mode = s.home_mode,
                 .combo_hold_kill_app = s.combo_hold_kill_app,
-                .combo_tap_home = s.combo_tap_home,
                 .virtual_mouse = s.virtual_mouse,
                 .generation = s.config_generation,
             };

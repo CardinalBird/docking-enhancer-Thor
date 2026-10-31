@@ -46,7 +46,6 @@ struct binding {
 struct config {
     int home_mode;  // enum home_mode in input_mirror.c: 0 pass through, 1 Back, 2 Home
     int combo_hold_kill_app;
-    int combo_tap_home;  // a short Select+Start press sends Home
     int virtual_mouse;
     long long generation;
 

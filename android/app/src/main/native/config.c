@@ -205,7 +205,6 @@ int parse_config(const char *path, const struct config *current, struct config *
     out->generation = generation;
     out->home_mode = (int)json_number(buffer, "home_mode", current->home_mode);
     out->combo_hold_kill_app = json_bool(buffer, "combo_hold_kill_app", current->combo_hold_kill_app);
-    out->combo_tap_home = json_bool(buffer, "combo_tap_home", current->combo_tap_home);
     out->virtual_mouse = json_bool(buffer, "virtual_mouse", current->virtual_mouse);
     parse_mapping(buffer, out);
     return 0;

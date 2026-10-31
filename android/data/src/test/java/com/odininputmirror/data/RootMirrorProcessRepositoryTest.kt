@@ -114,7 +114,6 @@ class RootMirrorProcessRepositoryTest {
         settings.state = settings.state.copy(
             homeMode = HomeButtonMode.BACK,
             comboHoldKillApp = true,
-            comboTapHome = true,
             virtualMouse = true,
         )
         repository.start(
@@ -141,7 +140,6 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(command.contains("'/dev/input/event9' '/dev/input/event2'"))
         assertTrue(command.contains(" --home-mode 1"))
         assertTrue(command.contains(" --combo-hold-kill-app"))
-        assertTrue(command.contains(" --combo-tap-home"))
         assertTrue(command.contains(" --virtual-mouse"))
         assertTrue(command.contains("--pid-file '${files.pidFile.absolutePath}'"))
         assertTrue(command.contains("--heartbeat-file '${files.heartbeatFile.absolutePath}'"))
@@ -203,7 +201,6 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(config.contains("\"generation\": 3"))
         assertTrue(config.contains("\"home_mode\": 1"))
         assertTrue(config.contains("\"combo_hold_kill_app\": false"))
-        assertTrue(config.contains("\"combo_tap_home\": false"))
         assertTrue(config.contains("\"virtual_mouse\": true"))
     }
 
@@ -220,7 +217,7 @@ class RootMirrorProcessRepositoryTest {
         )
 
         val delivered = reloading.applyLiveSettings(
-            MirrorSettings(configGeneration = 9L, homeMode = HomeButtonMode.BACK, comboTapHome = true, virtualMouse = false),
+            MirrorSettings(configGeneration = 9L, homeMode = HomeButtonMode.BACK, virtualMouse = false),
             ControllerMapping(listOf(Binding(ControlRef.button(304), ControlRef.button(307)))),
         )
 
@@ -229,7 +226,6 @@ class RootMirrorProcessRepositoryTest {
         val config = files.configFile.readText()
         assertTrue(config.contains("\"generation\": 9"))
         assertTrue(config.contains("\"home_mode\": 1"))
-        assertTrue(config.contains("\"combo_tap_home\": true"))
         assertTrue(config.contains("\"virtual_mouse\": false"))
         assertTrue(config.contains("\"bindings\": [[0, 304, 0, 0, 307, 0]]"))
         // The reload must never travel through PServer: that queue is serialized process-wide, and
@@ -403,10 +399,6 @@ private class FakeSettingsRepository(
 
     override fun setMirrorWhenHandheld(enabled: Boolean) {
         state = state.copy(mirrorWhenHandheld = enabled)
-    }
-
-    override fun setComboTapHome(enabled: Boolean) {
-        state = state.copy(comboTapHome = enabled)
     }
 
     override fun setManualInternalController(guid: String?) {

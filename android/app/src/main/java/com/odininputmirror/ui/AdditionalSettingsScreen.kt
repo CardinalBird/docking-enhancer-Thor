@@ -61,16 +61,10 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
         Rule(Modifier.padding(horizontal = 28.dp))
         Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 120.dp, vertical = 8.dp)) {
             MenuRow(
-                title = "Start + L3 sends Home",
-                minHeight = 52.dp,
-                onClick = { viewModel.toggleComboTapHome(!state.comboTapHome) },
-                modifier = Modifier.focusRequester(first).then(explains("Tap Start and L3 together to go to the home screen.")),
-            ) { RowSwitch(state.comboTapHome, !state.busy) }
-            MenuRow(
                 title = "Select + Start closes app",
                 minHeight = 52.dp,
                 onClick = { viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) },
-                modifier = explains("Hold both for 3 seconds to close the game you're in."),
+                modifier = Modifier.focusRequester(first).then(explains("Hold both for 3 seconds to close the game you're in.")),
             ) { RowSwitch(state.comboHoldKillApp, !state.busy) }
             MenuRow(
                 title = "Virtual mouse",
