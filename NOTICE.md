@@ -31,3 +31,9 @@ because it incorporates that work.
 
 Please keep this attribution intact in any fork or redistribution; the GPL
 requires it.
+
+### Poppins
+
+The app's typeface is Poppins SemiBold, copyright 2020 The Poppins Project Authors
+(https://github.com/itfoundry/Poppins), under the SIL Open Font License 1.1. See
+[third-party/poppins/NOTICE.md](third-party/poppins/NOTICE.md).
