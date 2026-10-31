@@ -522,6 +522,31 @@ Input Dispatcher State:
     }
 
     @Test
+    fun sourceTraitsPreferThePadNodeOverItsSensorNode() {
+        val proc = """
+I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
+N: Name="DualSense Wireless Controller Motion Sensors"
+H: Handlers=event12
+B: KEY=
+B: ABS=3f
+
+I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
+N: Name="DualSense Wireless Controller"
+H: Handlers=event11 js0
+B: KEY=7fdb000000000000 0 0 0 0
+B: ABS=3003f
+""".trimStart()
+        val shell = object : MirrorShell by UnavailableShell {
+            override fun read(command: String): String = proc
+        }
+        val repository = AndroidInputDeviceRepository(shell = shell, pathExists = { true })
+
+        val traits = repository.sourceTraits(MappingKey.of(0x054c, 0x0ce6))!!
+
+        assertTrue(traits.keys.isNotEmpty())
+    }
+
+    @Test
     fun parseDumpsysInputPathsUsesTheSameIdBeforeAndroid11() {
         val dump = """
 Event Hub State:

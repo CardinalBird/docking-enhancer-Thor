@@ -44,11 +44,13 @@ internal class AndroidInputDeviceRepository(
     // The real pad keeps its /proc entry — bitmasks included — even while its /dev node is hidden,
     // which is exactly when seeding runs.
     override fun sourceTraits(key: MappingKey): TargetTraits? {
-        val entry = readProcEntries().firstOrNull {
+        // The node with the most keys: a pad's motion-sensor/IMU node carries the same vendor:product
+        // and no buttons, and whichever registered first used to win, seeding an empty button set.
+        val entry = readProcEntries().filter {
             it.vendorId !in MIRRORING_QUIRK_VENDOR_IDS &&
                 it.vendorId != 0 &&
                 MappingKey.of(it.vendorId, it.productId) == key
-        } ?: return null
+        }.maxByOrNull { it.keyBits.size } ?: return null
         if (entry.keyBits.isEmpty() && entry.absBits.isEmpty()) {
             return null
         }

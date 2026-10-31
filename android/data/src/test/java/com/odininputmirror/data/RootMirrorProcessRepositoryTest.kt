@@ -137,6 +137,9 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(command.contains("[ \"\$2\" = '/dev/input/event9' ]"))
         assertTrue(command.contains("[ \"\$3\" = '/dev/input/event2' ]"))
         assertTrue(command.contains("kill -TERM \$p"))
+        // The keep/kill verdict is taken per daemon and the exit only after the loop, so a stale
+        // daemon listed after the matching one is still stopped.
+        assertTrue(command.indexOf("exit 0") > command.indexOf("done;"))
         assertTrue(command.contains("'/dev/input/event9' '/dev/input/event2'"))
         assertTrue(command.contains(" --home-mode 1"))
         assertTrue(command.contains(" --combo-hold-kill-app"))
