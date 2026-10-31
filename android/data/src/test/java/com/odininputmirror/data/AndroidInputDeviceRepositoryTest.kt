@@ -522,6 +522,39 @@ Input Dispatcher State:
     }
 
     @Test
+    fun knownPathsReadDumpsysOnceUntilTheDeviceSetChanges() {
+        var reads = 0
+        val shell = object : MirrorShell by UnavailableShell {
+            override fun read(command: String): String {
+                reads++
+                return """
+Event Hub State:
+  Devices:
+    5: Pad
+      Path: /dev/input/event5
+    6: Pad
+      Path: /dev/input/event6
+Input Reader State:
+  Device 5: Pad
+  Device 6: Pad
+""".trimStart()
+            }
+        }
+        val repository = AndroidInputDeviceRepository(shell = shell, pathExists = { true })
+
+        assertEquals("/dev/input/event5", repository.knownPathsFor(listOf(6, 5))[5])
+        repository.knownPathsFor(listOf(5, 6))
+        assertEquals(1, reads)
+
+        // A reconnected pad gets a new framework id: that is the one thing that must re-read.
+        repository.knownPathsFor(listOf(5, 7))
+        assertEquals(2, reads)
+        // An id the dump could not resolve is never cached as a miss.
+        repository.knownPathsFor(listOf(5, 7))
+        assertEquals(3, reads)
+    }
+
+    @Test
     fun parseDumpsysInputPathsUsesTheSameIdBeforeAndroid11() {
         val dump = """
 Event Hub State:
