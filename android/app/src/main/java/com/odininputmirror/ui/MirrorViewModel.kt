@@ -20,6 +20,7 @@ import com.odininputmirror.domain.model.MappingKey
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStatus
 import com.odininputmirror.domain.model.findSavedControllerDevice
+import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.domain.model.pickExternal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -239,21 +240,6 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
 
     // Option toggles only persist the setting; if the mirror is running with different flags the
     // supervisor notices (started* snapshot vs current settings) and restarts it automatically.
-    fun setHomeMode(nextValue: HomeButtonMode) {
-        val current = _state.value
-        if (current.busy) return
-        val previous = current.homeMode
-        _state.update { it.copy(homeMode = nextValue) }
-        viewModelScope.launch {
-            try {
-                withContext(Dispatchers.IO) { graph.setHomeMode(nextValue) }
-                MirrorStateStore.wake()
-            } catch (error: Exception) {
-                _state.update { it.copy(homeMode = previous, message = error.message ?: error.toString()) }
-            }
-        }
-    }
-
     fun toggleComboHoldKillApp(nextValue: Boolean) {
         val current = _state.value
         if (current.busy) return
@@ -361,11 +347,6 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         }
     }
 
-    fun setPlayer1(name: String?, path: String? = null) {
-        _state.update { it.copy(player1Name = name, player1Path = path) }
-        viewModelScope.launch(Dispatchers.IO) { graph.settingsRepository.setPlayer1(name, path) }
-    }
-
     // A ViewModel torn down mid-pick must not leave the supervisor holding the mirror off.
     override fun onCleared() {
         MirrorStateStore.setPickingPlayer1(false)
@@ -430,6 +411,9 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         !status.autoMirrorEnabled -> "Mirroring is off."
         devices.none { it.isInternal } -> "Waiting for the built-in controller."
         devices.none { !it.isInternal } -> "Waiting for a controller."
+        // A locked player 1 that is not here mirrors nothing, whatever else is plugged in.
+        saved.player1Name != null && devices.lockedPlayer1(saved.player1Name, saved.player1Path) == null ->
+            "Waiting for ${saved.player1Name}."
         status.expectedRunning -> "Controller detected. Mirroring will start automatically."
         !status.docked && !saved.mirrorWhenHandheld -> "Mirroring starts when you dock."
         else -> "Ready to mirror."

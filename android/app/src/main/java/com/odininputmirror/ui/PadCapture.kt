@@ -19,10 +19,11 @@ import kotlin.math.abs
 /**
  * Whether an input device is one whose presses should be bound: a real game controller that is not
  * the handheld's own pad. The handheld's pad is what drives the editor (B skips, X stops), so taking
- * its presses would make the overlay impossible to leave.
+ * its presses would make the overlay impossible to leave — which is also why nothing is captured
+ * until that pad has a name to exclude.
  */
 internal fun isCaptureSource(name: String?, isVirtual: Boolean, isGamepad: Boolean, internalPadName: String?): Boolean =
-    isGamepad && !isVirtual && name != null && !name.equals(internalPadName, ignoreCase = true)
+    isGamepad && !isVirtual && name != null && internalPadName != null && !name.equals(internalPadName, ignoreCase = true)
 
 /** A key press as a binding source, or null for anything that is not the first press of a button. */
 internal fun buttonSource(scanCode: Int, isDown: Boolean, repeatCount: Int): ControlRef? =
@@ -45,12 +46,17 @@ internal fun evdevAxis(androidName: String, layout: Map<Int, String>): Int? =
  */
 internal class AxisEdges {
     private val pushed = mutableMapOf<Int, Int>()
+    private val rest = mutableMapOf<Int, Int>()
 
     fun feed(code: Int, value: Float): ControlRef? {
-        // The first value seen is the baseline: a trigger reported as a centred axis rests at -1, and
-        // measuring from 0 would bind it the moment any axis moved.
+        // The first value seen is where the axis rests: a trigger reported as a centred axis rests at
+        // -1, and measuring from 0 would bind it the moment any axis moved. Coming back to rest is a
+        // release, never a push the other way — like the daemon's capture, which only reports travel
+        // away from neutral. Reporting it filled the next slot of a walk with the trigger's release.
         val was = pushed[code] ?: run {
-            pushed[code] = if (value >= PUSH) 1 else if (value <= -PUSH) -1 else 0
+            val at = if (value >= PUSH) 1 else if (value <= -PUSH) -1 else 0
+            rest[code] = at
+            pushed[code] = at
             return null
         }
         val now = when {
@@ -60,7 +66,7 @@ internal class AxisEdges {
             else -> was
         }
         pushed[code] = now
-        return if (now != 0 && now != was) ControlRef.half(code, now) else null
+        return if (now != 0 && now != was && now != rest[code]) ControlRef.half(code, now) else null
     }
 
     private companion object {

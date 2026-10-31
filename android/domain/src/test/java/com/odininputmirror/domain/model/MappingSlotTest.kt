@@ -105,6 +105,9 @@ class MappingSlotTest {
         assertEquals("D-pad up", describeSource(ControlRef.half(0x11, -1)))
         assertEquals("+L2", describeSource(ControlRef.half(0x0a, 1)))
         assertEquals("+R2", describeSource(ControlRef.half(0x09, 1)))
+        // The pad's own layout wins: an xpad Xbox pad has its triggers on Z/RZ and its stick on RX/RY.
+        assertEquals("+L2", describeSource(ControlRef.half(0x02, 1), mapOf(0x02 to "LTRIGGER")))
+        assertEquals("Right stick right", describeSource(ControlRef.half(0x03, 1), mapOf(0x03 to "Z")))
         // No standard meaning: the number is all we honestly know.
         assertEquals("Button 400", describeSource(ControlRef.button(400)))
         assertEquals("+Axis 40", describeSource(ControlRef.half(40, 1)))

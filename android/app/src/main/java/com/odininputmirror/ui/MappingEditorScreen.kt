@@ -162,6 +162,7 @@ fun MappingEditorScreen(
                     SlotRow(
                         slot = slot,
                         source = state.bindings[slot.target],
+                        axisLabels = state.sourceAxisLabels,
                         onBind = {
                             focusedRow = index
                             // Recorded HERE, which is the whole trick: by the time the overlay closes
@@ -211,6 +212,7 @@ fun MappingEditorScreen(
             CaptureOverlay(
                 slot = state.capturing,
                 source = state.bindings[state.capturing.target],
+                axisLabels = state.sourceAxisLabels,
                 notice = state.notice,
                 onCancel = onCancelBind,
                 // "3 of 26": the walk's place, counted from one.

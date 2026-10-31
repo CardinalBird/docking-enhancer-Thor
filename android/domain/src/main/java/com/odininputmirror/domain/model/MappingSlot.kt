@@ -243,10 +243,13 @@ private fun axisLabelled(traits: TargetTraits, labels: Set<String>, fallback: In
  * where the button sits, not what is printed on it — a Nintendo pad's A reports as East. A code with
  * no standard meaning keeps its number.
  */
-fun describeSource(source: ControlRef): String = when (source.kind) {
+fun describeSource(source: ControlRef, axisLabels: Map<Int, String> = emptyMap()): String = when (source.kind) {
     ControlKind.BUTTON -> BUTTON_NAMES[source.code] ?: "Button ${source.code}"
     ControlKind.AXIS -> if (source.direction < 0) "Axis ${source.code} (inverted)" else "Axis ${source.code}"
-    ControlKind.HALF_AXIS -> HALF_AXIS_NAMES[source.code]?.let { if (source.direction < 0) it.first else it.second }
+    // The pad's own key layout beats the evdev default: xpad reports the triggers on Z/RZ, where
+    // the default has the right stick.
+    ControlKind.HALF_AXIS -> (axisLabels[source.code]?.let { ANDROID_AXIS_NAMES[it] } ?: HALF_AXIS_NAMES[source.code])
+        ?.let { if (source.direction < 0) it.first else it.second }
         ?: "${if (source.direction < 0) "−" else "+"}Axis ${source.code}"
 }
 
@@ -258,19 +261,27 @@ private val BUTTON_NAMES = mapOf(
     BTN_DPAD_LEFT to "D-pad left", BTN_DPAD_RIGHT to "D-pad right",
 )
 
-/** Axis code -> (negative half, positive half). evdev counts Y downward, so up is negative. */
-private val HALF_AXIS_NAMES = mapOf(
-    ABS_X to ("Left stick left" to "Left stick right"),
-    ABS_Y to ("Left stick up" to "Left stick down"),
-    ABS_Z to ("Right stick left" to "Right stick right"),
-    ABS_RZ to ("Right stick up" to "Right stick down"),
-    ABS_RX to ("Right stick left" to "Right stick right"),
-    ABS_RY to ("Right stick up" to "Right stick down"),
-    ABS_HAT0X to ("D-pad left" to "D-pad right"),
-    ABS_HAT0Y to ("D-pad up" to "D-pad down"),
-    ABS_BRAKE to ("−L2" to "+L2"),
-    ABS_GAS to ("−R2" to "+R2"),
+/** Android axis name -> (negative half, positive half). evdev counts Y downward, so up is negative. */
+private val ANDROID_AXIS_NAMES = mapOf(
+    "X" to ("Left stick left" to "Left stick right"),
+    "Y" to ("Left stick up" to "Left stick down"),
+    "Z" to ("Right stick left" to "Right stick right"),
+    "RZ" to ("Right stick up" to "Right stick down"),
+    "RX" to ("Right stick left" to "Right stick right"),
+    "RY" to ("Right stick up" to "Right stick down"),
+    "HAT_X" to ("D-pad left" to "D-pad right"),
+    "HAT_Y" to ("D-pad up" to "D-pad down"),
+    "LTRIGGER" to ("−L2" to "+L2"),
+    "BRAKE" to ("−L2" to "+L2"),
+    "RTRIGGER" to ("−R2" to "+R2"),
+    "GAS" to ("−R2" to "+R2"),
 )
+
+/** Axis code -> halves, by the standard evdev meaning: what Generic.kl calls each code. */
+private val HALF_AXIS_NAMES = mapOf(
+    ABS_X to "X", ABS_Y to "Y", ABS_Z to "Z", ABS_RZ to "RZ", ABS_RX to "RX", ABS_RY to "RY",
+    ABS_HAT0X to "HAT_X", ABS_HAT0Y to "HAT_Y", ABS_BRAKE to "BRAKE", ABS_GAS to "GAS",
+).mapValues { ANDROID_AXIS_NAMES.getValue(it.value) }
 
 /** Which way round a pad's face buttons are printed. */
 enum class PadLayout { XBOX, NINTENDO }

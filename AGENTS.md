@@ -68,7 +68,7 @@ Run from `android/`. On Windows use `gradlew.bat` and the `.ps1` scripts; on mac
 - No root. Privileged commands go through PServerBinder (`PServerShell`), which returns only the first stdout line and no exit code — reads stage output through a file, status checks use a stdout token. On devices without the service the UI shows an "Unsupported device" dialog; the supervisor retries the probe for about a minute (it can lose a race with the firmware at boot), then stops itself.
 - Mirroring writes directly to `/dev/input/eventX` (the pservice SELinux domain can open input/uinput nodes).
 - Event node paths are unstable across reconnects/reboots; device resolution matches by GUID first, then path (`findSavedControllerDevice`).
-- Start/stop/restart is decided every tick by `ResolveAutoMirrorDecisionUseCase`, driven from the foreground service `InputMirrorSupervisorService`; it only acts while `autoMirrorEnabled` is true and the device is docked.
+- Start/stop/restart is decided every tick by `ResolveAutoMirrorDecisionUseCase`, driven from the foreground service `InputMirrorSupervisorService`; it only acts while `autoMirrorEnabled` is true and the device is docked (or `mirrorWhenHandheld` is on).
 - Liveness is heartbeat/pid based in data layer (`RootMirrorProcessRepository` + process files), not just a simple process-name check.
 - Changing the options (`homeMode`, `comboHoldKillApp`, `virtualMouse`) must only persist settings; the mirror starts/stops via the supervisor and `startMirror`/`stopMirror`. If the mirror is running with different flags, the supervisor detects it (persisted `started*` snapshot vs current settings) and restarts it automatically.
 

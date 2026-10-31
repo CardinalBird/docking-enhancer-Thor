@@ -168,6 +168,10 @@ class MirrorUseCaseTest {
         assertEquals(padB, devices.pickExternal(null, "8BitDo Ultimate 2C", "/dev/input/event11"))
         // After a reconnect the picked node is gone: the name still finds one of them.
         assertEquals(padA, devices.pickExternal(null, "8BitDo Ultimate 2C", "/dev/input/event4"))
+        // Event numbers are recycled: a different pad on the picked node is not player 1.
+        val stranger = externalController(path = "/dev/input/event11").copy(name = "TestPad")
+        assertEquals(padA, listOf(padA, stranger).pickExternal(null, "8BitDo Ultimate 2C", "/dev/input/event11"))
+        assertNull(listOf(stranger).pickExternal(null, "8BitDo Ultimate 2C", "/dev/input/event11"))
     }
 
     @Test

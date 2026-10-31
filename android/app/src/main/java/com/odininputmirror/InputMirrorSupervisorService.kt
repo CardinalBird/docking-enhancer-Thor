@@ -127,17 +127,22 @@ class InputMirrorSupervisorService : Service() {
                 val settings = graph.settingsRepository.getSettings()
                 val dockActive = graph.dockStateRepository.isDockActive()
                 val mirrorAllowed = dockActive || settings.mirrorWhenHandheld
+                val mirrorRunning = graph.processRepository.isRunning()
                 // Enumerate controllers only when the result is actually consumed: docked (the
                 // auto-mirror decision below reads the list) or the UI is on-screen (it renders the
                 // list for setup). Undocked with the UI hidden, this is the one privileged PServer
                 // call per tick that nobody reads — skip it so a pocketed handheld isn't spawning a
-                // subprocess every idle tick. The undocked decision uses an empty list regardless.
-                val allDevices = if (mirrorAllowed || MirrorStateStore.uiVisible) {
+                // subprocess every idle tick. "Allow mirroring: Always" needs the list undocked
+                // too, but only once the framework sees a pad pair (or a mirror is already up, which
+                // hides its source from the framework); a pocketed handheld with no pad never pays.
+                val allDevices = if (
+                    dockActive || MirrorStateStore.uiVisible ||
+                    (settings.mirrorWhenHandheld && (mirrorRunning || graph.inputDeviceRepository.controllerPairPresent()))
+                ) {
                     graph.inputDeviceRepository.getConnectedControllers()
                 } else {
                     emptyList()
                 }
-                val mirrorRunning = graph.processRepository.isRunning()
                 // While nothing is running, heal any node a crashed daemon left hidden so a stuck,
                 // invisible external controller can recover on its own (no-op unless there's a
                 // hidden-state record to restore).

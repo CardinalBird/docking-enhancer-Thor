@@ -8,6 +8,7 @@ import com.odininputmirror.domain.model.ControllerMapping
 import com.odininputmirror.domain.model.MappingKey
 import com.odininputmirror.domain.model.MappingSlot
 import com.odininputmirror.domain.model.PadLayout
+import com.odininputmirror.domain.model.SlotIcon
 import com.odininputmirror.domain.model.TargetTraits
 import com.odininputmirror.domain.model.mappingSlots
 import com.odininputmirror.domain.model.odinFallbackTraits
@@ -51,6 +52,8 @@ data class MappingEditorUiState(
     val listenInApp: Boolean = false,
     /** The handheld's own pad, whose presses drive the editor and must never be captured. */
     val internalPadName: String? = null,
+    /** evdev axis code -> Android axis name for the pad being mapped, to name its bound axes. */
+    val sourceAxisLabels: Map<Int, String> = emptyMap(),
 ) {
     val boundCount: Int get() = bindings.size
 }
@@ -127,6 +130,10 @@ class MappingEditorController(
                 sourceTraits = runCatching { devices.sourceTraits(key) }.getOrNull()
                 mapping to mappingSlots(traits ?: odinFallbackTraits())
             }
+            val sourceAxisLabels = runCatching {
+                val (vendor, product) = key.value.split(":")
+                axisLabels(vendor.toInt(16), product.toInt(16))
+            }.getOrDefault(emptyMap())
 
             // Drop anything aimed at a target no slot claims any more. A stored binding outlives the
             // slot list, so a corrected target leaves the old one behind: invisible in the list, still
@@ -149,6 +156,7 @@ class MappingEditorController(
                 seeded = seededOnOpen,
                 internalPadName = internalPadName,
                 listenInApp = listenInAppOnOpen,
+                sourceAxisLabels = sourceAxisLabels,
             )
         }
     }
@@ -156,7 +164,10 @@ class MappingEditorController(
     /** Start listening for the control that should drive this slot. */
     fun bind(slot: MappingSlot) {
         if (!_state.value.open) return
-        _state.update { it.copy(capturing = slot, notice = null) }
+        _state.update {
+            val blind = it.listenInApp && it.internalPadName == null
+            it.copy(capturing = slot, notice = "Pick the built-in controller first".takeIf { blind })
+        }
         startCapture()
     }
 
@@ -179,8 +190,10 @@ class MappingEditorController(
         if (!_state.value.open) return
         stopPolling()
         _state.update {
+            // No preset binds Home or Back, so whatever the user put there stays.
+            val kept = it.slots.filter { s -> s.icon == SlotIcon.HOME || s.icon == SlotIcon.BACK }.map { s -> s.target }
             it.copy(
-                bindings = presetBindings(layout, it.slots, sourceTraits),
+                bindings = it.bindings.filterKeys { k -> k in kept } + presetBindings(layout, it.slots, sourceTraits),
                 capturing = null, walk = null, notice = null, seeded = false,
             )
         }
