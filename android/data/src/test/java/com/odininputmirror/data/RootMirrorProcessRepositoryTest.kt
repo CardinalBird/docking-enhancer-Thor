@@ -146,6 +146,11 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(command.contains("--hidden-state-file '${files.hiddenStateFile.absolutePath}'"))
         assertTrue(command.contains("--config-file '${files.configFile.absolutePath}'"))
         assertTrue(command.contains("--control-fifo '${files.controlFifo.absolutePath}'"))
+        // Stale files are cleared only past the guard: before it, the heartbeat of a healthy daemon
+        // the guard then keeps would vanish, and that daemon would shut itself down.
+        val cleared = command.indexOf("rm -f '${files.pidFile.absolutePath}' '${files.heartbeatFile.absolutePath}'")
+        assertTrue(cleared > command.indexOf("exit 0"))
+        assertTrue(cleared < command.indexOf("nice -n -20"))
     }
 
     @Test

@@ -26,7 +26,6 @@ internal class RootMirrorProcessRepository(
 
     override fun start(request: MirrorStartRequest) {
         val binary = files.ensureBinaryInstalled()
-        files.prepareProcessFiles()
 
         // Hand the daemon its config up front so a fresh start and a hot reload read the same
         // document. The command-line flags below stay as the fallback the daemon uses when the file
@@ -86,6 +85,11 @@ internal class RootMirrorProcessRepository(
             // Give a daemon we just signalled time to restore what it hid and drop its grab, or the
             // replacement races it for the EVIOCGRAB and loses.
             append("i=0; while pidof input_mirror >/dev/null 2>&1 && [ \$i -lt 20 ]; do sleep 0.1; i=\$((i+1)); done; ")
+            // Stale pid/heartbeat go only now, past the guard. Deleted up front, they took the
+            // heartbeat from a healthy daemon the guard then kept, and it shut itself down 5s later
+            // for having lost its heartbeat. Not pre-created either: a fresh empty heartbeat would
+            // read as alive before the daemon is.
+            append("rm -f ${files.pidFile.absolutePath.shellQuote()} ${files.heartbeatFile.absolutePath.shellQuote()}; ")
             append(launch)
         }
         if (!shell.launchDaemon(command)) {
