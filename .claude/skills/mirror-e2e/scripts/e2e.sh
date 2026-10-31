@@ -884,6 +884,96 @@ capture off"
 fi
 rm -f $CAPLOG $TMP/t15.out
 
+# --- T19: Select+Start tocado es Home -----------------------------------------------------------
+
+echo ""
+echo "=== T19: Select+Start tocado manda Home ==="
+
+top_activity() { dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity; }
+open_settings() { am start -n com.android.settings/.Settings >/dev/null 2>&1; sleep 2; }
+tap_select_start() {
+    echo "key 314 1" >&3; echo "syn" >&3
+    echo "key 315 1" >&3; echo "syn" >&3
+    sleep 0.2
+    echo "key 315 0" >&3; echo "syn" >&3
+    echo "key 314 0" >&3; echo "syn" >&3
+    sleep 2.5
+}
+
+# Sin la opcion el combo no hace nada; si esto falla, el positivo de abajo no prueba nada.
+start_mirror "$SRC" "$DST" --heartbeat-file $HEART
+open_settings
+tap_select_start
+if top_activity | grep -q "com.android.settings"; then ok "sin --combo-tap-home el combo no manda Home"; else bad "sin la opcion igual salio de Ajustes [$(top_activity)]"; fi
+stop_mirror
+
+start_mirror "$SRC" "$DST" --combo-tap-home --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de Select+Start"
+else
+    open_settings
+    if top_activity | grep -q "com.android.settings"; then ok "Ajustes en primer plano antes del combo"; else bad "no se pudo abrir Ajustes [$(top_activity)]"; fi
+    getevent -lt "$DST" > $TMP/t19.out 2>&1 &
+    T19GE=$!
+    sleep 0.4
+    tap_select_start
+    kill $T19GE 2>/dev/null
+    if top_activity | grep -q "com.android.settings"; then bad "Select+Start tocado no mando Home [$(top_activity)]"; else ok "Select+Start tocado manda Home"; fi
+    expect_contains $TMP/t19.out "BTN_SELECT" "Select sigue llegando al target"
+    expect_contains $TMP/t19.out "BTN_START" "Start sigue llegando al target"
+    stop_mirror
+fi
+rm -f $TMP/t19.out
+
+# --- T20: Home y Back como destino de un mapeo ----------------------------------------------------
+
+echo ""
+echo "=== T20: un boton mapeado a Home/Back hace Home/Back ==="
+
+# 304 -> KEY_HOME (102), 305 -> KEY_BACK (158). Tocado sale ese codigo como un toque; sostenido
+# (>= 500 ms) sale KEY_APPSELECT (Recientes). El boton original nunca llega.
+cat > $CFG.tmp <<'JSON'
+{
+  "generation": 1,
+  "home_mode": 0,
+  "combo_hold_kill_app": false,
+  "virtual_mouse": false,
+  "mapping": { "bindings": [[0, 304, 0, 0, 102, 0], [0, 305, 0, 0, 158, 0]] }
+}
+JSON
+mv $CFG.tmp $CFG
+
+start_mirror "$SRC" "$DST" --config-file $CFG --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para el test de Home/Back"
+else
+    open_settings
+    getevent -lt "$DST" > $TMP/t20.out 2>&1 &
+    T20GE=$!
+    sleep 0.4
+    press_source 304
+    sleep 2
+    if top_activity | grep -q "com.android.settings"; then bad "Home mapeado no salio de Ajustes [$(top_activity)]"; else ok "Home mapeado lleva al launcher"; fi
+    press_source 305
+    sleep 0.5
+    echo "key 304 1" >&3; echo "syn" >&3
+    sleep 0.8
+    echo "key 304 0" >&3; echo "syn" >&3
+    sleep 1
+    kill $T20GE 2>/dev/null
+    input keyevent 3
+
+    N=$(grep -c "KEY_HOME" $TMP/t20.out 2>/dev/null)
+    if [ "$N" = "2" ]; then ok "Home tocado llega como un toque de KEY_HOME"; else bad "KEY_HOME x$N, esperaba 2"; fi
+    N=$(grep -c "KEY_BACK" $TMP/t20.out 2>/dev/null)
+    if [ "$N" = "2" ]; then ok "Back tocado llega como un toque de KEY_BACK"; else bad "KEY_BACK x$N, esperaba 2"; fi
+    N=$(grep -c "KEY_APPSELECT" $TMP/t20.out 2>/dev/null)
+    if [ "$N" = "2" ]; then ok "Home sostenido llega como Recientes (KEY_APPSELECT)"; else bad "KEY_APPSELECT x$N, esperaba 2"; fi
+    if grep -q -E "BTN_GAMEPAD|BTN_EAST" $TMP/t20.out 2>/dev/null; then bad "el boton original llego al target"; else ok "el boton original no llega"; fi
+    stop_mirror
+fi
+rm -f $TMP/t20.out $CFG
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""

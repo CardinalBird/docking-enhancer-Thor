@@ -41,6 +41,7 @@ internal class RootMirrorProcessRepository(
                 generation = settings.configGeneration,
                 homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
+                comboTapHome = settings.comboTapHome,
                 virtualMouse = settings.virtualMouse,
                 mapping = request.mapping,
             ),
@@ -52,6 +53,7 @@ internal class RootMirrorProcessRepository(
         val captureArg = " --capture-file ${files.captureFile.absolutePath.shellQuote()}"
         val homeModeArg = " --home-mode ${settings.homeMode.wire}"
         val comboHoldKillAppArg = if (settings.comboHoldKillApp) " --combo-hold-kill-app" else ""
+        val comboTapHomeArg = if (settings.comboTapHome) " --combo-tap-home" else ""
         val virtualMouseArg = if (settings.virtualMouse) " --virtual-mouse" else ""
         val hideNodeArgs = request.hideNodes.joinToString("") { " --hide-node ${it.shellQuote()}" }
         val hiddenStateArg = " --hidden-state-file ${files.hiddenStateFile.absolutePath.shellQuote()}"
@@ -62,7 +64,7 @@ internal class RootMirrorProcessRepository(
         // so no `echo $! > pidfile` bookkeeping is needed here.
         //
         val launch =
-            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeModeArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
+            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeModeArg$comboHoldKillAppArg$comboTapHomeArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
 
         // Only skip the launch for a daemon already mirroring THESE nodes.
         //
@@ -166,6 +168,7 @@ internal class RootMirrorProcessRepository(
                 generation = settings.configGeneration,
                 homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
+                comboTapHome = settings.comboTapHome,
                 virtualMouse = settings.virtualMouse,
                 mapping = mapping,
             ),
@@ -296,6 +299,7 @@ private fun configJson(
     generation: Long,
     homeMode: HomeButtonMode,
     comboHoldKillApp: Boolean,
+    comboTapHome: Boolean,
     virtualMouse: Boolean,
     mapping: ControllerMapping,
 ): String = """
@@ -303,6 +307,7 @@ private fun configJson(
       "generation": $generation,
       "home_mode": ${homeMode.wire},
       "combo_hold_kill_app": $comboHoldKillApp,
+      "combo_tap_home": $comboTapHome,
       "virtual_mouse": $virtualMouse,
       "mapping": {
         "bindings": [${mapping.configBindingRows()}]

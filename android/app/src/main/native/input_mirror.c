@@ -293,6 +293,7 @@ struct mirror_state {
     int heartbeat_missing_beats;  // consecutive beats the heartbeat PATH has been gone
     int home_mode;
     int combo_hold_kill_app;
+    int combo_tap_home;
     int virtual_mouse;
     int swap_nintendo_layout;
     // A Home press we swallowed and still owe a release for. Tracked so switching to pass-through
@@ -301,7 +302,10 @@ struct mirror_state {
     int home_swallowed;
     long long home_pressed_at_ms;
 
-    // Select+Start "close app" combo.
+    // When a bound Home / Back press went down (index 0 Home, 1 Back); 0 when none is held.
+    long long nav_pressed_at_ms[2];
+
+    // Select+Start: tapped is Home, held is "close app".
     int select_pressed;
     int start_pressed;
     int thumbr_pressed;
@@ -539,7 +543,8 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
         s->mouse_combo_triggered = 0;
         s->mouse_combo_pressed_at_ms = 0;
     }
-    if (s->combo_hold_kill_app && !next->combo_hold_kill_app) {
+    if ((s->combo_hold_kill_app && !next->combo_hold_kill_app) ||
+        (s->combo_tap_home && !next->combo_tap_home)) {
         // Drop a hold in progress so re-enabling later doesn't inherit a stale, already-expired
         // timer and fire the moment both buttons are next seen down.
         s->combo_triggered = 0;
@@ -548,6 +553,7 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
 
     s->home_mode = next->home_mode;
     s->combo_hold_kill_app = next->combo_hold_kill_app;
+    s->combo_tap_home = next->combo_tap_home;
     s->virtual_mouse = next->virtual_mouse;
     s->config_generation = next->generation;
 
@@ -700,9 +706,10 @@ static int handle_home_button(struct mirror_state *s, const struct input_event *
     return 1;
 }
 
-// Advance the Select+Start "close app" combo on a Select/Start event.
+// Advance the Select+Start combo on a Select/Start event: held past the threshold it closes the app,
+// released before it it is Home. The buttons themselves are still forwarded either way.
 static void handle_kill_combo_event(struct mirror_state *s, const struct input_event *ev) {
-    if (!s->combo_hold_kill_app || ev->type != EV_KEY ||
+    if (!(s->combo_hold_kill_app || s->combo_tap_home) || ev->type != EV_KEY ||
         !(is_select_button(ev->code) || is_start_button(ev->code))) {
         return;
     }
@@ -710,15 +717,39 @@ static void handle_kill_combo_event(struct mirror_state *s, const struct input_e
         s->combo_pressed_at_ms = now_ms();
         s->combo_triggered = 0;
     }
-    if ((ev->value == 2 || ev->value == 0) && s->select_pressed && s->start_pressed &&
+    if (s->combo_hold_kill_app && (ev->value == 2 || ev->value == 0) && s->select_pressed && s->start_pressed &&
         !s->combo_triggered && now_ms() - s->combo_pressed_at_ms >= COMBO_HOLD_KILL_APP_MS) {
         force_stop_foreground_app();
         s->combo_triggered = 1;
     }
     if (ev->value == 0 && !s->select_pressed && !s->start_pressed) {
+        // combo_pressed_at_ms is only set once both were down together.
+        if (s->combo_tap_home && s->combo_pressed_at_ms != 0 && !s->combo_triggered &&
+            now_ms() - s->combo_pressed_at_ms < COMBO_HOLD_KILL_APP_MS) {
+            run_detached("input keyevent 3");  // KEYCODE_HOME
+        }
         s->combo_triggered = 0;
         s->combo_pressed_at_ms = 0;
     }
+}
+
+// A binding that targets Home or Back. Writing KEY_HOME / KEY_BACK / KEY_APPSELECT into the Thor's
+// pad node triggers the Android action itself (measured), so the press is held back and, on release,
+// written as one tap: Recents if it was held, the bound key otherwise — the Guide handler's semantics
+// without its `input keyevent` spawn. A release with no press seen (table swapped mid-hold) is dropped.
+static int tap_bound_nav_key(struct mirror_state *s, const struct input_event *out) {
+    long long *pressed_at = &s->nav_pressed_at_ms[out->code == KEY_BACK];
+    if (out->value == 1) {
+        *pressed_at = now_ms();
+    } else if (out->value == 0 && *pressed_at != 0) {
+        unsigned short code = now_ms() - *pressed_at >= HOME_HOLD_RECENTS_MS ? KEY_APPSELECT : out->code;
+        *pressed_at = 0;
+        if (target_write(s, EV_KEY, code, 1) != 0 || target_write(s, EV_SYN, SYN_REPORT, 0) != 0 ||
+            target_write(s, EV_KEY, code, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 // Forward one event to the target: apply the Nintendo face-button swap, record what the target now
@@ -740,6 +771,12 @@ static int forward_event(struct mirror_state *s, const struct input_event *ev) {
 
     for (int i = 0; i < count; i++) {
         struct input_event *out = &mapped[i];
+        if (bound && out->type == EV_KEY && (out->code == KEY_HOME || out->code == KEY_BACK)) {
+            if (tap_bound_nav_key(s, out) != 0) {
+                return -1;
+            }
+            continue;
+        }
         if (swap && out->type == EV_KEY) {
             out->code = swap_nintendo_face_button(out->code);
         }
@@ -859,7 +896,7 @@ int main(int argc, char **argv) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
+        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--combo-tap-home] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -873,6 +910,7 @@ int main(int argc, char **argv) {
     const char *capture_file_path = NULL;
     int home_mode = HOME_MODE_PASS;
     int combo_hold_kill_app = 0;
+    int combo_tap_home = 0;
     int virtual_mouse = 0;
     const char *hide_paths[MAX_HIDE_NODES];
     int hide_count = 0;
@@ -899,6 +937,11 @@ int main(int argc, char **argv) {
 
         if (strcmp(argv[index], "--combo-hold-kill-app") == 0) {
             combo_hold_kill_app = 1;
+            continue;
+        }
+
+        if (strcmp(argv[index], "--combo-tap-home") == 0) {
+            combo_tap_home = 1;
             continue;
         }
 
@@ -950,6 +993,7 @@ int main(int argc, char **argv) {
     s.heartbeat_file_path = heartbeat_file_path;
     s.home_mode = home_mode;
     s.combo_hold_kill_app = combo_hold_kill_app;
+    s.combo_tap_home = combo_tap_home;
     s.virtual_mouse = virtual_mouse;
     s.capture.first_axis = -1;
     s.capture.log_path = capture_file_path;
@@ -1025,6 +1069,7 @@ int main(int argc, char **argv) {
         struct config from_flags = {
             .home_mode = s.home_mode,
             .combo_hold_kill_app = s.combo_hold_kill_app,
+            .combo_tap_home = s.combo_tap_home,
             .virtual_mouse = s.virtual_mouse,
             .generation = 0,
         };
@@ -1172,6 +1217,7 @@ int main(int argc, char **argv) {
             struct config running = {
                 .home_mode = s.home_mode,
                 .combo_hold_kill_app = s.combo_hold_kill_app,
+                .combo_tap_home = s.combo_tap_home,
                 .virtual_mouse = s.virtual_mouse,
                 .generation = s.config_generation,
             };
