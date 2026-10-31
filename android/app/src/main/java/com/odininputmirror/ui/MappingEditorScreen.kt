@@ -1,5 +1,6 @@
 package com.odininputmirror.ui
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -82,6 +84,11 @@ fun MappingEditorScreen(
     // the focus right there — throwing the user to the top of a list they were done with is the
     // opposite of helpful.
     var restoreTo by remember { mutableStateOf<Int?>(null) }
+    // Where focus really is, as the rows report it: requestFocus() says nothing about whether it took.
+    var focusedSlot by remember { mutableStateOf(-1) }
+    // Group rows select on focus, except for a moment after the overlay closes, when focus lands on
+    // the first group in passing before it is sent back to the row.
+    var groupFocusQuietUntil by remember { mutableStateOf(0L) }
 
     val groups = state.slots.map { it.group }.distinct()
     var selectedGroup by remember { mutableStateOf(groups.firstOrNull()) }
@@ -89,7 +96,10 @@ fun MappingEditorScreen(
     // Closing the overlay hands the row back. Also fires on the very first composition, with the
     // default of row zero, which is the initial anchor the D-pad needs.
     LaunchedEffect(state.capturing) {
-        if (state.capturing == null) restoreTo = focusedRow
+        if (state.capturing == null) {
+            groupFocusQuietUntil = SystemClock.uptimeMillis() + GROUP_FOCUS_QUIET_MS
+            restoreTo = focusedRow
+        }
     }
 
     LaunchedEffect(restoreTo, state.slots.size) {
@@ -99,8 +109,11 @@ fun MappingEditorScreen(
         state.slots.getOrNull(target)?.let { selectedGroup = it.group }
         repeat(12) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
-            val row = rowFocus.getOrNull(target)
-            if (row != null && runCatching { row.requestFocus() }.isSuccess) {
+            rowFocus.getOrNull(target)?.let { runCatching { it.requestFocus() } }
+            delay(40)
+            // Judged by where focus went, not by requestFocus(), which reports success even when the
+            // request was refused (touch mode, a node not yet placed) and ended the loop on try one.
+            if (focusedSlot == target) {
                 // Put the list back exactly where it was. Taking focus drags the row into view, and
                 // "into view" means the nearest edge — so a row that sat comfortably mid-screen comes
                 // back pinned to the top or the bottom, and the list appears to jump on its own.
@@ -108,7 +121,6 @@ fun MappingEditorScreen(
                 restoreTo = null
                 return@LaunchedEffect
             }
-            delay(40)
         }
         restoreTo = null
     }
@@ -142,7 +154,9 @@ fun MappingEditorScreen(
                 // Groups: moving focus here switches the rows on the right, as in Switch settings.
                 Column(Modifier.weight(0.45f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
                     groups.forEach { group ->
-                        GroupRow(group, selected = group == selectedGroup, onFocus = { selectedGroup = group })
+                        GroupRow(group, selected = group == selectedGroup, onFocus = {
+                            if (SystemClock.uptimeMillis() >= groupFocusQuietUntil) selectedGroup = group
+                        })
                     }
                 }
                 Box(Modifier.fillMaxHeight().width(1.dp).padding(vertical = 12.dp).background(Palette.border))
@@ -168,7 +182,9 @@ fun MappingEditorScreen(
                                 onClear(slot)
                                 restoreTo = index
                             },
-                            modifier = Modifier.focusRequester(rowFocus[index]),
+                            modifier = Modifier
+                                .focusRequester(rowFocus[index])
+                                .onFocusChanged { if (it.isFocused) focusedSlot = index },
                         )
                     }
                 }
@@ -208,3 +224,5 @@ fun MappingEditorScreen(
         }
     }
 }
+
+private const val GROUP_FOCUS_QUIET_MS = 300L

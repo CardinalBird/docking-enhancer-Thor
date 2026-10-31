@@ -156,6 +156,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     }
 
     private fun applyStatus(status: MirrorStatus, available: List<ControllerDevice>) {
+        val saved = graph.settingsRepository.getSettings()
         val autoLocal = available.firstOrNull { it.isInternal }
         val autoExternal = available.pickExternal(autoLocal, _state.value.player1Name, _state.value.player1Path)
         val savedExternalIsLocal =
@@ -176,9 +177,12 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 localDevice = localDevice,
                 externalDevice = externalDevice,
                 enabled = status.running,
-                homeMode = status.homeMode,
-                comboHoldKillApp = status.comboHoldKillApp,
-                virtualMouse = status.virtualMouse,
+                // The options come straight from the stored settings (in memory, so cheap). The
+                // snapshot was read on the supervisor's last tick and can predate a toggle the user
+                // just made, which briefly flipped the switch back.
+                homeMode = saved.homeMode,
+                comboHoldKillApp = saved.comboHoldKillApp,
+                virtualMouse = saved.virtualMouse,
                 autoMirrorEnabled = status.autoMirrorEnabled,
                 restartWaiting = status.expectedRunning && !status.running,
                 docked = status.docked,
@@ -299,10 +303,18 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
      * pad can't be its own source, so its press is ignored.
      */
     fun choosePlayer1(pad: InputDevice) {
-        val current = _state.value
-        val device = current.devices.firstOrNull { pad.controllerNumber > 0 && it.controllerNumber == pad.controllerNumber }
-        if (device?.isInternal == true || pad.name.equals(current.localDevice?.name, ignoreCase = true)) return
-        setPlayer1(device?.name ?: pad.name, device?.path)
+        val name = pad.name
+        val number = pad.controllerNumber
+        fun List<ControllerDevice>.byNumber() = firstOrNull { number > 0 && it.controllerNumber == number }
+        viewModelScope.launch {
+            // The list on screen can be from before the picker paused the mirror (up to a tick old),
+            // when this pad had a different number or wasn't listed at all. Then the lock lost its
+            // node and fell back to the name, so look again rather than settle for that.
+            val device = _state.value.devices.byNumber()
+                ?: runCatching { withContext(Dispatchers.IO) { graph.getConnectedDevices() } }.getOrNull()?.byNumber()
+            if (device?.isInternal == true || name.equals(_state.value.localDevice?.name, ignoreCase = true)) return@launch
+            setPlayer1(device?.name ?: name, device?.path)
+        }
     }
 
     fun setPlayer1(name: String?, path: String? = null) {
