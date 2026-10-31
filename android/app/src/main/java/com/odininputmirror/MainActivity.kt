@@ -1,6 +1,7 @@
 package com.odininputmirror
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -84,15 +85,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Make the app fully gamepad-drivable, the way a handheld user expects:
-    //  - The LEFT analog stick moves focus between the interactive controls (push it in any of the
-    //    four directions to walk through the cards, switches, and button). Compose auto-scrolls the
-    //    focused control into view, so focus navigation also handles most of the scrolling.
-    //  - The D-pad (reported as hat axes by most controllers) does the same thing, so either input
-    //    works. Both are translated into D-pad key events that Compose's focus system understands.
-    //  - The RIGHT analog stick free-scrolls the page. This keeps non-focusable areas — the header
-    //    and status text — reachable, and keeps the page scrollable even while the mirror locks
-    //    every control except the primary button (when focus navigation has nowhere to go).
+    // Lint reads overriding dispatchKeyEvent as calling a restricted androidx API; it is the
+    // platform Activity method, overridden, and the androidx restriction does not apply.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val picker = onLPlusR
         val bit = when (event.keyCode) {
@@ -113,6 +108,15 @@ class MainActivity : ComponentActivity() {
         return true
     }
 
+    // Make the app fully gamepad-drivable, the way a handheld user expects:
+    //  - The LEFT analog stick moves focus between the interactive controls (push it in any of the
+    //    four directions to walk through the cards, switches, and button). Compose auto-scrolls the
+    //    focused control into view, so focus navigation also handles most of the scrolling.
+    //  - The D-pad (reported as hat axes by most controllers) does the same thing, so either input
+    //    works. Both are translated into D-pad key events that Compose's focus system understands.
+    //  - The RIGHT analog stick free-scrolls the page. This keeps non-focusable areas — the header
+    //    and status text — reachable, and keeps the page scrollable even while the mirror locks
+    //    every control except the primary button (when focus navigation has nowhere to go).
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.isFromSource(InputDevice.SOURCE_JOYSTICK) && event.action == MotionEvent.ACTION_MOVE) {
             handleStickScroll(event.getAxisValue(MotionEvent.AXIS_RZ))

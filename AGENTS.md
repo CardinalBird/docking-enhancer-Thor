@@ -27,6 +27,9 @@ Run from `android/`. On Windows use `gradlew.bat` and the `.ps1` scripts; on mac
 - Unit tests: `./gradlew :domain:test :data:testDebugUnitTest :app:testDebugUnitTest`. `:domain` is a
   plain JVM module, so its task is `test` — `:domain:testDebugUnitTest` does not exist.
 - Compile without packaging (fastest sanity check): `./gradlew :app:compileDebugKotlin`
+- Lint is a gate: `./gradlew :app:lintDebug` fails on any warning (`warningsAsErrors` in
+  `app/build.gradle`). Fix the finding or suppress it at the site with a comment saying why; the
+  dependency-age checks are off on purpose (upgrades are their own PR).
 - Build native mirror binary: `scripts/build-input-mirror.sh` (macOS/Linux) or
   `powershell -ExecutionPolicy Bypass -File scripts/build-input-mirror.ps1` (Windows). Same flags.
 - Release APK: `./gradlew :app:assembleRelease`. Left UNSIGNED unless `android/keystore.properties`

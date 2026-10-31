@@ -4,7 +4,6 @@ import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import android.view.InputDevice
 import android.content.Intent
-import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -353,11 +352,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     private fun startSupervisor() {
         runCatching {
             val intent = Intent(appContext, InputMirrorSupervisorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                appContext.startForegroundService(intent)
-            } else {
-                appContext.startService(intent)
-            }
+            appContext.startForegroundService(intent)
         }
     }
 

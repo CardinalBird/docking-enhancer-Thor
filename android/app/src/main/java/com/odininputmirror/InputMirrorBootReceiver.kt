@@ -3,7 +3,6 @@ package com.odininputmirror
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 
 class InputMirrorBootReceiver : BroadcastReceiver() {
@@ -18,11 +17,7 @@ class InputMirrorBootReceiver : BroadcastReceiver() {
         // on its own worker and stops itself when the service is missing.
         runCatching {
             val serviceIntent = Intent(context, InputMirrorSupervisorService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
-            }
+            context.startForegroundService(serviceIntent)
         }.onFailure { Log.w("InputMirrorBootReceiver", "Could not start supervisor on boot", it) }
     }
 }

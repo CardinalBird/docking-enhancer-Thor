@@ -11,6 +11,13 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
+    // Lint is a gate: any warning fails the build. The two dependency-age checks are off because
+    // their answer depends on what was published yesterday, not on this code; upgrades are their own PR.
+    lint {
+        warningsAsErrors = true
+        abortOnError = true
+        disable += ["GradleDependency", "AndroidGradlePluginVersion"]
+    }
     namespace "com.odininputmirror"
     compileSdk 35
 

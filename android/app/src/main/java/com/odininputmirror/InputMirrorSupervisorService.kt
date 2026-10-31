@@ -8,7 +8,6 @@ import android.hardware.display.DisplayManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import com.odininputmirror.data.InputMirrorGraph
@@ -319,31 +318,20 @@ class InputMirrorSupervisorService : Service() {
     }
 
     private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    NOTIFICATION_CHANNEL_ID,
-                    "Mirror supervisor",
-                    NotificationManager.IMPORTANCE_LOW,
-                ),
-            )
-        }
+        notificationManager.createNotificationChannel(
+            NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                "Mirror supervisor",
+                NotificationManager.IMPORTANCE_LOW,
+            ),
+        )
     }
 
     private fun buildNotification(state: SupervisorState): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION")
-            Notification.Builder(this)
-        }
+        val builder = Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
 
         val launchIntent = Intent(this, MainActivity::class.java)
-        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
+        val pendingIntentFlags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         val pendingIntent = PendingIntent.getActivity(this, 0, launchIntent, pendingIntentFlags)
 
         return builder

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon layer: the launcher tints it one colour, so only the shapes matter. The pad and the
+     dock bar from the foreground, without the tile and glow that would tint into a solid block. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.8125" android:scaleY="0.8125" android:pivotX="54" android:pivotY="54">
+        <path
+            android:pathData="M38,41h32c6.5,0 10.5,4.5 11.5,11l1.5,10c0.8,5 -3.5,8 -7.5,5.5l-6,-4.5H38.5l-6,4.5c-4,2.5 -8.3,-0.5 -7.5,-5.5l1.5,-10c1,-6.5 5,-11 11.5,-11z"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.5"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M37,51.5h8M41,47.5v8M37,75h34"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="3.5"
+            android:strokeLineCap="round" />
+    </group>
+</vector>
