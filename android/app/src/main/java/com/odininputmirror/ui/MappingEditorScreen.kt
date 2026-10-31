@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -71,10 +72,10 @@ fun MappingEditorScreen(
     // focus and the D-pad restarts from the top of the list, which after binding row twenty is a long
     // way from where the user was. Sending it back to the row they came from is the whole point.
     val rowFocus = remember(state.slots.size) { List(state.slots.size) { FocusRequester() } }
-    var focusedRow by remember { mutableStateOf(0) }
+    var focusedRow by remember { mutableIntStateOf(0) }
     val inputModeManager = LocalInputModeManager.current
     val listScroll = rememberScrollState()
-    var scrollWhenOpened by remember { mutableStateOf(0) }
+    var scrollWhenOpened by remember { mutableIntStateOf(0) }
 
     // Which row wants the focus back, if any. Asked for explicitly rather than inferred from the
     // state, because only some changes should move the focus: leaving the overlay and clearing a row

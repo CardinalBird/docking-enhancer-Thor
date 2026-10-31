@@ -304,14 +304,14 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                     subtitle = "Hold both for 3 seconds",
                     onClick = if (state.busy) null else ({ viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) }),
                 ) {
-                    RowSwitch(state.comboHoldKillApp, !state.busy) { viewModel.toggleComboHoldKillApp(it) }
+                    RowSwitch(state.comboHoldKillApp, !state.busy)
                 }
                 MenuRow(
                     title = "Virtual mouse",
                     subtitle = "Select + R3 toggles · A click · B right-click · R1 shade",
                     onClick = if (state.busy) null else ({ viewModel.toggleVirtualMouse(!state.virtualMouse) }),
                 ) {
-                    RowSwitch(state.virtualMouse, !state.busy) { viewModel.toggleVirtualMouse(it) }
+                    RowSwitch(state.virtualMouse, !state.busy)
                 }
                 // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
                 // can ask to be pinned itself. Shown only when the home app takes pin requests.
