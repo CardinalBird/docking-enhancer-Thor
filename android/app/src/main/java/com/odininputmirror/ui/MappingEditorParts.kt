@@ -1,5 +1,8 @@
 package com.odininputmirror.ui
 
+import androidx.compose.ui.unit.Dp
+import com.odininputmirror.domain.model.sourceIcon
+import com.odininputmirror.domain.model.Chord
 import androidx.compose.foundation.background
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.focusProperties
@@ -70,6 +73,8 @@ internal fun SlotRow(
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
     axisLabels: Map<Int, String> = emptyMap(),
+    /** The controls held together for this slot, when it is a chord rather than [source]. */
+    chord: List<ControlRef>? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -89,7 +94,7 @@ internal fun SlotRow(
                 // Both halves, even on an unbound row: Android turns an unhandled X press into a
                 // select, which opened a capture on the row instead of doing nothing.
                 if (it.key != Key.ButtonX) return@onPreviewKeyEvent false
-                if (it.type == KeyEventType.KeyUp && source != null) onClear()
+                if (it.type == KeyEventType.KeyUp && (source != null || chord != null)) onClear()
                 true
             }
             .clickable(interactionSource = interaction, indication = null) { onBind() }
@@ -99,11 +104,15 @@ internal fun SlotRow(
         Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) { PadIcon(slot.icon, 30.dp) }
         Spacer(Modifier.width(14.dp))
         Text(slot.label, color = Palette.textPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
-        Text(
-            source?.let { describeSource(it, axisLabels) } ?: "Not bound",
-            color = if (source == null) Palette.textMuted else Palette.accent,
-            fontSize = 14.sp,
-        )
+        if (chord != null) {
+            SourceChips(chord, axisLabels)
+        } else {
+            Text(
+                source?.let { describeSource(it, axisLabels) } ?: "Not bound",
+                color = if (source == null) Palette.textMuted else Palette.cyan,
+                fontSize = 14.sp,
+            )
+        }
     }
     Rule(Modifier.padding(horizontal = 8.dp))
 }
@@ -133,6 +142,23 @@ internal fun ActionRow(label: String, detail: String, onClick: () -> Unit) {
     Rule(Modifier.padding(horizontal = 8.dp))
 }
 
+/** Controls held together, as prompt icons joined by "+"; text for one the icon set has no picture of. */
+@Composable
+internal fun SourceChips(sources: List<ControlRef>, axisLabels: Map<Int, String>, size: Dp = 26.dp) {
+    val layout = LocalPadLayout.current
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        sources.forEachIndexed { i, source ->
+            if (i > 0) Text("+", color = Palette.textMuted, fontSize = 14.sp)
+            val icon = sourceIcon(source, axisLabels, layout)
+            if (icon != null) {
+                PadIcon(icon, size)
+            } else {
+                Text(describeSource(source, axisLabels), color = Palette.cyan, fontSize = 14.sp)
+            }
+        }
+    }
+}
+
 /**
  * The capture prompt. Sits over the list so the slot it belongs to stays visible behind it.
  *
@@ -152,6 +178,10 @@ internal fun CaptureOverlay(
     /** Ends the walk (X). Present only during one, when Cancel becomes Skip (B). */
     onStop: (() -> Unit)? = null,
     axisLabels: Map<Int, String> = emptyMap(),
+    /** The slot's current chord, when it has one instead of [source]. */
+    chord: List<ControlRef>? = null,
+    /** What the user is holding right now. */
+    pending: List<ControlRef> = emptyList(),
 ) {
     // Focus has to come here, and not just for looks: the handheld's pad is still driving the list
     // behind, so without taking focus a press meant for the overlay would open a different slot.
@@ -194,16 +224,29 @@ internal fun CaptureOverlay(
             Text(slot.label, color = Palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Press the control for ${slot.label}" + (progress?.let { "  ·  $it" } ?: ""),
+                "Press the control for ${slot.label}, or hold up to ${Chord.MAX_MEMBERS} together, then let go" +
+                    (progress?.let { "  ·  $it" } ?: ""),
                 color = Palette.textSecondary,
                 fontSize = 14.sp,
             )
             Spacer(Modifier.height(10.dp))
-            Text(
-                source?.let { "Currently: ${describeSource(it, axisLabels)}" } ?: "Currently: no binding",
-                color = Palette.textMuted,
-                fontSize = 13.sp,
-            )
+            if (chord != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Currently: ", color = Palette.textMuted, fontSize = 13.sp)
+                    SourceChips(chord, axisLabels, size = 22.dp)
+                }
+            } else {
+                Text(
+                    source?.let { "Currently: ${describeSource(it, axisLabels)}" } ?: "Currently: no binding",
+                    color = Palette.textMuted,
+                    fontSize = 13.sp,
+                )
+            }
+            // Live, so the user sees the combination build up before letting go commits it.
+            Spacer(Modifier.height(12.dp))
+            Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.CenterStart) {
+                if (pending.isNotEmpty()) SourceChips(pending, axisLabels, size = 40.dp)
+            }
 
             if (notice != null) {
                 Spacer(Modifier.height(10.dp))

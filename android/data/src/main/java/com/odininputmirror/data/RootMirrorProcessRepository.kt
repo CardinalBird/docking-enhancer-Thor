@@ -181,6 +181,7 @@ internal class RootMirrorProcessRepository(
         val command = when (kind) {
             CaptureKind.BUTTON -> CAPTURE_BUTTON_COMMAND
             CaptureKind.STICK -> CAPTURE_STICK_COMMAND
+            CaptureKind.CHORD -> CAPTURE_CHORD_COMMAND
         }
         return sendCommand(files.ensureControlFifo(), command)
     }
@@ -275,6 +276,15 @@ private fun parseCaptureLine(line: String): CaptureResult? {
             val code = parts[1].toIntOrNull()
             val sign = parts[2].toIntOrNull()
             if (code != null && sign != null) CaptureResult.AxisButton(code, sign) else null
+        }
+
+        parts.size == 2 && parts[0] == "release" ->
+            parts[1].toIntOrNull()?.let { CaptureResult.Release(it) }
+
+        parts.size == 3 && parts[0] == "axis_release" -> {
+            val code = parts[1].toIntOrNull()
+            val sign = parts[2].toIntOrNull()
+            if (code != null && sign != null) CaptureResult.AxisRelease(code, sign) else null
         }
 
         parts.size == 5 && parts[0] == "stick" -> {

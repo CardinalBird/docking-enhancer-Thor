@@ -5,6 +5,7 @@ import com.odininputmirror.domain.model.KEY_HOME
 import com.odininputmirror.domain.model.TargetTraits
 import com.odininputmirror.domain.model.Binding
 import com.odininputmirror.domain.model.CaptureKind
+import com.odininputmirror.domain.model.Chord
 import com.odininputmirror.domain.model.CaptureRead
 import com.odininputmirror.domain.model.CaptureResult
 import com.odininputmirror.domain.model.ControlRef
@@ -98,7 +99,7 @@ class MappingEditorControllerTest {
         controller.openAndAwait()
         // Bind a DIFFERENT slot with the control slot 0 already owns.
         controller.bind(slots[1])
-        process.deliver(CaptureResult.Button(BTN_SOUTH))
+        process.deliver(CaptureResult.Button(BTN_SOUTH), CaptureResult.Release(BTN_SOUTH))
 
         awaitUntil("the capture was never reopened") { process.calls.count { it == "beginCapture" } >= 2 }
 
@@ -174,7 +175,7 @@ class MappingEditorControllerTest {
         controller.bind(slots[0])
         awaitUntil("the app was never asked to listen") { controller.state.value.listenInApp }
 
-        controller.captured(ControlRef.button(BTN_EAST))
+        controller.tap(ControlRef.button(BTN_EAST))
         assertEquals(ControlRef.button(BTN_EAST), controller.state.value.bindings[slots[0].target])
         assertEquals(null, controller.state.value.capturing)
     }
@@ -186,12 +187,12 @@ class MappingEditorControllerTest {
 
         controller.mapAll()
         assertEquals(slots[0], controller.state.value.capturing)
-        controller.captured(ControlRef.button(BTN_SOUTH))
+        controller.tap(ControlRef.button(BTN_SOUTH))
         assertEquals("a bind did not move the walk on", slots[1], controller.state.value.capturing)
         assertEquals(1, controller.state.value.walk)
 
         // Already bound to slot 0: refused, the walk waits on the same slot.
-        controller.captured(ControlRef.button(BTN_SOUTH))
+        controller.tap(ControlRef.button(BTN_SOUTH))
         assertEquals(slots[1], controller.state.value.capturing)
 
         controller.cancelBind()
@@ -260,6 +261,143 @@ class MappingEditorControllerTest {
         awaitUntil("the layout was never saved") { mappings.layout == PadLayout.NINTENDO }
     }
 
+    @Test
+    fun `holding several controls together binds a chord, shown live while held`() {
+        val controller = controllerWith(process = FakeProcessRepository(daemonRunning = false))
+        controller.openAndAwait()
+        controller.bind(slots[0])
+        awaitUntil("the app was never asked to listen") { controller.state.value.listenInApp }
+
+        val a = ControlRef.button(BTN_SOUTH)
+        val b = ControlRef.button(BTN_EAST)
+        controller.captured(a, true)
+        controller.captured(b, true)
+        assertEquals("the held controls were not shown", listOf(a, b), controller.state.value.pending)
+        controller.captured(a, false)
+        assertEquals("committed before everything was let go", slots[0], controller.state.value.capturing)
+        controller.captured(b, false)
+
+        assertEquals(listOf(a, b), controller.state.value.chords[slots[0].target])
+        assertEquals(null, controller.state.value.bindings[slots[0].target])
+        assertEquals(null, controller.state.value.capturing)
+        assertEquals(emptyList<ControlRef>(), controller.state.value.pending)
+    }
+
+    @Test
+    fun `the daemon capture builds a chord from presses and releases in one read`() {
+        val process = FakeProcessRepository()
+        val mappings = FakeMappingRepository()
+        val controller = controllerWith(process = process, mappings = mappings)
+        controller.openAndAwait()
+        controller.bind(slots[2])
+        awaitUntil("the capture never opened") { "beginCapture" in process.calls }
+        assertEquals(CaptureKind.CHORD, process.kinds.first())
+
+        process.deliver(
+            CaptureResult.Button(BTN_SOUTH), CaptureResult.AxisButton(2, 1),
+            CaptureResult.AxisRelease(2, 1), CaptureResult.Release(BTN_SOUTH),
+        )
+        awaitUntil("the chord was never bound") { controller.state.value.chords.isNotEmpty() }
+        assertEquals(listOf(ControlRef.button(BTN_SOUTH), ControlRef.half(2, 1)), controller.state.value.chords[slots[2].target])
+
+        controller.close()
+        awaitUntil("the chord was never saved") { mappings.saved != null }
+        assertEquals(listOf(Chord(listOf(ControlRef.button(BTN_SOUTH), ControlRef.half(2, 1)), slots[2].target)), mappings.saved?.chords)
+    }
+
+    @Test
+    fun `a saved chord survives a visit and an edit elsewhere, and X clears it`() {
+        val chord = Chord(listOf(ControlRef.button(BTN_SOUTH), ControlRef.button(BTN_EAST)), slots[1].target)
+        val settings = FakeSettingsRepository()
+        val single = Binding(ControlRef.button(400), slots[0].target)
+        val mappings = FakeMappingRepository(stored = ControllerMapping(listOf(single), listOf(chord)))
+        val controller = controllerWith(mappings = mappings, settings = settings)
+
+        controller.openAndAwait()
+        assertEquals(chord.sources, controller.state.value.chords[slots[1].target])
+        controller.close()
+        Thread.sleep(300L)
+        assertEquals("a look around rewrote the mapping", null, mappings.saved)
+
+        // An edit somewhere else saves the chord along with it.
+        controller.openAndAwait()
+        controller.clear(slots[0])
+        controller.close()
+        awaitUntil("never saved") { mappings.saved != null }
+        assertEquals(listOf(chord), mappings.saved?.chords)
+
+        // X on the row clears it.
+        controller.openAndAwait()
+        controller.clear(slots[1])
+        assertTrue(controller.state.value.chords.isEmpty())
+        controller.close()
+        // Nothing left at all, so the record is cleared (and the profile re-seeded) rather than saved.
+        awaitUntil("the clear was never written") { mappings.cleared }
+    }
+
+    @Test
+    fun `a preset drops chords on the slots it binds`() {
+        val chord = Chord(listOf(ControlRef.button(BTN_SOUTH), ControlRef.button(BTN_EAST)), slots[1].target)
+        val controller = controllerWith(mappings = FakeMappingRepository(stored = ControllerMapping(chords = listOf(chord))))
+        controller.openAndAwait()
+        controller.autoMap(PadLayout.XBOX)
+        assertTrue(controller.state.value.chords.isEmpty())
+    }
+
+    @Test
+    fun `Home takes a chord, a preset keeps it, and a single press replaces it`() {
+        val withHome = odinFallbackTraits().let { it.copy(keys = it.keys + KEY_HOME) }
+        val home = ControlRef.button(KEY_HOME)
+        val sources = listOf(ControlRef.button(0x13c), ControlRef.button(BTN_SOUTH))
+        val controller = controllerWith(
+            process = FakeProcessRepository(daemonRunning = false),
+            devices = FakeDeviceRepository(withHome),
+        )
+        controller.openAndAwait()
+        val homeSlot = controller.state.value.slots.first { it.target == home }
+
+        controller.bind(homeSlot)
+        awaitUntil("the app was never asked to listen") { controller.state.value.listenInApp }
+        sources.forEach { controller.captured(it, true) }
+        sources.forEach { controller.captured(it, false) }
+        assertEquals(sources, controller.state.value.chords[home])
+
+        controller.autoMap(PadLayout.NINTENDO)
+        assertEquals("a preset threw the Home chord away", sources, controller.state.value.chords[home])
+
+        controller.bind(homeSlot)
+        controller.tap(ControlRef.button(0x13c))
+        assertEquals(ControlRef.button(0x13c), controller.state.value.bindings[home])
+        assertEquals(null, controller.state.value.chords[home])
+    }
+
+    @Test
+    fun `the same combination is refused on a second slot`() {
+        val controller = controllerWith(process = FakeProcessRepository(daemonRunning = false))
+        controller.openAndAwait()
+        val combo = listOf(ControlRef.button(BTN_SOUTH), ControlRef.button(BTN_EAST))
+        for (slot in listOf(slots[0], slots[1])) {
+            controller.bind(slot)
+            awaitUntil("the app was never asked to listen") { controller.state.value.listenInApp }
+            combo.forEach { controller.captured(it, true) }
+            combo.reversed().forEach { controller.captured(it, false) }
+        }
+        assertEquals(combo, controller.state.value.chords[slots[0].target])
+        assertEquals(null, controller.state.value.chords[slots[1].target])
+        assertTrue(controller.state.value.notice?.contains(slots[0].label) == true)
+    }
+
+    @Test
+    fun `the tracker caps a chord at four and ignores releases it never saw pressed`() {
+        val t = ChordTracker()
+        assertEquals(null, t.edge(ControlRef.button(1), false))
+        (1..5).forEach { assertEquals(null, t.edge(ControlRef.button(it), true)) }
+        assertEquals(4, t.gathered.size)
+        (1..4).forEach { assertEquals(null, t.edge(ControlRef.button(it), false)) }
+        assertEquals((1..4).map { ControlRef.button(it) }, t.edge(ControlRef.button(5), false))
+        assertTrue(t.gathered.isEmpty())
+    }
+
     // ---- harness ----------------------------------------------------------------------------
 
     private val slots = mappingSlots(odinFallbackTraits())
@@ -277,6 +415,12 @@ class MappingEditorControllerTest {
         seedDefaultMapping = {},
         scope = scope,
     )
+
+    /** One press and release, the ordinary one-control binding. */
+    private fun MappingEditorController.tap(source: ControlRef) {
+        captured(source, true)
+        captured(source, false)
+    }
 
     private fun MappingEditorController.openAndAwait() {
         open("Test pad", MappingKey("045e:028e"))
@@ -352,11 +496,12 @@ class MappingEditorControllerTest {
     private class FakeProcessRepository(private val daemonRunning: Boolean = true) : MirrorProcessRepository {
         val calls: List<String> = Collections.synchronizedList(mutableListOf())
 
-        @Volatile
-        private var pending: CaptureResult? = null
+        private val pending = java.util.concurrent.ConcurrentLinkedQueue<CaptureResult>()
+        val kinds: List<CaptureKind> = Collections.synchronizedList(mutableListOf())
 
-        fun deliver(result: CaptureResult) {
-            pending = result
+        /** Lands in the log together, so one poll reads them all. */
+        fun deliver(vararg results: CaptureResult) {
+            pending.addAll(results)
         }
 
         private fun record(name: String) {
@@ -365,15 +510,15 @@ class MappingEditorControllerTest {
 
         override fun readCaptures(offset: Long): CaptureRead {
             record("readCaptures")
-            val next = pending ?: return CaptureRead(offset = offset)
-            pending = null
-            return CaptureRead(results = listOf(next), offset = offset + 1)
+            val results = generateSequence { pending.poll() }.toList()
+            return CaptureRead(results = results, offset = offset + results.size)
         }
 
         override fun clearCaptures() = record("clearCaptures")
 
         override fun beginCapture(kind: CaptureKind): Boolean {
             record("beginCapture")
+            (kinds as MutableList<CaptureKind>).add(kind)
             return daemonRunning
         }
 

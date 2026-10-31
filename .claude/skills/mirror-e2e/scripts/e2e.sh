@@ -1058,6 +1058,33 @@ else
 fi
 rm -f $TMP/t21a.out $TMP/t21b.out $TMP/t21c.out $TMP/t21d.out $CFG
 
+# e) La captura de acordes del editor: reporta cada pulsacion Y cada soltada, sin latch, y no reenvia.
+CAPLOG=$TMP/t21.cap
+rm -f $CAPLOG $FIFO
+mkfifo $FIFO 2>/dev/null
+write_config 1 0
+start_mirror "$SRC" "$DST" --config-file $CFG --control-fifo $FIFO --capture-file $CAPLOG --heartbeat-file $HEART
+if [ -z "$(mirror_pid)" ]; then
+    bad "el daemon arranco para la captura de acordes"
+else
+    poke_cmd "capture chord"
+    sleep 0.5
+    timeout 4 getevent -c 4 "$DST" > $TMP/t21e.out 2>&1 &
+    GE=$!
+    sleep 0.4
+    k 304 1; k 305 1; k 305 0; k 304 0
+    move_source 2 30000; sleep 0.1; move_source 2 0
+    sleep 1.5
+    kill $GE 2>/dev/null
+    EXPECT="button 304|button 305|release 305|release 304|axis_button 2 1|axis_release 2 1"
+    GOT=$(tr '\n' '|' < $CAPLOG | sed 's/|$//')
+    if [ "$GOT" = "$EXPECT" ]; then ok "la captura de acordes reporta pulsaciones y soltadas en orden"; else bad "captura de acordes [$GOT]"; fi
+    if grep -q "0001 0130\|0001 0131" $TMP/t21e.out 2>/dev/null; then bad "reenvio al target mientras capturaba acordes"; else ok "no reenvia nada mientras captura acordes"; fi
+    poke_cmd "capture off"
+    stop_mirror
+fi
+rm -f $CAPLOG $TMP/t21e.out $CFG $FIFO
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""

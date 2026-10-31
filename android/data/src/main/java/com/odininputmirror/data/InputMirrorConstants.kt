@@ -75,6 +75,7 @@ internal const val RELOAD_COMMAND = "reload\n"
 // crashed cannot leave the controller mute.
 internal const val CAPTURE_BUTTON_COMMAND = "capture button\n"
 internal const val CAPTURE_STICK_COMMAND = "capture stick\n"
+internal const val CAPTURE_CHORD_COMMAND = "capture chord\n"
 internal const val CAPTURE_OFF_COMMAND = "capture off\n"
 // Give the daemon time to run its cleanup (restore hidden nodes, destroy uinput devices) on SIGTERM
 // before escalating to SIGKILL. 0.5s comfortably covers the restore (a handful of syscalls) even

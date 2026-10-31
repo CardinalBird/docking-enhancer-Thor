@@ -25,9 +25,12 @@ import kotlin.math.abs
 internal fun isCaptureSource(name: String?, isVirtual: Boolean, isGamepad: Boolean, internalPadName: String?): Boolean =
     isGamepad && !isVirtual && name != null && internalPadName != null && !name.equals(internalPadName, ignoreCase = true)
 
-/** A key press as a binding source, or null for anything that is not the first press of a button. */
-internal fun buttonSource(scanCode: Int, isDown: Boolean, repeatCount: Int): ControlRef? =
-    if (isDown && repeatCount == 0 && scanCode > 0) ControlRef.button(scanCode) else null
+/** A control going down or coming back up, as the capture reports it. */
+internal data class PadEdge(val source: ControlRef, val pressed: Boolean)
+
+/** A key's press or release as a capture edge; null for autorepeat or a key with no scan code. */
+internal fun buttonEdge(scanCode: Int, isDown: Boolean, repeatCount: Int): PadEdge? =
+    if (repeatCount == 0 && scanCode > 0) PadEdge(ControlRef.button(scanCode), isDown) else null
 
 /** Generic.kl's axis lines: what Android calls each standard evdev axis when a pad has no own layout. */
 private val GENERIC_AXES = mapOf(
@@ -40,24 +43,23 @@ internal fun evdevAxis(androidName: String, layout: Map<Int, String>): Int? =
     (layout.entries.firstOrNull { it.value == androidName } ?: GENERIC_AXES.entries.firstOrNull { it.value == androidName })?.key
 
 /**
- * Turns axis values into one report per push, like the daemon's axis capture: an axis past half its
- * travel reports that half once, and has to come back near rest before it can report again. The
- * gap between the two thresholds keeps a stick resting on the line from reporting twice.
+ * Turns axis values into press and release edges, like the daemon's chord capture: an axis past half
+ * its travel presses that half once, and coming back near rest releases it. The gap between the two
+ * thresholds keeps a stick resting on the line from chattering.
  */
 internal class AxisEdges {
     private val pushed = mutableMapOf<Int, Int>()
     private val rest = mutableMapOf<Int, Int>()
 
-    fun feed(code: Int, value: Float): ControlRef? {
+    fun feed(code: Int, value: Float): List<PadEdge> {
         // The first value seen is where the axis rests: a trigger reported as a centred axis rests at
         // -1, and measuring from 0 would bind it the moment any axis moved. Coming back to rest is a
-        // release, never a push the other way — like the daemon's capture, which only reports travel
-        // away from neutral. Reporting it filled the next slot of a walk with the trigger's release.
+        // release, never a push the other way.
         val was = pushed[code] ?: run {
             val at = if (value >= PUSH) 1 else if (value <= -PUSH) -1 else 0
             rest[code] = at
             pushed[code] = at
-            return null
+            return emptyList()
         }
         val now = when {
             value >= PUSH -> 1
@@ -66,7 +68,12 @@ internal class AxisEdges {
             else -> was
         }
         pushed[code] = now
-        return if (now != 0 && now != was && now != rest[code]) ControlRef.half(code, now) else null
+        if (now == was) return emptyList()
+        val resting = rest[code]
+        return buildList {
+            if (was != 0 && was != resting) add(PadEdge(ControlRef.half(code, was), pressed = false))
+            if (now != 0 && now != resting) add(PadEdge(ControlRef.half(code, now), pressed = true))
+        }
     }
 
     private companion object {
@@ -76,15 +83,15 @@ internal class AxisEdges {
 }
 
 /**
- * While [active], route the external pad's input to [onCaptured] instead of the screen. Events from
- * any other device go on as normal.
+ * While [active], route the external pad's presses and releases to [onCaptured] instead of the screen.
+ * Events from any other device go on as normal.
  */
 @Composable
 internal fun PadCaptureEffect(
     active: Boolean,
     internalPadName: String?,
     axisLabels: (vendorId: Int, productId: Int) -> Map<Int, String>,
-    onCaptured: (ControlRef) -> Unit,
+    onCaptured: (ControlRef, Boolean) -> Unit,
 ) {
     val activity = LocalContext.current.findMainActivity()
     val capture by rememberUpdatedState(onCaptured)
@@ -101,7 +108,10 @@ internal fun PadCaptureEffect(
         val layouts = mutableMapOf<Int, Map<Int, String>>()
         activity.onPadCapture = { event: KeyEvent ->
             event.device.isSource(event).also { mine ->
-                if (mine) buttonSource(event.scanCode, event.action == KeyEvent.ACTION_DOWN, event.repeatCount)?.let(capture)
+                if (mine) {
+                    buttonEdge(event.scanCode, event.action == KeyEvent.ACTION_DOWN, event.repeatCount)
+                        ?.let { capture(it.source, it.pressed) }
+                }
             }
         }
         activity.onPadMotion = { event: MotionEvent ->
@@ -109,16 +119,13 @@ internal fun PadCaptureEffect(
             device.isSource(event).also { mine ->
                 if (!mine || device == null) return@also
                 val layout = layouts.getOrPut(device.id) { axisLabels(device.vendorId, device.productId) }
-                // One control per event: a diagonal push crosses two edges at once, and during a walk the
-                // second would fill the next slot. Every axis is still fed so its edge state stays current.
-                var hit: ControlRef? = null
+                // Every edge, in order: the editor builds a chord from what is held together, and only
+                // commits once everything is let go, so a diagonal is two members rather than a race.
                 for (range in device.motionRanges) {
                     if (range.source and InputDevice.SOURCE_JOYSTICK != InputDevice.SOURCE_JOYSTICK) continue
                     val code = evdevAxis(MotionEvent.axisToString(range.axis).removePrefix("AXIS_"), layout) ?: continue
-                    val crossed = edges.feed(code, event.getAxisValue(range.axis))
-                    if (hit == null) hit = crossed
+                    edges.feed(code, event.getAxisValue(range.axis)).forEach { capture(it.source, it.pressed) }
                 }
-                hit?.let(capture)
             }
         }
         onDispose {

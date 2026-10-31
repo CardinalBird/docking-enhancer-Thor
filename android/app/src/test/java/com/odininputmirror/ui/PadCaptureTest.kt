@@ -20,23 +20,26 @@ class PadCaptureTest {
         assertFalse(isCaptureSource("8BitDo Ultimate 2", isVirtual = false, isGamepad = true, internalPadName = null))
     }
 
+    private fun press(ref: ControlRef) = PadEdge(ref, pressed = true)
+    private fun release(ref: ControlRef) = PadEdge(ref, pressed = false)
+
     @Test
-    fun `a trigger resting at its minimum reports the pull, not the release`() {
+    fun `a trigger resting at its minimum reports the pull and the let-go, never a push the other way`() {
         val edges = AxisEdges()
-        assertEquals(null, edges.feed(0x02, -1f))
-        assertEquals(ControlRef.half(0x02, 1), edges.feed(0x02, 1f))
-        // Letting go is a release, not a push the other way: in a walk it would fill the next slot.
-        assertEquals(null, edges.feed(0x02, -1f))
-        assertEquals(ControlRef.half(0x02, 1), edges.feed(0x02, 0.9f))
+        val pull = ControlRef.half(0x02, 1)
+        assertEquals(emptyList<PadEdge>(), edges.feed(0x02, -1f))
+        assertEquals(listOf(press(pull)), edges.feed(0x02, 1f))
+        assertEquals(listOf(release(pull)), edges.feed(0x02, -1f))
+        assertEquals(listOf(press(pull)), edges.feed(0x02, 0.9f))
     }
 
     @Test
-    fun `a button binds by its raw evdev code on the first press only`() {
-        assertEquals(ControlRef.button(0x131), buttonSource(0x131, isDown = true, repeatCount = 0))
-        assertEquals(null, buttonSource(0x131, isDown = false, repeatCount = 0))
-        assertEquals(null, buttonSource(0x131, isDown = true, repeatCount = 1))
+    fun `a button reports its press and its release by raw evdev code, never a repeat`() {
+        assertEquals(press(ControlRef.button(0x131)), buttonEdge(0x131, isDown = true, repeatCount = 0))
+        assertEquals(release(ControlRef.button(0x131)), buttonEdge(0x131, isDown = false, repeatCount = 0))
+        assertEquals(null, buttonEdge(0x131, isDown = true, repeatCount = 1))
         // Synthetic key events (the Activity's own D-pad taps) carry no scan code.
-        assertEquals(null, buttonSource(0, isDown = true, repeatCount = 0))
+        assertEquals(null, buttonEdge(0, isDown = true, repeatCount = 0))
     }
 
     @Test
@@ -49,17 +52,18 @@ class PadCaptureTest {
     }
 
     @Test
-    fun `an axis reports each push once`() {
+    fun `an axis presses and releases each push once`() {
         val edges = AxisEdges()
-        assertEquals(null, edges.feed(0x01, 0.3f))
-        assertEquals(ControlRef.half(0x01, -1), edges.feed(0x01, -0.6f))
-        assertEquals(null, edges.feed(0x01, -0.9f))
+        val up = ControlRef.half(0x01, -1)
+        val down = ControlRef.half(0x01, 1)
+        assertEquals(emptyList<PadEdge>(), edges.feed(0x01, 0.3f))
+        assertEquals(listOf(press(up)), edges.feed(0x01, -0.6f))
+        assertEquals(emptyList<PadEdge>(), edges.feed(0x01, -0.9f))
         // Wobbling around the line without coming back to rest is still the same push.
-        assertEquals(null, edges.feed(0x01, -0.4f))
-        assertEquals(null, edges.feed(0x01, -0.6f))
-        assertEquals(null, edges.feed(0x01, 0.1f))
-        assertEquals(ControlRef.half(0x01, -1), edges.feed(0x01, -0.7f))
-        // Straight across is a new push the other way.
-        assertEquals(ControlRef.half(0x01, 1), edges.feed(0x01, 0.8f))
+        assertEquals(emptyList<PadEdge>(), edges.feed(0x01, -0.4f))
+        assertEquals(listOf(release(up)), edges.feed(0x01, 0.1f))
+        assertEquals(listOf(press(up)), edges.feed(0x01, -0.7f))
+        // Straight across lets go of one half and presses the other.
+        assertEquals(listOf(release(up), press(down)), edges.feed(0x01, 0.8f))
     }
 }

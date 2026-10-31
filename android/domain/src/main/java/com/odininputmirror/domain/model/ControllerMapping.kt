@@ -45,6 +45,9 @@ data class Binding(val source: ControlRef, val target: ControlRef)
 data class Chord(val sources: List<ControlRef>, val target: ControlRef) {
     companion object {
         const val MAX_MEMBERS = 4
+
+        /** The daemon's MAX_CHORDS: rows past it are never read. */
+        const val MAX_PER_MAPPING = 16
     }
 }
 

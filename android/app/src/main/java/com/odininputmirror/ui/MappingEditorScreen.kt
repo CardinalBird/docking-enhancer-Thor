@@ -163,6 +163,7 @@ fun MappingEditorScreen(
                     SlotRow(
                         slot = slot,
                         source = state.bindings[slot.target],
+                        chord = state.chords[slot.target],
                         axisLabels = state.sourceAxisLabels,
                         onBind = {
                             focusedRow = index
@@ -213,6 +214,8 @@ fun MappingEditorScreen(
             CaptureOverlay(
                 slot = state.capturing,
                 source = state.bindings[state.capturing.target],
+                chord = state.chords[state.capturing.target],
+                pending = state.pending,
                 axisLabels = state.sourceAxisLabels,
                 notice = state.notice,
                 onCancel = onCancelBind,

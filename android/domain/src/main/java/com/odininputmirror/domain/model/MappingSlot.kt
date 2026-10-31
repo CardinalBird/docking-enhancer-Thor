@@ -277,11 +277,56 @@ private val ANDROID_AXIS_NAMES = mapOf(
     "GAS" to ("−R2" to "+R2"),
 )
 
-/** Axis code -> halves, by the standard evdev meaning: what Generic.kl calls each code. */
-private val HALF_AXIS_NAMES = mapOf(
+/** Axis code -> Android axis name, by the standard evdev meaning: what Generic.kl calls each code. */
+private val GENERIC_AXIS_NAMES = mapOf(
     ABS_X to "X", ABS_Y to "Y", ABS_Z to "Z", ABS_RZ to "RZ", ABS_RX to "RX", ABS_RY to "RY",
     ABS_HAT0X to "HAT_X", ABS_HAT0Y to "HAT_Y", ABS_BRAKE to "BRAKE", ABS_GAS to "GAS",
-).mapValues { ANDROID_AXIS_NAMES.getValue(it.value) }
+)
+
+/** Axis code -> halves, by the standard evdev meaning. */
+private val HALF_AXIS_NAMES = GENERIC_AXIS_NAMES.mapValues { ANDROID_AXIS_NAMES.getValue(it.value) }
+
+/**
+ * The prompt icon for a control the pad reports, for showing a chord as icons; null when the code has
+ * no standard meaning (the caller falls back to [describeSource]). Face codes say where a button sits,
+ * so on a Nintendo-layout pad they are drawn with the letter printed there.
+ */
+fun sourceIcon(source: ControlRef, axisLabels: Map<Int, String> = emptyMap(), layout: PadLayout = PadLayout.XBOX): SlotIcon? {
+    val icon = when (source.kind) {
+        ControlKind.BUTTON -> BUTTON_ICONS[source.code]
+        ControlKind.AXIS -> null
+        ControlKind.HALF_AXIS -> (axisLabels[source.code] ?: GENERIC_AXIS_NAMES[source.code])
+            ?.let { AXIS_ICONS[it] }
+            ?.let { if (source.direction < 0) it.first else it.second }
+    } ?: return null
+    return if (layout == PadLayout.NINTENDO) NINTENDO_FACES[icon] ?: icon else icon
+}
+
+private val BUTTON_ICONS = mapOf(
+    BTN_SOUTH to SlotIcon.A, BTN_EAST to SlotIcon.B, BTN_NORTH to SlotIcon.X, BTN_WEST to SlotIcon.Y,
+    BTN_TL to SlotIcon.LEFT_BUMPER, BTN_TR to SlotIcon.RIGHT_BUMPER,
+    BTN_TL2 to SlotIcon.LEFT_TRIGGER, BTN_TR2 to SlotIcon.RIGHT_TRIGGER,
+    BTN_SELECT to SlotIcon.VIEW, BTN_START to SlotIcon.MENU, 0x13c to SlotIcon.HOME,
+    BTN_THUMBL to SlotIcon.LEFT_STICK_CLICK, BTN_THUMBR to SlotIcon.RIGHT_STICK_CLICK,
+    BTN_DPAD_UP to SlotIcon.DPAD_UP, BTN_DPAD_DOWN to SlotIcon.DPAD_DOWN,
+    BTN_DPAD_LEFT to SlotIcon.DPAD_LEFT, BTN_DPAD_RIGHT to SlotIcon.DPAD_RIGHT,
+)
+
+/** Android axis name -> (negative half, positive half) icon; null where a half means nothing (a trigger's). */
+private val AXIS_ICONS: Map<String, Pair<SlotIcon?, SlotIcon?>> = mapOf(
+    "X" to (SlotIcon.LEFT_STICK_LEFT to SlotIcon.LEFT_STICK_RIGHT),
+    "Y" to (SlotIcon.LEFT_STICK_UP to SlotIcon.LEFT_STICK_DOWN),
+    "Z" to (SlotIcon.RIGHT_STICK_LEFT to SlotIcon.RIGHT_STICK_RIGHT),
+    "RX" to (SlotIcon.RIGHT_STICK_LEFT to SlotIcon.RIGHT_STICK_RIGHT),
+    "RZ" to (SlotIcon.RIGHT_STICK_UP to SlotIcon.RIGHT_STICK_DOWN),
+    "RY" to (SlotIcon.RIGHT_STICK_UP to SlotIcon.RIGHT_STICK_DOWN),
+    "HAT_X" to (SlotIcon.DPAD_LEFT to SlotIcon.DPAD_RIGHT),
+    "HAT_Y" to (SlotIcon.DPAD_UP to SlotIcon.DPAD_DOWN),
+    "LTRIGGER" to (null to SlotIcon.LEFT_TRIGGER),
+    "BRAKE" to (null to SlotIcon.LEFT_TRIGGER),
+    "RTRIGGER" to (null to SlotIcon.RIGHT_TRIGGER),
+    "GAS" to (null to SlotIcon.RIGHT_TRIGGER),
+)
 
 /** Which way round a pad's face buttons are printed. */
 enum class PadLayout { XBOX, NINTENDO }
