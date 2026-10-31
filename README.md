@@ -16,15 +16,15 @@ app, retargeted to the AYN Thor and renamed Control Switch.
 
 <br>
 
-<img src="docking-enhancer-ui.png" alt="Main screen: the Thor's built-in controller, a locked Switch Pro Controller mirrored as player 1, and the settings menu" width="820">
+<img src="control-switch-ui.png" alt="Main screen: the Thor and its battery, the mirrored controller as player 1, and the four menu rows" width="820">
 
 <br><br>
 
-<img src="docking-enhancer-ui-3.png" alt="Player 1 picker: press L + R on the controller you want to use" width="820">
+<img src="control-switch-ui-3.png" alt="Change Input Order: press L + R on the controller you would like to use" width="820">
 
 <br><br>
 
-<img src="docking-enhancer-ui-2.png" alt="Button mapping editor: groups on the left, the D-pad group's slots on the right" width="820">
+<img src="control-switch-ui-2.png" alt="Button mapping: auto-map presets, then every button with a readable name" width="820">
 
 </div>
 
