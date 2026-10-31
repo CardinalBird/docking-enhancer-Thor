@@ -1,6 +1,8 @@
 package com.odininputmirror.ui
 
 import com.odininputmirror.domain.model.HomeButtonMode
+import com.odininputmirror.domain.model.KEY_HOME
+import com.odininputmirror.domain.model.TargetTraits
 import com.odininputmirror.domain.model.Binding
 import com.odininputmirror.domain.model.CaptureKind
 import com.odininputmirror.domain.model.CaptureRead
@@ -232,6 +234,20 @@ class MappingEditorControllerTest {
         assertEquals(bindable, mappings.saved?.bindings?.size)
     }
 
+    @Test
+    fun `a preset leaves the user's Home and Back alone`() {
+        val withHome = odinFallbackTraits().let { it.copy(keys = it.keys + KEY_HOME) }
+        val home = ControlRef.button(KEY_HOME)
+        val mappings = FakeMappingRepository(
+            stored = ControllerMapping(listOf(Binding(ControlRef.button(0x13c), home))),
+        )
+        val controller = controllerWith(mappings = mappings, devices = FakeDeviceRepository(withHome))
+        controller.openAndAwait()
+
+        controller.autoMap(PadLayout.XBOX)
+        assertEquals("the preset threw the Home binding away", ControlRef.button(0x13c), controller.state.value.bindings[home])
+    }
+
     // ---- harness ----------------------------------------------------------------------------
 
     private val slots = mappingSlots(odinFallbackTraits())
@@ -240,9 +256,10 @@ class MappingEditorControllerTest {
         mappings: MappingRepository = FakeMappingRepository(),
         process: MirrorProcessRepository = FakeProcessRepository(),
         settings: MirrorSettingsRepository = FakeSettingsRepository(),
+        devices: InputDeviceRepository = FakeDeviceRepository(),
     ) = MappingEditorController(
         mappings = mappings,
-        devices = FakeDeviceRepository(),
+        devices = devices,
         process = process,
         settings = settings,
         seedDefaultMapping = {},
@@ -304,8 +321,9 @@ class MappingEditorControllerTest {
         }
     }
 
-    private class FakeDeviceRepository : InputDeviceRepository {
+    private class FakeDeviceRepository(private val target: TargetTraits? = null) : InputDeviceRepository {
         override fun getConnectedControllers(): List<ControllerDevice> = emptyList()
+        override fun targetTraits(): TargetTraits? = target
     }
 
     /** Records the order of every call, and hands out a press only when a test says so. */

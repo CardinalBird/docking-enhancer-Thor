@@ -16,6 +16,18 @@ class PadCaptureTest {
         // Volume keys and the like are keyboards, not pads.
         assertFalse(isCaptureSource("gpio-keys", isVirtual = false, isGamepad = false, internalPadName = null))
         assertFalse(isCaptureSource(null, isVirtual = false, isGamepad = true, internalPadName = null))
+        // Until the handheld's pad is identified there is nothing to exclude, so nothing is taken.
+        assertFalse(isCaptureSource("8BitDo Ultimate 2", isVirtual = false, isGamepad = true, internalPadName = null))
+    }
+
+    @Test
+    fun `a trigger resting at its minimum reports the pull, not the release`() {
+        val edges = AxisEdges()
+        assertEquals(null, edges.feed(0x02, -1f))
+        assertEquals(ControlRef.half(0x02, 1), edges.feed(0x02, 1f))
+        // Letting go is a release, not a push the other way: in a walk it would fill the next slot.
+        assertEquals(null, edges.feed(0x02, -1f))
+        assertEquals(ControlRef.half(0x02, 1), edges.feed(0x02, 0.9f))
     }
 
     @Test

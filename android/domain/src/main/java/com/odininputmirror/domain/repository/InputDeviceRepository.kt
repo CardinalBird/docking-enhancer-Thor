@@ -23,4 +23,11 @@ interface InputDeviceRepository {
 
     /** evdev axis code -> Android axis name, from the key layout Android applies to this device. */
     fun axisLabels(vendorId: Int, productId: Int): Map<Int, String> = emptyMap()
+
+    /**
+     * Whether enough physical pads are attached for a mirror to be possible at all: the handheld's
+     * own and one more. Answered in-process, so the supervisor can ask every tick without a
+     * privileged call. Not a substitute for [getConnectedControllers], only a gate in front of it.
+     */
+    fun controllerPairPresent(): Boolean = true
 }

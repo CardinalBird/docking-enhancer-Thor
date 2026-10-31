@@ -69,6 +69,7 @@ internal fun SlotRow(
     onBind: () -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
+    axisLabels: Map<Int, String> = emptyMap(),
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -99,7 +100,7 @@ internal fun SlotRow(
         Spacer(Modifier.width(14.dp))
         Text(slot.label, color = Palette.textPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
         Text(
-            source?.let(::describeSource) ?: "Not bound",
+            source?.let { describeSource(it, axisLabels) } ?: "Not bound",
             color = if (source == null) Palette.textMuted else Palette.accent,
             fontSize = 14.sp,
         )
@@ -202,6 +203,7 @@ internal fun CaptureOverlay(
     progress: String? = null,
     /** Ends the walk (X). Present only during one, when Cancel becomes Skip (B). */
     onStop: (() -> Unit)? = null,
+    axisLabels: Map<Int, String> = emptyMap(),
 ) {
     // Focus has to come here, and not just for looks: the handheld's pad is still driving the list
     // behind, so without taking focus a press meant for the overlay would open a different slot.
@@ -250,7 +252,7 @@ internal fun CaptureOverlay(
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                source?.let { "Currently: ${describeSource(it)}" } ?: "Currently: no binding",
+                source?.let { "Currently: ${describeSource(it, axisLabels)}" } ?: "Currently: no binding",
                 color = Palette.textMuted,
                 fontSize = 13.sp,
             )

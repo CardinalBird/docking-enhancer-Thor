@@ -73,6 +73,9 @@ internal class AndroidInputDeviceRepository(
     override fun axisLabels(vendorId: Int, productId: Int): Map<Int, String> =
         keyLayouts.resolve(vendorId, productId).axisLabels
 
+    override fun controllerPairPresent(): Boolean =
+        InputDevice.getDeviceIds().count { isPhysicalGameController(InputDevice.getDevice(it)) } >= 2
+
     private fun readProcEntries(): List<ProcInputEntry> =
         shell.read("cat /proc/bus/input/devices")
             .split(PROC_BLOCK_SEPARATOR)

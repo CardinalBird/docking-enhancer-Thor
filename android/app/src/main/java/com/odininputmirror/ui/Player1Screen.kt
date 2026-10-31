@@ -74,11 +74,13 @@ fun Player1Screen(
     player1Name: String?,
     pendingName: String?,
     pendingPath: String?,
+    /** False while this page slides out: Back then belongs to the page arriving. */
+    active: Boolean,
     onPick: (InputDevice) -> Unit,
     onConfirm: () -> Unit,
     onClose: () -> Unit,
 ) {
-    BackHandler(onBack = onClose)
+    BackHandler(enabled = active, onBack = onClose)
 
     val activity = LocalContext.current.findMainActivity()
     DisposableEffect(activity) {

@@ -137,6 +137,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                 player1Name = state.player1Name,
                 pendingName = state.pendingPlayer1Name,
                 pendingPath = state.pendingPlayer1Path,
+                active = active,
                 onPick = viewModel::choosePlayer1,
                 onConfirm = viewModel::confirmPlayer1,
                 onClose = viewModel::closePlayer1Picker,
