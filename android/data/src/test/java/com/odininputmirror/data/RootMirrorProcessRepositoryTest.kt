@@ -111,6 +111,11 @@ class RootMirrorProcessRepositoryTest {
 
     @Test
     fun startExtractsBinaryAndLaunchesGuardedQuotedCommand() {
+        settings.state = settings.state.copy(
+            homeMode = HomeButtonMode.BACK,
+            comboHoldKillApp = true,
+            virtualMouse = true,
+        )
         repository.start(
             MirrorStartRequest(
                 source = "/dev/input/event9",
@@ -145,15 +150,23 @@ class RootMirrorProcessRepositoryTest {
 
     @Test
     fun startWritesTheConfigTheDaemonWillRead() {
-        settings.state = settings.state.copy(configGeneration = 3L)
+        // The request is stale on purpose: the user changed every option after the supervisor read
+        // them. The config must carry the stored values with the generation they were stored under,
+        // or the daemon acknowledges a change it never made.
+        settings.state = settings.state.copy(
+            configGeneration = 3L,
+            homeMode = HomeButtonMode.BACK,
+            comboHoldKillApp = false,
+            virtualMouse = true,
+        )
 
         repository.start(
             MirrorStartRequest(
                 source = "/dev/input/event9",
                 target = "/dev/input/event2",
-                homeMode = HomeButtonMode.BACK,
-                comboHoldKillApp = false,
-                virtualMouse = true,
+                homeMode = HomeButtonMode.HOME,
+                comboHoldKillApp = true,
+                virtualMouse = false,
             )
         )
 

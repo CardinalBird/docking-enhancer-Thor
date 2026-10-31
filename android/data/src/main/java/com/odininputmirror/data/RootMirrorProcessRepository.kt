@@ -31,12 +31,18 @@ internal class RootMirrorProcessRepository(
         // Hand the daemon its config up front so a fresh start and a hot reload read the same
         // document. The command-line flags below stay as the fallback the daemon uses when the file
         // is missing or unreadable — they are what the e2e harness drives it with.
+        //
+        // The options come from the stored settings, read together with the generation. The request
+        // holds what the supervisor saw when it decided to start, which can be older: a toggle flipped
+        // in between got the new generation paired with the old value, the daemon acknowledged a
+        // change it never made, and the toggle was silently lost.
+        val settings = mirrorSettingsRepository.getSettings()
         files.writeConfig(
             configJson(
-                generation = mirrorSettingsRepository.getSettings().configGeneration,
-                homeMode = request.homeMode,
-                comboHoldKillApp = request.comboHoldKillApp,
-                virtualMouse = request.virtualMouse,
+                generation = settings.configGeneration,
+                homeMode = settings.homeMode,
+                comboHoldKillApp = settings.comboHoldKillApp,
+                virtualMouse = settings.virtualMouse,
                 mapping = request.mapping,
             ),
         )
@@ -45,9 +51,9 @@ internal class RootMirrorProcessRepository(
         val configArg = " --config-file ${files.configFile.absolutePath.shellQuote()}"
         val controlFifoArg = " --control-fifo ${files.controlFifo.absolutePath.shellQuote()}"
         val captureArg = " --capture-file ${files.captureFile.absolutePath.shellQuote()}"
-        val homeModeArg = " --home-mode ${request.homeMode.wire}"
-        val comboHoldKillAppArg = if (request.comboHoldKillApp) " --combo-hold-kill-app" else ""
-        val virtualMouseArg = if (request.virtualMouse) " --virtual-mouse" else ""
+        val homeModeArg = " --home-mode ${settings.homeMode.wire}"
+        val comboHoldKillAppArg = if (settings.comboHoldKillApp) " --combo-hold-kill-app" else ""
+        val virtualMouseArg = if (settings.virtualMouse) " --virtual-mouse" else ""
         val hideNodeArgs = request.hideNodes.joinToString("") { " --hide-node ${it.shellQuote()}" }
         val hiddenStateArg = " --hidden-state-file ${files.hiddenStateFile.absolutePath.shellQuote()}"
         val pidFileArg = " --pid-file ${files.pidFile.absolutePath.shellQuote()}"

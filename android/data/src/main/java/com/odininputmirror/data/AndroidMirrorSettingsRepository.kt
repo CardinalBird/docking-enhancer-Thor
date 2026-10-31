@@ -34,9 +34,8 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             .putString(KEY_TARGET, request.target)
             .putString(KEY_SOURCE_GUID, request.sourceGuid)
             .putString(KEY_TARGET_GUID, request.targetGuid)
-            .putString(KEY_HOME_MODE, request.homeMode.name)
-            .putBoolean(KEY_COMBO_HOLD_KILL_APP, request.comboHoldKillApp)
-            .putBoolean(KEY_VIRTUAL_MOUSE, request.virtualMouse)
+            // Not the options: their setters already stored them, and writing the request's copy back
+            // would undo a toggle made while this start was in flight.
             .putBoolean(KEY_EXPECTED_RUNNING, true)
             .putLong(KEY_STARTED_AT, startedAt)
             .apply()
