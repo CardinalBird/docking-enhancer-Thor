@@ -44,6 +44,13 @@ static const int HEARTBEAT_MISSING_LIMIT = 5;
 // a single frame rarely exceeds ~10 events; any overflow is drained by the next loop.
 #define EVENT_BATCH_SIZE 32
 
+// Target-bound events held back so a whole source batch reaches the target in one write(). A batch can
+// fan out past this (mappings, a resync); the buffer then just flushes early, order intact.
+#define TARGET_BUFFER_SIZE 64
+
+#define LONG_BITS (8 * sizeof(unsigned long))
+#define LONGS_FOR(bits) (((bits) + LONG_BITS - 1) / LONG_BITS)
+
 // Virtual mouse mode (opt-in via --virtual-mouse). Select+R3 held this long toggles the mode; while
 // on, the grabbed controller drives a self-created uinput pointer instead of the target node. The
 // pointer itself lives in mouse.c; what stays here is the combo that summons it and the shell
@@ -205,8 +212,8 @@ static int write_pid_file(const char *pid_file_path) {
 // Open the heartbeat file once, to be rewritten in place for the life of the run. Keeping the fd
 // avoids an open/close pair every second in the mirror loop.
 //
-// `create` is false for every reopen after the first: the file's absence is how the app orders this
-// daemon to stop, so only the opening beat may bring it into existence.
+// `create` is true only for the startup call, before the grab: the file's absence is how the app orders
+// this daemon to stop, so no later reopen may bring it back into existence.
 static int open_heartbeat_file(const char *heartbeat_file_path, int create) {
     if (heartbeat_file_path == NULL) {
         return -1;
@@ -282,8 +289,7 @@ struct mirror_state {
     long long config_generation;
 
     const char *heartbeat_file_path;
-    int heartbeat_fd;  // held open for the whole run; rewritten in place each beat
-    int heartbeat_created;  // the opening beat made the file; later reopens must never re-create it
+    int heartbeat_fd;  // created before the grab, held open for the whole run; rewritten in place
     int heartbeat_missing_beats;  // consecutive beats the heartbeat PATH has been gone
     int home_mode;
     int combo_hold_kill_app;
@@ -333,7 +339,63 @@ struct mirror_state {
     // after a SYN_DROPPED: together they are what lets resync_source replay only what was lost.
     unsigned char source_key_down[KEY_CNT];
     int source_dropped;
+
+    // Target-bound events not yet written (see target_write). Empty between batches: the batch loop
+    // flushes at its end and release_target_holds flushes itself, so no other path that writes or
+    // changes mode has anything to order against.
+    struct input_event target_out[TARGET_BUFFER_SIZE];
+    size_t target_out_count;
+
+    // The codes the target declares, read once at startup. The kernel drops anything else without a
+    // word; a code's bit is set once we have said so, so each is reported once.
+    unsigned long target_key_bits[LONGS_FOR(KEY_CNT)];
+    unsigned long target_abs_bits[LONGS_FOR(ABS_CNT)];
 };
+
+// Write out everything target_write has queued, in one write(). The buffer is emptied on failure too:
+// the caller ends the run, and a later retry would only replay events the target already refused.
+static int flush_target(struct mirror_state *s) {
+    if (s->target_out_count == 0) {
+        return 0;
+    }
+    int result = write_events_tolerant(s->target_fd, s->target_out, s->target_out_count);
+    s->target_out_count = 0;
+    return result;
+}
+
+// Say once per code that the target will never see it. Logged rather than translated: the Thor's own
+// pad declares every code a pad sends, so this is a diagnostic for some other target, not a feature.
+static void note_undeclared(struct mirror_state *s, unsigned short type, unsigned short code) {
+    unsigned long *bits;
+    const char *kind;
+    if (type == EV_KEY && code < KEY_CNT) {
+        bits = s->target_key_bits;
+        kind = "KEY";
+    } else if (type == EV_ABS && code < ABS_CNT) {
+        bits = s->target_abs_bits;
+        kind = "ABS";
+    } else {
+        return;
+    }
+    unsigned long bit = 1UL << ((size_t)code % LONG_BITS);
+    if (bits[(size_t)code / LONG_BITS] & bit) {
+        return;
+    }
+    bits[(size_t)code / LONG_BITS] |= bit;
+    fprintf(stderr, "target does not declare %s 0x%x; dropped by the kernel\n", kind, (unsigned)code);
+}
+
+// Queue one event for the target. Every target-bound event goes through here, so a source batch costs
+// one write() instead of one per event. Returns -1 only if an early flush (buffer full) failed.
+static int target_write(struct mirror_state *s, unsigned short type, unsigned short code, int value) {
+    note_undeclared(s, type, code);
+    struct input_event *ev = &s->target_out[s->target_out_count++];
+    memset(ev, 0, sizeof(*ev));
+    ev->type = type;
+    ev->code = code;
+    ev->value = value;
+    return s->target_out_count == TARGET_BUFFER_SIZE ? flush_target(s) : 0;
+}
 
 // Stamp the heartbeat by rewriting the held-open file in place. The watchdog on the app side only
 // checks that the file is non-empty and its mtime is recent, and a write updates mtime — so this is
@@ -343,25 +405,19 @@ static void write_heartbeat(struct mirror_state *s) {
     if (s->heartbeat_file_path == NULL) {
         return;
     }
-    // Only the FIRST beat is allowed to create the file. After that its absence is the app's way of
-    // saying this daemon should be gone, and re-creating it would be us answering our own summons:
-    // a write error drops the fd below, and a reopen with O_CREAT on the next beat would put back the
-    // very file the app had just deleted, reset the counter, and leave a root daemon holding the
-    // user's controller with nothing left to stop it.
-    if (s->heartbeat_fd < 0 && !s->heartbeat_created) {
-        s->heartbeat_fd = open_heartbeat_file(s->heartbeat_file_path, 1);
-        if (s->heartbeat_fd >= 0) {
-            s->heartbeat_created = 1;
-        }
-    }
+    // The file was created in main, before the grab, and is never created again. Its absence is the
+    // app's way of saying this daemon should be gone, and re-creating it would be us answering our own
+    // summons: put back the very file the app had just deleted, reset the counter, and leave a root
+    // daemon holding the user's controller with nothing left to stop it.
 
     // Owner watchdog. Deliberately tests the PATH, never the fd: unlinking a file does not disturb an
     // open description, so a daemon whose app was uninstalled goes on writing happily to an inode
     // nobody can reach — grabbing the user's controller and keeping its node hidden with no app left
     // to stop or heal it. The app deletes this path only when it wants this daemon gone, so treat a
     // sustained absence as our cue to leave through the normal shutdown, which restores what we hid.
-    // Placed after the create above so the first beat makes the file instead of tripping on it.
-    if (access(s->heartbeat_file_path, F_OK) != 0) {
+    // Only ENOENT counts: an EACCES (an SELinux denial, say) says nothing about the app being gone, and
+    // reading it as an uninstall would kill a healthy mirror. The fd keeps beating through it.
+    if (access(s->heartbeat_file_path, F_OK) != 0 && errno == ENOENT) {
         if (++s->heartbeat_missing_beats >= HEARTBEAT_MISSING_LIMIT) {
             fprintf(stderr, "heartbeat file %s missing for %d beats; shutting down\n",
                     s->heartbeat_file_path, s->heartbeat_missing_beats);
@@ -371,9 +427,8 @@ static void write_heartbeat(struct mirror_state *s) {
     }
     s->heartbeat_missing_beats = 0;
 
-    // A previous write failed and dropped the fd. The file is still there — the access() above just
-    // proved it — so take it back WITHOUT O_CREAT, which keeps the recovery from doubling as a way to
-    // resurrect a heartbeat the app deleted between the two checks.
+    // A previous write failed and dropped the fd. Take the file back WITHOUT O_CREAT, which keeps the
+    // recovery from doubling as a way to resurrect a heartbeat the app deleted between the two checks.
     if (s->heartbeat_fd < 0) {
         s->heartbeat_fd = open_heartbeat_file(s->heartbeat_file_path, 0);
         if (s->heartbeat_fd < 0) {
@@ -415,17 +470,21 @@ static void write_heartbeat(struct mirror_state *s) {
 static void release_target_holds(struct mirror_state *s) {
     for (int code = 0; code < KEY_CNT; code++) {
         if (s->key_down[code]) {
-            emit_event(s->target_fd, EV_KEY, (unsigned short)code, 0);
+            target_write(s, EV_KEY, (unsigned short)code, 0);
             s->key_down[code] = 0;
         }
     }
     for (int code = 0; code < ABS_CNT; code++) {
         if (s->abs_present[code] && s->abs_last[code] != s->abs_neutral[code]) {
-            emit_event(s->target_fd, EV_ABS, (unsigned short)code, s->abs_neutral[code]);
+            target_write(s, EV_ABS, (unsigned short)code, s->abs_neutral[code]);
             s->abs_last[code] = s->abs_neutral[code];
         }
     }
-    emit_event(s->target_fd, EV_SYN, SYN_REPORT, 0);
+    target_write(s, EV_SYN, SYN_REPORT, 0);
+    // Out now, not with the next batch: every caller is about to stop forwarding (mouse, capture,
+    // shutdown) or change the table, and a release left queued would never be sent or sent too late.
+    // Failures are ignored as before; at worst this is the shutdown after the target already failed.
+    (void)flush_target(s);
     // The mapping's edge detectors still describe what was just released. Left alone, a bound trigger
     // released while nothing was forwarded would make its next real press look like no change.
     memset(s->mapping.drive, 0, sizeof(s->mapping.drive));
@@ -663,8 +722,8 @@ static void handle_kill_combo_event(struct mirror_state *s, const struct input_e
 }
 
 // Forward one event to the target: apply the Nintendo face-button swap, record what the target now
-// believes held/deflected (for mouse-mode entry), and write it tolerantly. Returns 0, or -1 if the
-// target write kept failing.
+// believes held/deflected (for mouse-mode entry), and queue it for the batch's single write. Returns 0,
+// or -1 if the target write kept failing.
 static int forward_event(struct mirror_state *s, const struct input_event *ev) {
     // One event in, several possibly out: a mapping may change an event's very type, and more than
     // one binding may name the same source.
@@ -690,7 +749,7 @@ static int forward_event(struct mirror_state *s, const struct input_event *ev) {
         } else if (out->type == EV_ABS && out->code < ABS_CNT) {
             s->abs_last[out->code] = out->value;
         }
-        if (write_event_tolerant(s->target_fd, out) != 0) {
+        if (target_write(s, out->type, out->code, out->value) != 0) {
             return -1;
         }
     }
@@ -949,6 +1008,15 @@ int main(int argc, char **argv) {
     query_axis_ranges(s.source_fd, s.source_axes);
     query_axis_ranges(s.target_fd, s.target_axes);
 
+    // What the target declares, so an event it would silently drop is at least logged. An unreadable
+    // map reads as "declares everything": no answer is no grounds for a warning.
+    if (ioctl(s.target_fd, EVIOCGBIT(EV_KEY, sizeof(s.target_key_bits)), s.target_key_bits) < 0) {
+        memset(s.target_key_bits, 0xff, sizeof(s.target_key_bits));
+    }
+    if (ioctl(s.target_fd, EVIOCGBIT(EV_ABS, sizeof(s.target_abs_bits)), s.target_abs_bits) < 0) {
+        memset(s.target_abs_bits, 0xff, sizeof(s.target_abs_bits));
+    }
+
     // A config file, when present, is the authority; the command-line flags are only what to start
     // from if it is missing or unreadable. Reading it here also means a daemon restarted for an
     // unrelated reason (a reconnect, a crash) comes back with whatever the user last chose rather
@@ -974,8 +1042,24 @@ int main(int argc, char **argv) {
     // each start. Created once and kept for the whole session so the toast doesn't repeat per toggle.
     mouse_create_touch_device(&s.mouse);
 
-    if (ioctl(s.source_fd, EVIOCGRAB, 1) < 0) {
+    // Create the heartbeat BEFORE the grab. It is both how the app sees us alive and the only way it can
+    // stop us (by deleting it), so a daemon that cannot make it must not take the controller at all.
+    int start_failed = 0;
+    if (heartbeat_file_path != NULL) {
+        s.heartbeat_fd = open_heartbeat_file(heartbeat_file_path, 1);
+        if (s.heartbeat_fd < 0) {
+            fprintf(stderr, "No heartbeat, so nothing could stop this daemon; not grabbing the source\n");
+            start_failed = 1;
+        }
+    }
+    if (!start_failed && ioctl(s.source_fd, EVIOCGRAB, 1) < 0) {
         fprintf(stderr, "Failed to grab source %s: %s\n", source_path, strerror(errno));
+        start_failed = 1;
+    }
+    if (start_failed) {
+        if (s.heartbeat_fd >= 0) {
+            close(s.heartbeat_fd);
+        }
         mouse_destroy(&s.mouse);
         if (s.control_fd >= 0) {
             close(s.control_fd);
@@ -1169,6 +1253,11 @@ int main(int argc, char **argv) {
                 fatal_write_error = 1;
                 break;
             }
+        }
+        // The whole batch's target events, in one write.
+        if (!fatal_write_error && flush_target(&s) != 0) {
+            fprintf(stderr, "Write error to %s: %s\n", target_path, strerror(errno));
+            fatal_write_error = 1;
         }
         if (fatal_write_error) {
             break;

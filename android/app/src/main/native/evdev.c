@@ -51,13 +51,15 @@ int emit_event(int fd, unsigned short type, unsigned short code, int value) {
     return write_full(fd, &event, sizeof(event));
 }
 
-// Write one forwarded event to the target, tolerating a transient failure. write_full already
-// retries EINTR; here we retry the whole write a few times with a short backoff so a momentary
+// Write forwarded events to the target in one write(), tolerating a transient failure. write_full
+// already retries EINTR; here we retry the whole write a few times with a short backoff so a momentary
 // target error (the internal controller briefly busy) doesn't break the mirror loop. Gives up —
 // returning -1 — only if it keeps failing, at which point the target is likely genuinely gone.
-int write_event_tolerant(int fd, const struct input_event *event) {
+// Retrying the WHOLE batch cannot duplicate events: evdev_write fails only before it injects anything
+// (lock interrupted, device gone), never part-way through a buffer.
+int write_events_tolerant(int fd, const struct input_event *events, size_t count) {
     for (int attempt = 0; ; attempt++) {
-        if (write_full(fd, event, sizeof(*event)) == 0) {
+        if (write_full(fd, events, count * sizeof(*events)) == 0) {
             return 0;
         }
         if (attempt >= TARGET_WRITE_RETRIES) {
