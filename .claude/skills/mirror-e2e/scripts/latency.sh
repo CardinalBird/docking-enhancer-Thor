@@ -14,6 +14,7 @@ TMP=/data/local/tmp/lat
 rm -rf $TMP; mkdir -p $TMP
 # Root when the firmware has su (Odin); the Thor ships none and the shell user is enough here.
 if command -v su >/dev/null 2>&1; then as_root() { su -c "$1"; }; else as_root() { sh -c "$1"; }; fi
+am force-stop com.odininputmirror 2>/dev/null
 am force-stop com.controlswitch 2>/dev/null
 P=$(pidof input_mirror); [ -n "$P" ] && as_root "kill -KILL $P" 2>/dev/null
 sleep 0.5
