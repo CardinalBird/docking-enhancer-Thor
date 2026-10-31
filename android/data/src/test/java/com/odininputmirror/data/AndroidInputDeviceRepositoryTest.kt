@@ -421,6 +421,31 @@ class AndroidInputDeviceRepositoryTest {
     )
 
     @Test
+    fun sourceTraitsPreferThePadNodeOverItsSensorNode() {
+        val proc = """
+I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
+N: Name="DualSense Wireless Controller Motion Sensors"
+H: Handlers=event12
+B: KEY=
+B: ABS=3f
+
+I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
+N: Name="DualSense Wireless Controller"
+H: Handlers=event11 js0
+B: KEY=7fdb000000000000 0 0 0 0
+B: ABS=3003f
+""".trimStart()
+        val shell = object : MirrorShell by UnavailableShell {
+            override fun read(command: String): String = proc
+        }
+        val repository = AndroidInputDeviceRepository(shell = shell, pathExists = { true })
+
+        val traits = repository.sourceTraits(MappingKey.of(0x054c, 0x0ce6))!!
+
+        assertTrue(traits.keys.isNotEmpty())
+    }
+
+    @Test
     fun mappingKeyComesFromTheRealDeviceNotTheFirmwaresTwin() {
         // The firmware republishes the pad as a 0x2020 twin and deletes the original node. Both
         // entries carry the same name; only the real one carries an identity worth keying on.
@@ -531,31 +556,6 @@ Input Dispatcher State:
 
         assertEquals("/dev/input/event9", paths[10])
         assertTrue(paths.values.all { it.startsWith("/dev/input/event") })
-    }
-
-    @Test
-    fun sourceTraitsPreferThePadNodeOverItsSensorNode() {
-        val proc = """
-I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
-N: Name="DualSense Wireless Controller Motion Sensors"
-H: Handlers=event12
-B: KEY=
-B: ABS=3f
-
-I: Bus=0005 Vendor=054c Product=0ce6 Version=0001
-N: Name="DualSense Wireless Controller"
-H: Handlers=event11 js0
-B: KEY=7fdb000000000000 0 0 0 0
-B: ABS=3003f
-""".trimStart()
-        val shell = object : MirrorShell by UnavailableShell {
-            override fun read(command: String): String = proc
-        }
-        val repository = AndroidInputDeviceRepository(shell = shell, pathExists = { true })
-
-        val traits = repository.sourceTraits(MappingKey.of(0x054c, 0x0ce6))!!
-
-        assertTrue(traits.keys.isNotEmpty())
     }
 
     @Test
