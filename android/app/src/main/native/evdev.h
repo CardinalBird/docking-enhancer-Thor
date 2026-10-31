@@ -23,12 +23,12 @@ int write_full(int fd, const void *buffer, size_t length);
 int emit_event(int fd, unsigned short type, unsigned short code, int value);
 
 /**
- * Write one event, retrying briefly.
+ * Write `count` events in one write(), retrying briefly.
  *
  * For the TARGET specifically — the internal controller, which almost never truly goes away — so a
  * momentary hiccup costs a few milliseconds rather than the whole mirror. Returns 0, or -1 once the
  * retries are spent.
  */
-int write_event_tolerant(int fd, const struct input_event *event);
+int write_events_tolerant(int fd, const struct input_event *events, size_t count);
 
 #endif  // EVDEV_H
