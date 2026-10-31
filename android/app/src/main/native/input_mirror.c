@@ -310,7 +310,7 @@ struct mirror_state {
     int start_pressed;
     int thumbl_pressed;
     int thumbr_pressed;
-    int home_combo_armed;  // Select+L3 were down together; Home goes out once both are up
+    int home_combo_armed;  // Start+L3 were down together; Home goes out once both are up
     int combo_triggered;
     long long combo_pressed_at_ms;
 
@@ -713,17 +713,18 @@ static int handle_home_button(struct mirror_state *s, const struct input_event *
     return 1;
 }
 
-// Select+L3 tapped together sends Home, for pads without a Guide button. Not Select+Start: Cocoon
-// Shell keeps that for its own quick settings. The buttons are still forwarded.
+// Start+L3 tapped together sends Home, for pads without a Guide button. Not Select+Start (Cocoon
+// Shell's quick settings) nor Select+L3 (the Thor firmware's bottom-screen layout). The buttons are
+// still forwarded.
 static void handle_home_combo_event(struct mirror_state *s, const struct input_event *ev) {
     if (!s->combo_tap_home || ev->type != EV_KEY ||
-        !(is_select_button(ev->code) || ev->code == BTN_THUMBL)) {
+        !(is_start_button(ev->code) || ev->code == BTN_THUMBL)) {
         return;
     }
-    if (ev->value == 1 && s->select_pressed && s->thumbl_pressed) {
+    if (ev->value == 1 && s->start_pressed && s->thumbl_pressed) {
         s->home_combo_armed = 1;
     }
-    if (ev->value == 0 && !s->select_pressed && !s->thumbl_pressed && s->home_combo_armed) {
+    if (ev->value == 0 && !s->start_pressed && !s->thumbl_pressed && s->home_combo_armed) {
         s->home_combo_armed = 0;
         run_detached("input keyevent 3");  // KEYCODE_HOME
     }

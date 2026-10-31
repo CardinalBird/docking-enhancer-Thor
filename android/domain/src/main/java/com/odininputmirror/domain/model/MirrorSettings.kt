@@ -11,7 +11,7 @@ data class MirrorSettings(
     val autoMirrorEnabled: Boolean = true,
     // Mirror whenever an external pad is connected, docked or not. Off means docked only.
     val mirrorWhenHandheld: Boolean = false,
-    // A Select + L3 tap sends Home (for pads without a Guide button). Independent of the
+    // A Start + L3 tap sends Home (for pads without a Guide button). Independent of the
     // 3 s hold that closes the app.
     val comboTapHome: Boolean = false,
     val expectedRunning: Boolean = false,

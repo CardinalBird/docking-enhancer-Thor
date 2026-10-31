@@ -886,20 +886,20 @@ capture off"
 fi
 rm -f $CAPLOG $TMP/t15.out
 
-# --- T19: Select+L3 tocado es Home; Select+Start sostenido cierra la app ---------------------------
+# --- T19: Start+L3 tocado es Home; Select+Start sostenido cierra la app ----------------------------
 
 echo ""
-echo "=== T19: Select+L3 tocado manda Home ==="
+echo "=== T19: Start+L3 tocado manda Home ==="
 
 top_activity() { dumpsys activity activities 2>/dev/null | grep -m1 topResumedActivity; }
 open_settings() { am start -n com.android.settings/.Settings >/dev/null 2>&1; sleep 2; }
-# Select (314) + el otro boton, apretados juntos y soltados tras $2 segundos.
-tap_with_select() {
-    echo "key 314 1" >&3; echo "syn" >&3
+# Dos botones apretados juntos ($1 primero) y soltados tras $3 segundos.
+tap_pair() {
     echo "key $1 1" >&3; echo "syn" >&3
-    sleep $2
+    echo "key $2 1" >&3; echo "syn" >&3
+    sleep $3
+    echo "key $2 0" >&3; echo "syn" >&3
     echo "key $1 0" >&3; echo "syn" >&3
-    echo "key 314 0" >&3; echo "syn" >&3
     sleep 2.5
 }
 in_settings() { top_activity | grep -q "com.android.settings"; }
@@ -907,39 +907,40 @@ in_settings() { top_activity | grep -q "com.android.settings"; }
 # Sin la opcion el combo no hace nada; si esto falla, el positivo de abajo no prueba nada.
 start_mirror "$SRC" "$DST" --heartbeat-file $HEART
 open_settings
-tap_with_select 317 0.2
-if in_settings; then ok "sin --combo-tap-home Select+L3 no manda Home"; else bad "sin la opcion igual salio de Ajustes [$(top_activity)]"; fi
+tap_pair 315 317 0.2
+if in_settings; then ok "sin --combo-tap-home Start+L3 no manda Home"; else bad "sin la opcion igual salio de Ajustes [$(top_activity)]"; fi
 stop_mirror
 
 start_mirror "$SRC" "$DST" --combo-tap-home --heartbeat-file $HEART
 if [ -z "$(mirror_pid)" ]; then
-    bad "el daemon arranco para el test de Select+L3"
+    bad "el daemon arranco para el test de Start+L3"
 else
     open_settings
     if in_settings; then ok "Ajustes en primer plano antes del combo"; else bad "no se pudo abrir Ajustes [$(top_activity)]"; fi
-    # Select+Start queda para el atajo propio de Cocoon Shell: ya no es Home.
-    tap_with_select 315 0.2
-    if in_settings; then ok "Select+Start tocado ya no manda Home"; else bad "Select+Start todavia manda Home [$(top_activity)]"; fi
+    # Select+Start queda para el atajo propio de Cocoon Shell: no es Home. (Select+L3 no se prueba:
+    # es el atajo del firmware que rota la pantalla de abajo.)
+    tap_pair 314 315 0.2
+    if in_settings; then ok "Select+Start tocado no manda Home"; else bad "Select+Start manda Home [$(top_activity)]"; fi
     open_settings
     getevent -lt "$DST" > $TMP/t19.out 2>&1 &
     T19GE=$!
     sleep 0.4
-    tap_with_select 317 0.2
+    tap_pair 315 317 0.2
     kill $T19GE 2>/dev/null
-    if in_settings; then bad "Select+L3 tocado no mando Home [$(top_activity)]"; else ok "Select+L3 tocado manda Home"; fi
-    expect_contains $TMP/t19.out "BTN_SELECT" "Select sigue llegando al target"
+    if in_settings; then bad "Start+L3 tocado no mando Home [$(top_activity)]"; else ok "Start+L3 tocado manda Home"; fi
+    expect_contains $TMP/t19.out "BTN_START" "Start sigue llegando al target"
     expect_contains $TMP/t19.out "BTN_THUMBL" "L3 sigue llegando al target"
     stop_mirror
 fi
 rm -f $TMP/t19.out
 
-# El cierre por Select+Start sostenido 3 s sigue igual, y convive con Home en Select+L3.
+# El cierre por Select+Start sostenido 3 s sigue igual, y convive con Home en Start+L3.
 start_mirror "$SRC" "$DST" --combo-hold-kill-app --combo-tap-home --heartbeat-file $HEART
 if [ -z "$(mirror_pid)" ]; then
     bad "el daemon arranco para el test de cerrar app"
 else
     open_settings
-    tap_with_select 315 3.5
+    tap_pair 314 315 3.5
     if in_settings; then bad "Select+Start sostenido no cerro Ajustes [$(top_activity)]"; else ok "Select+Start sostenido 3 s cierra la app"; fi
     stop_mirror
 fi
