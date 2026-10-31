@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import com.odininputmirror.R
 import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.ui.theme.Palette
+import com.odininputmirror.ui.theme.Teal
 import kotlin.math.roundToInt
 
 // The pieces the pages lay out, Switch 2 "Controllers" style: a title with a rule under it, the
@@ -77,9 +78,9 @@ internal fun Rule(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(Palette.border))
 }
 
-/** The focus outline every selectable item wears: thick, rounded, the Cocoon gradient. */
+/** The focus outline every selectable item wears: thick, rounded, teal in every theme. */
 internal fun Modifier.focusOutline(focused: Boolean, shape: RoundedCornerShape): Modifier =
-    if (focused) border(3.dp, Palette.focusBrush, shape) else this
+    if (focused) border(3.dp, Teal, shape) else this
 
 /**
  * A Switch-style button icon: A, B, X, Y as round chips (A blue, the rest grey), L and R as rounded
@@ -97,7 +98,7 @@ internal fun ButtonIcon(label: String, size: Dp = 26.dp) {
             .padding(horizontal = if (key) 8.dp else 0.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = Palette.textPrimary, fontSize = (size.value * 0.55f).sp, lineHeight = (size.value * 0.6f).sp)
+        Text(label, color = if (key || label == "A") Palette.onAccent else Palette.textPrimary, fontSize = (size.value * 0.55f).sp, lineHeight = (size.value * 0.6f).sp)
     }
 }
 
@@ -266,7 +267,7 @@ internal fun RowSwitch(checked: Boolean, enabled: Boolean) {
         onCheckedChange = null,
         enabled = enabled,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = Palette.textPrimary,
+            checkedThumbColor = Palette.onAccent,
             checkedTrackColor = Palette.accent,
             uncheckedThumbColor = Palette.textMuted,
             uncheckedTrackColor = Palette.surfaceRaised,

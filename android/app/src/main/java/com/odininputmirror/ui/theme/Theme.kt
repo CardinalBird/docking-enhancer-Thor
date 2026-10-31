@@ -1,64 +1,92 @@
 package com.odininputmirror.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import com.odininputmirror.R
+import com.odininputmirror.domain.model.AppTheme
 
-// Switch 2 menu grey with the Cocoon Shell teal-blue for focus and selection.
-object Palette {
+/** Selection, focus borders and teal fills: the same in every theme. */
+val Teal = Color(0xFF00C2D6)
+
+/** One theme's colours. Read through [Palette], which follows the theme picked in Additional Settings. */
+@Immutable
+data class AppPalette(
+    val light: Boolean,
     // Flat page colour everywhere: the Switch 2 menus have no lighter panel and no darker bands.
-    val screen = Color(0xFF1C1C1C)
-    val surface = Color(0xFF262626)
-    val surfaceRaised = Color(0xFF303030)
-    val border = Color(0xFF3A3A3A)
-    val borderStrong = Color(0xFF5A5A5A)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textSecondary = Color(0xFFC8C8C8)
-    val textMuted = Color(0xFF8E8E8E)
-    // Cocoon blue: fills (A chip, switch track, selected radio).
-    val accent = Color(0xFF0080B3)
-    val accentSoft = Color(0xFF13303C)
-    // Pale cyan for small accents, where the blue would be too dark to read as text.
-    val cyan = Color(0xFFB4F2FD)
-    val danger = Color(0xFFFF6B6B)
-    val dangerSoft = Color(0xFF4A2626)
-    // Solid stand-in for [focusBrush] where a brush can't go; the middle of the gradient.
-    val focus = Color(0xFF008A90)
-    val focusBg = Color(0xFF2A2D2E)
-    // The focused item's outline, blue to teal to green like Cocoon's highlight.
-    val focusBrush = Brush.linearGradient(listOf(Color(0xFF0080B3), Color(0xFF008A90), Color(0xFF1DAC85)))
-    // Kept for callers that used to paint the header and hint bands; now the page colour, so the
-    // hints sit on the page like the Switch 2's.
-    val band = screen
-    // Behind a prompt that owns the screen. Dark enough to say "answer this first", sheer enough to
-    // leave the row it belongs to legible underneath.
-    val scrim = Color(0xCC111111)
+    val screen: Color,
+    val surface: Color,
+    val surfaceRaised: Color,
+    val border: Color,
+    val borderStrong: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val textMuted: Color,
+    // Small accent text (selected values, spinners), where a teal fill would be too light to read.
+    val cyan: Color,
+    val danger: Color,
+    val focusBg: Color,
+    // Behind a prompt that owns the screen: says "answer this first", leaves the row legible.
+    val scrim: Color,
     // Green: player lamps, and a controller carrying a mapping the user captured themselves.
-    val custom = Color(0xFF4ADE80)
-    val customSoft = Color(0xFF14301F)
+    val custom: Color,
+) {
+    // Fills: the A chip, switch track, selected radio.
+    val accent get() = Teal
+    // Text and icons drawn on a teal fill.
+    val onAccent get() = Color(0xFF001A1D)
+    // Solid focus outline for the items that don't use focusOutline.
+    val focus get() = Teal
+    // Kept for callers that used to paint the header and hint bands; now the page colour.
+    val band get() = screen
 }
 
-private val DarkColors = darkColorScheme(
-    primary = Palette.accent,
-    onPrimary = Palette.textPrimary,
-    background = Palette.screen,
-    onBackground = Palette.textPrimary,
-    surface = Palette.surface,
-    onSurface = Palette.textPrimary,
-    surfaceVariant = Palette.surfaceRaised,
-    onSurfaceVariant = Palette.textSecondary,
-    outline = Palette.border,
-    error = Palette.danger,
+private val DarkPalette = AppPalette(
+    light = false,
+    screen = Color(0xFF1E1E1E), surface = Color(0xFF2A2A2A), surfaceRaised = Color(0xFF353535),
+    border = Color(0xFF3F3F3F), borderStrong = Color(0xFF5E5E5E),
+    textPrimary = Color(0xFFF5F5F5), textSecondary = Color(0xFFB8B8B8), textMuted = Color(0xFF8E8E8E),
+    cyan = Teal, danger = Color(0xFFFF6B6B), focusBg = Color(0xFF2C3133),
+    scrim = Color(0xCC111111), custom = Color(0xFF4ADE80),
 )
+
+private val SuperDarkPalette = DarkPalette.copy(
+    screen = Color(0xFF0C0C0C), surface = Color(0xFF161616), surfaceRaised = Color(0xFF202020),
+    border = Color(0xFF2A2A2A), borderStrong = Color(0xFF4A4A4A), focusBg = Color(0xFF151C1E),
+    scrim = Color(0xE6000000),
+)
+
+private val LightPalette = AppPalette(
+    light = true,
+    screen = Color(0xFFFFFFFF), surface = Color(0xFFF2F2F2), surfaceRaised = Color(0xFFE8ECEE),
+    border = Color(0xFFD5D9DB), borderStrong = Color(0xFFA9AFB2),
+    textPrimary = Color(0xFF171717), textSecondary = Color(0xFF555B5E), textMuted = Color(0xFF70777A),
+    cyan = Color(0xFF006B77), danger = Color(0xFFC62828), focusBg = Color(0xFFE3F7F9),
+    scrim = Color(0x99000000), custom = Color(0xFF1E8E3E),
+)
+
+fun paletteFor(theme: AppTheme) = when (theme) {
+    AppTheme.DARK -> DarkPalette
+    AppTheme.SUPER_DARK -> SuperDarkPalette
+    AppTheme.LIGHT -> LightPalette
+}
+
+private val LocalPalette = staticCompositionLocalOf { DarkPalette }
+
+/** The active theme's colours. Same name the whole UI already used, so call sites didn't change. */
+val Palette: AppPalette
+    @Composable @ReadOnlyComposable get() = LocalPalette.current
 
 // Only the SemiBold cut is bundled, so every weight resolves to it: Poppins SemiBold throughout,
 // like Cocoon. See third-party/poppins/NOTICE.md.
@@ -77,13 +105,18 @@ private val AppTypography = Typography().run {
 }
 
 @Composable
-fun DockingEnhancerTheme(
-    @Suppress("UNUSED_PARAMETER") darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit,
-) {
-    MaterialTheme(
-        colorScheme = DarkColors,
-        typography = AppTypography,
-        content = content,
-    )
+fun DockingEnhancerTheme(theme: AppTheme = AppTheme.DARK, content: @Composable () -> Unit) {
+    val p = paletteFor(theme)
+    val colors = if (p.light) {
+        lightColorScheme(primary = p.accent, onPrimary = p.onAccent, background = p.screen, onBackground = p.textPrimary,
+            surface = p.surface, onSurface = p.textPrimary, surfaceVariant = p.surfaceRaised, onSurfaceVariant = p.textSecondary,
+            outline = p.border, error = p.danger)
+    } else {
+        darkColorScheme(primary = p.accent, onPrimary = p.onAccent, background = p.screen, onBackground = p.textPrimary,
+            surface = p.surface, onSurface = p.textPrimary, surfaceVariant = p.surfaceRaised, onSurfaceVariant = p.textSecondary,
+            outline = p.border, error = p.danger)
+    }
+    CompositionLocalProvider(LocalPalette provides p) {
+        MaterialTheme(colorScheme = colors, typography = AppTypography, content = content)
+    }
 }

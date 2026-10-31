@@ -1,5 +1,8 @@
 package com.odininputmirror.domain.model
 
+/** The app's colour theme, picked in Additional Settings. */
+enum class AppTheme { DARK, SUPER_DARK, LIGHT }
+
 data class MirrorSettings(
     val source: String? = null,
     val target: String? = null,
@@ -11,6 +14,7 @@ data class MirrorSettings(
     val autoMirrorEnabled: Boolean = true,
     // Mirror whenever an external pad is connected, docked or not. Off means docked only.
     val mirrorWhenHandheld: Boolean = false,
+    val theme: AppTheme = AppTheme.DARK,
     val expectedRunning: Boolean = false,
     val startedAt: Long = 0L,
     val manualInternalGuid: String? = null,

@@ -1,5 +1,6 @@
 package com.odininputmirror.domain.repository
 
+import com.odininputmirror.domain.model.AppTheme
 import com.odininputmirror.domain.model.HomeButtonMode
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
@@ -13,6 +14,7 @@ interface MirrorSettingsRepository {
     fun setVirtualMouseEnabled(enabled: Boolean)
     fun setAutoMirrorEnabled(enabled: Boolean)
     fun setMirrorWhenHandheld(enabled: Boolean)
+    fun setTheme(theme: AppTheme)
     fun setManualInternalController(guid: String?)
     fun setPlayer1(name: String?, path: String?)
 

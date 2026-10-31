@@ -1,5 +1,6 @@
 package com.odininputmirror.data
 
+import com.odininputmirror.domain.model.AppTheme
 import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import com.odininputmirror.domain.model.MirrorSettings
@@ -20,6 +21,7 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             virtualMouse = prefs.getBoolean(KEY_VIRTUAL_MOUSE, false),
             autoMirrorEnabled = prefs.getBoolean(KEY_AUTO_MIRROR_ENABLED, true),
             mirrorWhenHandheld = prefs.getBoolean(KEY_MIRROR_WHEN_HANDHELD, false),
+            theme = AppTheme.entries.firstOrNull { it.name == prefs.getString(KEY_THEME, null) } ?: AppTheme.DARK,
             expectedRunning = prefs.getBoolean(KEY_EXPECTED_RUNNING, false),
             startedAt = prefs.getLong(KEY_STARTED_AT, 0L),
             manualInternalGuid = prefs.getString(KEY_MANUAL_INTERNAL_GUID, null),
@@ -100,6 +102,11 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
     // Not a live option: the supervisor, not the daemon, acts on it.
     override fun setMirrorWhenHandheld(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_MIRROR_WHEN_HANDHELD, enabled).apply()
+    }
+
+    // UI only: nothing outside the app reads it.
+    override fun setTheme(theme: AppTheme) {
+        prefs.edit().putString(KEY_THEME, theme.name).apply()
     }
 
     override fun setManualInternalController(guid: String?) {
