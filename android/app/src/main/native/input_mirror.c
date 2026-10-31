@@ -9,6 +9,7 @@
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "capture.h"
@@ -19,6 +20,8 @@
 #include "mouse.h"
 
 static volatile sig_atomic_t keep_running = 1;
+// The mask the main loop waits under (the stop signals open) while they stay blocked everywhere else.
+static sigset_t wait_mask;
 static const long long COMBO_HOLD_KILL_APP_MS = 3000;
 // Holding Home this long opens Recents instead of the tap action.
 static const long long HOME_HOLD_RECENTS_MS = 500;
@@ -115,6 +118,9 @@ static void run_detached(const char *command) {
     if (pid == 0) {
         // Restore default SIGCHLD so system()'s internal waitpid works in the child.
         signal(SIGCHLD, SIG_DFL);
+        // The mirror loop keeps the stop signals blocked, and a blocked mask survives exec: without
+        // this, every `input`/`am` we spawn would shrug off SIGTERM.
+        sigprocmask(SIG_SETMASK, &wait_mask, NULL);
         _exit(system(command) == -1 ? EXIT_FAILURE : EXIT_SUCCESS);
     }
     // Parent: with SIGCHLD ignored (set in main) the child is auto-reaped; never wait on it.
@@ -322,6 +328,11 @@ struct mirror_state {
     int abs_present[ABS_CNT];
     int abs_neutral[ABS_CNT];
     int abs_last[ABS_CNT];
+
+    // What the SOURCE last reported per key, and whether we are discarding up to the SYN_REPORT
+    // after a SYN_DROPPED: together they are what lets resync_source replay only what was lost.
+    unsigned char source_key_down[KEY_CNT];
+    int source_dropped;
 };
 
 // Stamp the heartbeat by rewriting the held-open file in place. The watchdog on the app side only
@@ -415,6 +426,10 @@ static void release_target_holds(struct mirror_state *s) {
         }
     }
     emit_event(s->target_fd, EV_SYN, SYN_REPORT, 0);
+    // The mapping's edge detectors still describe what was just released. Left alone, a bound trigger
+    // released while nothing was forwarded would make its next real press look like no change.
+    memset(s->mapping.drive, 0, sizeof(s->mapping.drive));
+    memset(s->mapping.pressed, 0, sizeof(s->mapping.pressed));
 }
 
 // Hand control to the pointer, then quiesce the target — in that order, because a pointer that fails
@@ -477,45 +492,67 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
     s->virtual_mouse = next->virtual_mouse;
     s->config_generation = next->generation;
 
-    // Adopting a mapping needs no unwinding: it only decides what the NEXT event is forwarded as.
-    // A key already down was forwarded under the old table and will be released under the new one,
-    // which is the one case worth knowing about — and it costs a stuck key only if the user remaps
-    // mid-press, which the wizard makes impossible because it stops forwarding while it captures.
+    // A control held now was forwarded under the old table and its release would be resolved under
+    // the new one, which may route it elsewhere and leave the target holding it forever. So a table
+    // that actually changed releases everything first. memcmp also compares padding, so at worst it
+    // sees a change that is not there and releases for nothing. Mouse mode already released on entry.
+    if (!s->mouse.mode &&
+        (s->mapping.count != next->binding_count ||
+         memcmp(s->mapping.entries, next->bindings,
+                (size_t)s->mapping.count * sizeof(struct binding)) != 0)) {
+        release_target_holds(s);
+    }
     mapping_load(&s->mapping, next->bindings, next->binding_count);
 }
 
-// Read whatever the app queued on the control fifo and report whether a reload was asked for.
-// Commands are one per line and unknown ones are ignored, so a newer app talking to an older daemon
-// degrades to "no-op" rather than to a parse error.
+// Read whatever the app queued on the control fifo. Returns the capture command in force and sets
+// `*reload` if a reload was asked for. Commands are one per line and unknown ones are ignored, so a
+// newer app talking to an older daemon degrades to "no-op" rather than to a parse error.
 enum control_command {
     CONTROL_NONE = 0,
-    CONTROL_RELOAD,
     CONTROL_CAPTURE_BUTTON,
     CONTROL_CAPTURE_STICK,
     CONTROL_CAPTURE_OFF,
 };
 
-static enum control_command drain_control(int fd) {
-    char buffer[256];
+static enum control_command drain_control(int fd, int *reload) {
+    // Kept across calls: a burst longer than one read() can split a line, and its head has to wait
+    // for its tail rather than be matched (or lost) on its own.
+    static char pending[256];
+    static size_t pending_len;
     enum control_command command = CONTROL_NONE;
 
     for (;;) {
-        ssize_t got = read(fd, buffer, sizeof(buffer) - 1);
+        ssize_t got = read(fd, pending + pending_len, sizeof(pending) - 1 - pending_len);
         if (got <= 0) {
             break;
         }
-        buffer[got] = '\0';
-        // A command is a short word written in one call, and a write below PIPE_BUF is atomic, so a
-        // command never arrives split across two reads. Where several arrived between polls the last
-        // one read wins, which is the state the app most recently asked for.
-        if (strstr(buffer, "capture button") != NULL) {
-            command = CONTROL_CAPTURE_BUTTON;
-        } else if (strstr(buffer, "capture stick") != NULL) {
-            command = CONTROL_CAPTURE_STICK;
-        } else if (strstr(buffer, "capture off") != NULL) {
-            command = CONTROL_CAPTURE_OFF;
-        } else if (strstr(buffer, "reload") != NULL) {
-            command = CONTROL_RELOAD;
+        pending_len += (size_t)got;
+        pending[pending_len] = '\0';
+        // Line by line, in the order written. Matching the whole buffer against a fixed priority list
+        // used to merge a batch wrongly: "capture button\ncapture off" left capture ON, and a reload
+        // sharing a read with a capture command was dropped. Now the last capture command wins and a
+        // reload anywhere in the batch is honoured, since the two never touch the same state.
+        char *line = pending;
+        char *end;
+        while ((end = strchr(line, '\n')) != NULL) {
+            *end = '\0';
+            if (strstr(line, "capture button") != NULL) {
+                command = CONTROL_CAPTURE_BUTTON;
+            } else if (strstr(line, "capture stick") != NULL) {
+                command = CONTROL_CAPTURE_STICK;
+            } else if (strstr(line, "capture off") != NULL) {
+                command = CONTROL_CAPTURE_OFF;
+            } else if (strstr(line, "reload") != NULL) {
+                *reload = 1;
+            }
+            line = end + 1;
+        }
+        pending_len = (size_t)(pending + pending_len - line);
+        memmove(pending, line, pending_len);
+        // A buffer-long line with no newline is nothing we know; drop it so it cannot wedge the fifo.
+        if (pending_len == sizeof(pending) - 1) {
+            pending_len = 0;
         }
     }
     return command;
@@ -536,8 +573,10 @@ static void maybe_toggle_mouse_mode(struct mirror_state *s) {
     }
 }
 
-// Fire the kill-app combo when it completes on a poll timeout (no new event to carry it over).
-static void maybe_kill_combo_on_timeout(struct mirror_state *s) {
+// Fire the kill-app combo once Select+Start has been held past the threshold. Checked every loop, not
+// only on a poll timeout: a pad streaming stick noise never lets poll time out, and the release event
+// can't carry it either because update_combo_tracking has already cleared the pressed flags by then.
+static void maybe_fire_kill_combo(struct mirror_state *s) {
     if (s->combo_hold_kill_app && s->select_pressed && s->start_pressed && !s->combo_triggered &&
         now_ms() - s->combo_pressed_at_ms >= COMBO_HOLD_KILL_APP_MS) {
         force_stop_foreground_app();
@@ -656,6 +695,88 @@ static int forward_event(struct mirror_state *s, const struct input_event *ev) {
         }
     }
     return 0;
+}
+
+// Run one source event through everything that may claim it, in priority order. Returns -1 only when
+// the target write kept failing.
+static int handle_source_event(struct mirror_state *s, const struct input_event *event) {
+    if (event->type == EV_KEY && event->code < KEY_CNT) {
+        s->source_key_down[event->code] = event->value != 0;
+    }
+
+    // Capture first and alone: while the wizard has a step open the controller drives the
+    // wizard and nothing else — not the combos, not the mouse, and above all not the target.
+    if (capture_feed(&s->capture, event, s->source_axes, s->abs_neutral, now_ms())) {
+        return 0;
+    }
+
+    // Track Select/Start/R3 for both combos, regardless of which feature is enabled.
+    if (event->type == EV_KEY) {
+        update_combo_tracking(s, event);
+    }
+
+    if (handle_home_button(s, event)) {
+        return 0;
+    }
+
+    handle_kill_combo_event(s, event);
+
+    if (s->mouse.mode) {
+        // The pointer reports back what it cannot do itself. R1 asks for the notification
+        // shade because a mouse has no way to drag it down; the commands are idempotent
+        // enough that a stale view of it just costs the user one extra press.
+        if (mouse_handle_event(&s->mouse, event) == MOUSE_ACTION_TOGGLE_SHADE) {
+            run_detached(s->shade_open ? "cmd statusbar collapse"
+                                       : "cmd statusbar expand-notifications");
+            s->shade_open = !s->shade_open;
+        }
+        return 0;
+    }
+
+    return forward_event(s, event);
+}
+
+// After a SYN_DROPPED: replay, as ordinary events, every key whose real state differs from the last
+// one we saw, and every axis's current value, so the combos, mouse, mapping and target all catch up.
+// ponytail: the queried state may run ahead of events still queued behind it, costing a brief
+// duplicate transition; libevdev-style reconciliation if that is ever seen on a real pad.
+static int resync_source(struct mirror_state *s) {
+    unsigned long keys[(KEY_CNT + 8 * sizeof(unsigned long) - 1) / (8 * sizeof(unsigned long))];
+    memset(keys, 0, sizeof(keys));
+    if (ioctl(s->source_fd, EVIOCGKEY(sizeof(keys)), keys) < 0) {
+        return 0;
+    }
+    struct input_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = EV_KEY;
+    for (int code = 0; code < KEY_CNT; code++) {
+        size_t word = (size_t)code / (8 * sizeof(unsigned long));
+        unsigned long bit = 1UL << ((size_t)code % (8 * sizeof(unsigned long)));
+        int down = (keys[word] & bit) != 0;
+        if (down != s->source_key_down[code]) {
+            ev.code = (unsigned short)code;
+            ev.value = down;
+            if (handle_source_event(s, &ev) != 0) {
+                return -1;
+            }
+        }
+    }
+    ev.type = EV_ABS;
+    for (int code = 0; code < ABS_CNT; code++) {
+        struct input_absinfo info;
+        if (!s->abs_present[code] || ioctl(s->source_fd, EVIOCGABS(code), &info) != 0) {
+            continue;
+        }
+        ev.code = (unsigned short)code;
+        ev.value = info.value;
+        if (handle_source_event(s, &ev) != 0) {
+            return -1;
+        }
+    }
+    ev.type = EV_SYN;
+    ev.code = SYN_REPORT;
+    ev.value = 0;
+    return handle_source_event(s, &ev);
 }
 
 int main(int argc, char **argv) {
@@ -884,6 +1005,17 @@ int main(int argc, char **argv) {
     }
     write_hidden_state(hidden_state_path, hidden, hide_count);
 
+    // Block the stop signals everywhere except inside the wait. Left open, one landing between the
+    // keep_running check and poll() went unnoticed until the poll timed out (up to a second), past the
+    // app's 500 ms SIGKILL escalation, which then left the hidden node hidden. ppoll() opens them
+    // atomically for the wait only, so such a signal is pending and interrupts it at once.
+    sigset_t stop_signals;
+    sigemptyset(&stop_signals);
+    sigaddset(&stop_signals, SIGINT);
+    sigaddset(&stop_signals, SIGTERM);
+    sigaddset(&stop_signals, SIGHUP);
+    sigprocmask(SIG_BLOCK, &stop_signals, &wait_mask);
+
     while (keep_running) {
         int timeout_ms = compute_loop_timeout(&s);
 
@@ -919,7 +1051,8 @@ int main(int argc, char **argv) {
             poll_count = 2;
         }
 
-        int poll_result = poll(fds, (nfds_t)poll_count, timeout_ms);
+        struct timespec timeout = {timeout_ms / 1000, (timeout_ms % 1000) * 1000000L};
+        int poll_result = ppoll(fds, (nfds_t)poll_count, &timeout, &wait_mask);
         if (poll_result < 0) {
             if (errno == EINTR) {
                 continue;
@@ -930,12 +1063,19 @@ int main(int argc, char **argv) {
 
         // The mouse toggle may complete on a poll timeout with no new event, so check it every loop.
         maybe_toggle_mouse_mode(&s);
+        maybe_fire_kill_combo(&s);
 
         // Settings first: applying them before this batch of events means the events are handled
         // under the config the user has already asked for, never under the one they just replaced.
         enum control_command command = CONTROL_NONE;
+        int reload = 0;
         if (control_index >= 0 && (fds[control_index].revents & POLLIN)) {
-            command = drain_control(s.control_fd);
+            command = drain_control(s.control_fd, &reload);
+        }
+        if ((command == CONTROL_CAPTURE_BUTTON || command == CONTROL_CAPTURE_STICK) && !s.mouse.mode) {
+            // Capture stops forwarding, so a stick deflected right now would stay deflected on the
+            // target for the whole wizard step. Release before the target goes quiet.
+            release_target_holds(&s);
         }
         if (command == CONTROL_CAPTURE_BUTTON) {
             capture_begin(&s.capture, CAPTURE_BUTTON, now_ms());
@@ -944,7 +1084,7 @@ int main(int argc, char **argv) {
         } else if (command == CONTROL_CAPTURE_OFF) {
             capture_end(&s.capture);
         }
-        if (command == CONTROL_RELOAD) {
+        if (reload) {
             struct config running = {
                 .home_mode = s.home_mode,
                 .combo_hold_kill_app = s.combo_hold_kill_app,
@@ -977,7 +1117,6 @@ int main(int argc, char **argv) {
         }
 
         if (!(fds[0].revents & POLLIN)) {
-            maybe_kill_combo_on_timeout(&s);
             continue;
         }
 
@@ -1006,36 +1145,26 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < event_count; i++) {
             struct input_event *event = &events[i];
 
-            // Capture first and alone: while the wizard has a step open the controller drives the
-            // wizard and nothing else — not the combos, not the mouse, and above all not the target.
-            if (capture_feed(&s.capture, event, s.source_axes, s.abs_neutral, now_ms())) {
+            // The source overflowed and dropped events, a release possibly among them. Per the evdev
+            // contract everything up to the next SYN_REPORT is unreliable; after it, the device's own
+            // state is the truth to re-sync from. Forwarding on regardless left a lost release stuck.
+            if (event->type == EV_SYN && event->code == SYN_DROPPED) {
+                s.source_dropped = 1;
                 continue;
             }
-
-            // Track Select/Start/R3 for both combos, regardless of which feature is enabled.
-            if (event->type == EV_KEY) {
-                update_combo_tracking(&s, event);
-            }
-
-            if (handle_home_button(&s, event)) {
-                continue;
-            }
-
-            handle_kill_combo_event(&s, event);
-
-            if (s.mouse.mode) {
-                // The pointer reports back what it cannot do itself. R1 asks for the notification
-                // shade because a mouse has no way to drag it down; the commands are idempotent
-                // enough that a stale view of it just costs the user one extra press.
-                if (mouse_handle_event(&s.mouse, event) == MOUSE_ACTION_TOGGLE_SHADE) {
-                    run_detached(s.shade_open ? "cmd statusbar collapse"
-                                              : "cmd statusbar expand-notifications");
-                    s.shade_open = !s.shade_open;
+            if (s.source_dropped) {
+                if (event->type == EV_SYN && event->code == SYN_REPORT) {
+                    s.source_dropped = 0;
+                    if (resync_source(&s) != 0) {
+                        fprintf(stderr, "Write error to %s: %s\n", target_path, strerror(errno));
+                        fatal_write_error = 1;
+                        break;
+                    }
                 }
                 continue;
             }
 
-            if (forward_event(&s, event) != 0) {
+            if (handle_source_event(&s, event) != 0) {
                 fprintf(stderr, "Write error to %s: %s\n", target_path, strerror(errno));
                 fatal_write_error = 1;
                 break;
@@ -1059,6 +1188,14 @@ int main(int argc, char **argv) {
         } else {
             unlink(hidden_state_path);
         }
+    }
+
+    // Every exit from the loop lands here: a stop signal, the source going away, a read error. The
+    // target is the internal pad and outlives us, so anything still held on it would stay held into
+    // handheld play. Skipped in mouse mode, which released on entry and forwards nothing since. After
+    // a fatal target write error these writes just fail too; there is nothing else left to try.
+    if (!s.mouse.mode) {
+        release_target_holds(&s);
     }
 
     if (ioctl(s.source_fd, EVIOCGRAB, 0) < 0) {

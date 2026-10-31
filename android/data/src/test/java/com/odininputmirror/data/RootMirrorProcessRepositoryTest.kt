@@ -137,6 +137,12 @@ class RootMirrorProcessRepositoryTest {
         assertTrue(command.contains("[ \"\$2\" = '/dev/input/event9' ]"))
         assertTrue(command.contains("[ \"\$3\" = '/dev/input/event2' ]"))
         assertTrue(command.contains("kill -TERM \$p"))
+        // Cleanup of the old pid/heartbeat sits between the guard and the launch: before the guard
+        // it would take the heartbeat away from a daemon the guard keeps, and its watchdog would
+        // shut it down a few seconds later.
+        val cleanup = command.indexOf("rm -f '${files.pidFile.absolutePath}' '${files.heartbeatFile.absolutePath}'")
+        assertTrue(cleanup > command.indexOf("exit 0"))
+        assertTrue(cleanup < command.indexOf("nice -n -20"))
         assertTrue(command.contains("'/dev/input/event9' '/dev/input/event2'"))
         assertTrue(command.contains(" --home-mode 1"))
         assertTrue(command.contains(" --combo-hold-kill-app"))
@@ -151,6 +157,25 @@ class RootMirrorProcessRepositoryTest {
         val cleared = command.indexOf("rm -f '${files.pidFile.absolutePath}' '${files.heartbeatFile.absolutePath}'")
         assertTrue(cleared > command.indexOf("exit 0"))
         assertTrue(cleared < command.indexOf("nice -n -20"))
+    }
+
+    @Test
+    fun startLeavesALiveDaemonsHeartbeatAlone() {
+        // The shell guard decides whether a daemon survives; the app must not have deleted its
+        // heartbeat before that decision is made.
+        writeHeartbeat(ageMs = 1_000L)
+
+        repository.start(
+            MirrorStartRequest(
+                source = "/dev/input/event9",
+                target = "/dev/input/event2",
+                homeMode = HomeButtonMode.HOME,
+                comboHoldKillApp = false,
+                virtualMouse = false,
+            )
+        )
+
+        assertTrue(files.heartbeatFile.exists())
     }
 
     @Test
