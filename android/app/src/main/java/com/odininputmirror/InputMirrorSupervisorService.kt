@@ -107,6 +107,16 @@ class InputMirrorSupervisorService : Service() {
             return
         }
 
+        // A root daemon outlives the app, so after an update the previous binary keeps running and
+        // a matching daemon is never restarted. Extracting the shipped one says whether it changed;
+        // if it did, whatever is running is stale. Here rather than on MY_PACKAGE_REPLACED, which a
+        // force-stopped app never receives.
+        if (runCatching { graph.processRepository.refreshBinary() }.getOrDefault(false) &&
+            runCatching { graph.processRepository.isRunning() }.getOrDefault(false)
+        ) {
+            runCatching { graph.stopMirror() }
+        }
+
         var nextRestartAllowedAt = 0L
         var nextStartRetryAllowedAt = 0L
         var sleepMs = SUPERVISOR_INTERVAL_MS
@@ -116,12 +126,13 @@ class InputMirrorSupervisorService : Service() {
                 val now = System.currentTimeMillis()
                 val settings = graph.settingsRepository.getSettings()
                 val dockActive = graph.dockStateRepository.isDockActive()
+                val mirrorAllowed = dockActive || settings.mirrorWhenHandheld
                 // Enumerate controllers only when the result is actually consumed: docked (the
                 // auto-mirror decision below reads the list) or the UI is on-screen (it renders the
                 // list for setup). Undocked with the UI hidden, this is the one privileged PServer
                 // call per tick that nobody reads — skip it so a pocketed handheld isn't spawning a
                 // subprocess every idle tick. The undocked decision uses an empty list regardless.
-                val allDevices = if (dockActive || MirrorStateStore.uiVisible) {
+                val allDevices = if (mirrorAllowed || MirrorStateStore.uiVisible) {
                     graph.inputDeviceRepository.getConnectedControllers()
                 } else {
                     emptyList()
@@ -152,7 +163,7 @@ class InputMirrorSupervisorService : Service() {
                     MirrorStateStore.awaitNextTick(SUPERVISOR_INTERVAL_MS)
                     continue
                 }
-                val devices = if (dockActive) allDevices else emptyList()
+                val devices = if (mirrorAllowed) allDevices else emptyList()
                 val decision = graph.resolveAutoMirrorDecision(
                     dockActive = dockActive,
                     devices = devices,
@@ -321,7 +332,7 @@ class InputMirrorSupervisorService : Service() {
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Mirror supervisor",
+                "Control Switch",
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
@@ -335,7 +346,7 @@ class InputMirrorSupervisorService : Service() {
         val pendingIntent = PendingIntent.getActivity(this, 0, launchIntent, pendingIntentFlags)
 
         return builder
-            .setContentTitle("Docking Enhancer")
+            .setContentTitle("Control Switch")
             .setContentText(state.notificationText)
             .setSmallIcon(R.drawable.ic_stat_mirror)
             .setOngoing(true)
@@ -345,17 +356,17 @@ class InputMirrorSupervisorService : Service() {
 
     private enum class SupervisorState(val notificationText: String) {
         WaitingForDock("Waiting for external display"),
-        Disabled("Automatic mirror disabled"),
+        Disabled("Automatic mirroring disabled"),
         // Device-neutral wording: support is gated on the PServerBinder service existing, not on a
         // model list, so naming one handheld here would be wrong on any other that qualifies.
         WaitingForInternalController("Waiting for built-in controller"),
         WaitingForExternalController("Waiting for external controller"),
         PickingPlayer1("Press L + R on the controller you want to use"),
-        Starting("Starting dock mirror"),
-        Active("Dock mirror active"),
-        Restarting("Restarting dock mirror"),
-        MirrorStartFailed("Could not start the mirror"),
-        Error("Mirror supervisor error"),
+        Starting("Starting mirroring"),
+        Active("Controller mirroring enabled"),
+        Restarting("Restarting mirroring"),
+        MirrorStartFailed("Could not start mirroring"),
+        Error("Mirroring error"),
     }
 
     companion object {

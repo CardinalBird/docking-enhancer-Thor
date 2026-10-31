@@ -1,6 +1,9 @@
 package com.odininputmirror.ui
 
 import com.odininputmirror.domain.model.HomeButtonMode
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.view.InputDevice
 import android.content.Intent
@@ -10,9 +13,11 @@ import androidx.lifecycle.viewModelScope
 import com.odininputmirror.BuildConfig
 import com.odininputmirror.InputMirrorSupervisorService
 import com.odininputmirror.MirrorStateStore
+import com.odininputmirror.R
 import com.odininputmirror.data.InputMirrorGraph
 import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.domain.model.MappingKey
+import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStatus
 import com.odininputmirror.domain.model.findSavedControllerDevice
 import com.odininputmirror.domain.model.pickExternal
@@ -52,6 +57,11 @@ data class MirrorUiState(
     val player1Name: String? = null,
     val player1Path: String? = null,
     val pickingPlayer1: Boolean = false,
+    // The pad that pressed L + R on the picker, waiting for A. Nothing is saved until then.
+    val pendingPlayer1Name: String? = null,
+    val pendingPlayer1Path: String? = null,
+    // Mirror handheld too, not only when docked.
+    val mirrorWhenHandheld: Boolean = false,
 ) {
     // On a recognised handheld (e.g. Odin) the native layer flags the internal controller by
     // hardware signature and locks it. Otherwise the internal defaults to the first detected
@@ -88,7 +98,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     fun openMappingEditor() {
         val device = _state.value.externalDevice ?: return
         val key = device.mappingKey ?: return
-        mappingEditor.open(device.name, key)
+        mappingEditor.open(device.name, key, _state.value.localDevice?.name)
     }
 
     init {
@@ -183,6 +193,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 homeMode = saved.homeMode,
                 comboHoldKillApp = saved.comboHoldKillApp,
                 virtualMouse = saved.virtualMouse,
+                mirrorWhenHandheld = saved.mirrorWhenHandheld,
                 autoMirrorEnabled = status.autoMirrorEnabled,
                 restartWaiting = status.expectedRunning && !status.running,
                 docked = status.docked,
@@ -192,7 +203,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 // otherwise wear them out of the box.
                 mappedControlCount = externalDevice?.mappingKey?.let(::mappedCountFor),
                 hasSeededMapping = externalDevice?.mappingKey?.let(::isSeededFor) ?: false,
-                message = buildStatusMessage(status, available),
+                message = buildStatusMessage(status, available, saved),
             )
         }
     }
@@ -276,7 +287,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 _state.update {
                     it.copy(
                         enabled = if (nextValue) it.enabled else false,
-                        message = if (nextValue) "Automatic dock mirror is enabled." else "Automatic dock mirror is disabled.",
+                        message = if (nextValue) "Mirroring turned on." else "Mirroring turned off.",
                     )
                 }
             } catch (error: Exception) {
@@ -289,18 +300,49 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
 
     fun openPlayer1Picker() {
         MirrorStateStore.setPickingPlayer1(true)
-        _state.update { it.copy(pickingPlayer1 = true) }
+        _state.update { it.copy(pickingPlayer1 = true, pendingPlayer1Name = null, pendingPlayer1Path = null) }
     }
 
     fun closePlayer1Picker() {
         MirrorStateStore.setPickingPlayer1(false)
-        _state.update { it.copy(pickingPlayer1 = false) }
+        _state.update { it.copy(pickingPlayer1 = false, pendingPlayer1Name = null, pendingPlayer1Path = null) }
+    }
+
+    /** A on the picker: the staged pad becomes player 1, and the picker closes. */
+    fun confirmPlayer1() {
+        val current = _state.value
+        val name = current.pendingPlayer1Name ?: return
+        val path = current.pendingPlayer1Path
+        _state.update { it.copy(player1Name = name, player1Path = path) }
+        viewModelScope.launch {
+            // Saved BEFORE the picker closes: closing wakes the supervisor, and a tick that read the
+            // settings first would start the previous player 1.
+            withContext(Dispatchers.IO) { graph.settingsRepository.setPlayer1(name, path) }
+            closePlayer1Picker()
+            notifyControlsSwitched(name)
+        }
+    }
+
+    // One-shot and self-dismissing, on its own channel so muting it leaves the supervisor's alone.
+    private fun notifyControlsSwitched(name: String) {
+        val manager = appContext.getSystemService(NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(SWITCHED_CHANNEL_ID, "Controls switched", NotificationManager.IMPORTANCE_DEFAULT),
+        )
+        val notification = Notification.Builder(appContext, SWITCHED_CHANNEL_ID)
+            .setContentTitle("Controls switched")
+            .setContentText("$name is player 1.")
+            .setSmallIcon(R.drawable.ic_stat_mirror)
+            .setAutoCancel(true)
+            .setTimeoutAfter(SWITCHED_TIMEOUT_MS)
+            .build()
+        manager.notify(SWITCHED_NOTIFICATION_ID, notification)
     }
 
     /**
      * A pad pressed L + R. Matched to its device by Android's player number, which is per pad, so two
      * identical pads stay apart; a pad without a number (0) falls back to its name alone. The built-in
-     * pad can't be its own source, so its press is ignored.
+     * pad can't be its own source, so its press is ignored. Only stages the pick: A confirms it.
      */
     fun choosePlayer1(pad: InputDevice) {
         val name = pad.name
@@ -313,7 +355,9 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
             val device = _state.value.devices.byNumber()
                 ?: runCatching { withContext(Dispatchers.IO) { graph.getConnectedDevices() } }.getOrNull()?.byNumber()
             if (device?.isInternal == true || name.equals(_state.value.localDevice?.name, ignoreCase = true)) return@launch
-            setPlayer1(device?.name ?: name, device?.path)
+            // The lookup above can outlive the picker.
+            if (!_state.value.pickingPlayer1) return@launch
+            _state.update { it.copy(pendingPlayer1Name = device?.name ?: name, pendingPlayer1Path = device?.path) }
         }
     }
 
@@ -358,6 +402,19 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         }
     }
 
+    fun setMirrorWhenHandheld(nextValue: Boolean) {
+        if (_state.value.busy) return
+        _state.update { it.copy(mirrorWhenHandheld = nextValue) }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { graph.settingsRepository.setMirrorWhenHandheld(nextValue) }
+                MirrorStateStore.wake()
+            } catch (error: Exception) {
+                _state.update { it.copy(mirrorWhenHandheld = !nextValue, message = error.message ?: error.toString()) }
+            }
+        }
+    }
+
     // Guarded like MainApplication's: this runs after an IO hop, and if the app went to the
     // background meanwhile the framework refuses a foreground start with an exception that would
     // otherwise take the whole process down. The next time the screen opens, it tries again.
@@ -368,13 +425,14 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
         }
     }
 
-    private fun buildStatusMessage(status: MirrorStatus, devices: List<ControllerDevice>): String = when {
-        status.running -> "Dock mirror active."
-        !status.autoMirrorEnabled -> "Automatic dock mirror is disabled."
+    private fun buildStatusMessage(status: MirrorStatus, devices: List<ControllerDevice>, saved: MirrorSettings): String = when {
+        status.running -> "Controller mirroring enabled."
+        !status.autoMirrorEnabled -> "Mirroring is off."
         devices.none { it.isInternal } -> "Waiting for the built-in controller."
-        devices.none { !it.isInternal } -> "Waiting for an external controller."
-        status.expectedRunning -> "Controller detected. Mirror will start automatically."
-        else -> "Automatic dock mirror is ready."
+        devices.none { !it.isInternal } -> "Waiting for a controller."
+        status.expectedRunning -> "Controller detected. Mirroring will start automatically."
+        !status.docked && !saved.mirrorWhenHandheld -> "Mirroring starts when you dock."
+        else -> "Ready to mirror."
     }
 
     private fun savedIdentityMatches(path: String?, guid: String?, device: ControllerDevice): Boolean =
@@ -397,6 +455,11 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
     }
 
     companion object {
+        private const val SWITCHED_CHANNEL_ID = "controls_switched"
+        // Clear of the supervisor's 1001.
+        private const val SWITCHED_NOTIFICATION_ID = 1002
+        private const val SWITCHED_TIMEOUT_MS = 4_000L
+
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =

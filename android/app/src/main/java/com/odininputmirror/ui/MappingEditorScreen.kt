@@ -1,21 +1,15 @@
 package com.odininputmirror.ui
 
-import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -42,14 +36,19 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.odininputmirror.domain.model.MappingSlot
+import com.odininputmirror.domain.model.PadLayout
 import com.odininputmirror.ui.theme.Palette
 import kotlinx.coroutines.delay
 
 /**
- * The mapping editor: every slot, what it currently reads, and nothing you are forced to do.
+ * The mapping editor: one flat list of every slot and what it currently reads, with the auto-map
+ * presets above it and "Map all" (Y) to walk the whole list one press at a time.
  *
  * A screen rather than a dialog because it is the only thing the user is doing, and the controller is
  * busy answering it rather than driving the app behind. Back leaves.
+ *
+ * [controller] carries what the original callbacks do not: the walk, the presets, and listening for
+ * a press in the app while the mirror is off. Without it those parts are simply not offered.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -60,10 +59,11 @@ fun MappingEditorScreen(
     onCancelBind: () -> Unit,
     onClearAll: () -> Unit,
     onClose: () -> Unit,
+    controller: MappingEditorController? = null,
 ) {
     // Back means "close the overlay" while one is up, and "leave" otherwise — anything else would
     // make the overlay a trap, since the pad that would normally dismiss it is the one being captured.
-    BackHandler { if (state.capturing != null) onCancelBind() else onClose() }
+    BackHandler(enabled = state.open) { if (state.capturing != null) onCancelBind() else onClose() }
 
     // One anchor per row, and a memory of which row opened the overlay.
     //
@@ -87,27 +87,25 @@ fun MappingEditorScreen(
     var restoreTo by remember { mutableStateOf<Int?>(null) }
     // Where focus really is, as the rows report it: requestFocus() says nothing about whether it took.
     var focusedSlot by remember { mutableStateOf(-1) }
-    // Group rows select on focus, except for a moment after the overlay closes, when focus lands on
-    // the first group in passing before it is sent back to the row.
-    var groupFocusQuietUntil by remember { mutableStateOf(0L) }
-
-    val groups = state.slots.map { it.group }.distinct()
-    var selectedGroup by remember { mutableStateOf(groups.firstOrNull()) }
 
     // Closing the overlay hands the row back. Also fires on the very first composition, with the
     // default of row zero, which is the initial anchor the D-pad needs.
     LaunchedEffect(state.capturing) {
-        if (state.capturing == null) {
-            groupFocusQuietUntil = SystemClock.uptimeMillis() + GROUP_FOCUS_QUIET_MS
-            restoreTo = focusedRow
-        }
+        if (state.capturing == null) restoreTo = focusedRow
+    }
+
+    // With the mirror off the daemon cannot listen, so the app does.
+    if (controller != null) {
+        PadCaptureEffect(
+            active = state.capturing != null && state.listenInApp,
+            internalPadName = state.internalPadName,
+            axisLabels = controller::axisLabels,
+            onCaptured = controller::captured,
+        )
     }
 
     LaunchedEffect(restoreTo, state.slots.size) {
         val target = restoreTo ?: return@LaunchedEffect
-        // Show the row's group first. Closing the overlay drops focus, Compose hands it to the first
-        // group row, and that switches the pane, so the row being returned to would not exist.
-        state.slots.getOrNull(target)?.let { selectedGroup = it.group }
         repeat(12) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
             rowFocus.getOrNull(target)?.let { runCatching { it.requestFocus() } }
@@ -129,8 +127,8 @@ fun MappingEditorScreen(
     Box(
         modifier = Modifier.fillMaxSize().background(Palette.screen).onPreviewKeyEvent {
             // Both halves: Android turns an unhandled Y press into Back.
-            if (it.key != Key.ButtonY || state.capturing != null) return@onPreviewKeyEvent false
-            if (it.type == KeyEventType.KeyUp) onClearAll()
+            if (it.key != Key.ButtonY || state.capturing != null || controller == null) return@onPreviewKeyEvent false
+            if (it.type == KeyEventType.KeyUp) controller.mapAll()
             true
         },
     ) {
@@ -141,9 +139,9 @@ fun MappingEditorScreen(
                     if (state.seeded) {
                         // A known pad arrives already mapped from its profile; the editor's job then is
                         // adjustment, and saying so stops "why is everything filled in?" cold.
-                        "${state.controllerName} — mapped from its profile. Change anything that feels wrong."
+                        "${state.controllerName} · set from its profile. Pick a button to change it, or map them all in turn."
                     } else {
-                        "${state.controllerName} — anything without a binding is forwarded as the pad reports it."
+                        "${state.controllerName} · buttons left unbound work as the controller reports them."
                     },
                     color = Palette.textSecondary,
                     fontSize = 14.sp,
@@ -151,43 +149,37 @@ fun MappingEditorScreen(
             }
             Rule(Modifier.padding(horizontal = 28.dp))
 
-            Row(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
-                // Groups: moving focus here switches the rows on the right, as in Switch settings.
-                Column(Modifier.weight(0.45f).verticalScroll(rememberScrollState()).padding(vertical = 12.dp)) {
-                    groups.forEach { group ->
-                        GroupRow(group, selected = group == selectedGroup, onFocus = {
-                            if (SystemClock.uptimeMillis() >= groupFocusQuietUntil) selectedGroup = group
-                        })
-                    }
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(listScroll)
+                    .padding(horizontal = 28.dp, vertical = 12.dp),
+            ) {
+                if (controller != null) {
+                    ActionRow("Auto-map: Xbox layout", "A B X Y as printed on an Xbox pad") { controller.autoMap(PadLayout.XBOX) }
+                    ActionRow("Auto-map: Nintendo layout", "A B X Y as printed on a Switch pad") { controller.autoMap(PadLayout.NINTENDO) }
                 }
-                Box(Modifier.fillMaxHeight().width(1.dp).padding(vertical = 12.dp).background(Palette.border))
-                Column(
-                    modifier = Modifier.weight(1f).verticalScroll(listScroll).padding(start = 16.dp, top = 12.dp, bottom = 12.dp),
-                ) {
-                    state.slots.forEachIndexed { index, slot ->
-                        if (slot.group != selectedGroup) return@forEachIndexed
-                        SlotRow(
-                            slot = slot,
-                            source = state.bindings[slot.target],
-                            onBind = {
-                                focusedRow = index
-                                // Recorded HERE, which is the whole trick: by the time the overlay closes
-                                // the list has already been scrolled by the focus move, so the position
-                                // worth returning to is the one from the instant before it opened.
-                                scrollWhenOpened = listScroll.value
-                                onBind(slot)
-                            },
-                            onClear = {
-                                focusedRow = index
-                                scrollWhenOpened = listScroll.value
-                                onClear(slot)
-                                restoreTo = index
-                            },
-                            modifier = Modifier
-                                .focusRequester(rowFocus[index])
-                                .onFocusChanged { if (it.isFocused) focusedSlot = index },
-                        )
-                    }
+                ActionRow("Reset to profile", "Back to how this controller came", onClearAll)
+                state.slots.forEachIndexed { index, slot ->
+                    SlotRow(
+                        slot = slot,
+                        source = state.bindings[slot.target],
+                        onBind = {
+                            focusedRow = index
+                            // Recorded HERE, which is the whole trick: by the time the overlay closes
+                            // the list has already been scrolled by the focus move, so the position
+                            // worth returning to is the one from the instant before it opened.
+                            scrollWhenOpened = listScroll.value
+                            onBind(slot)
+                        },
+                        onClear = {
+                            focusedRow = index
+                            scrollWhenOpened = listScroll.value
+                            onClear(slot)
+                            restoreTo = index
+                        },
+                        modifier = Modifier
+                            .focusRequester(rowFocus[index])
+                            .onFocusChanged { if (it.isFocused) focusedSlot = index },
+                    )
                 }
             }
 
@@ -204,10 +196,10 @@ fun MappingEditorScreen(
                 )
                 Box(Modifier.weight(2f)) {
                     HintBar(
-                        hints = listOf(
+                        hints = listOfNotNull(
                             HintAction(PromptGlyph.A, "Rebind", null),
                             HintAction(PromptGlyph.X, "Clear", null),
-                            HintAction(PromptGlyph.Y, "Clear all", onClearAll),
+                            controller?.let { HintAction(PromptGlyph.Y, "Map all", it::mapAll) },
                             HintAction(PromptGlyph.B, "Done", onClose),
                         ),
                     )
@@ -221,9 +213,10 @@ fun MappingEditorScreen(
                 source = state.bindings[state.capturing.target],
                 notice = state.notice,
                 onCancel = onCancelBind,
+                // "3 of 26": the walk's place, counted from one.
+                progress = state.walk?.let { "${it + 1} of ${state.slots.size}" },
+                onStop = controller?.let { it::stopWalk }.takeIf { state.walk != null },
             )
         }
     }
 }
-
-private const val GROUP_FOCUS_QUIET_MS = 300L

@@ -15,11 +15,12 @@ rm -rf $TMP; mkdir -p $TMP
 # Root when the firmware has su (Odin); the Thor ships none and the shell user is enough here.
 if command -v su >/dev/null 2>&1; then as_root() { su -c "$1"; }; else as_root() { sh -c "$1"; }; fi
 am force-stop com.odininputmirror 2>/dev/null
+am force-stop com.controlswitch 2>/dev/null
 P=$(pidof input_mirror); [ -n "$P" ] && as_root "kill -KILL $P" 2>/dev/null
 sleep 0.5
 
 # Without su the app's private copy is unreadable; build-harness.sh pushes the same committed binary.
-if ! as_root "cp /data/data/com.odininputmirror/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
+if ! as_root "cp /data/data/com.controlswitch/files/bin/input_mirror $MIRROR && chmod 755 $MIRROR" 2>/dev/null &&
     ! [ -x $MIRROR ]; then
     echo "ABORT: no pude copiar el daemon (esta instalada la app?)"
     exit 1

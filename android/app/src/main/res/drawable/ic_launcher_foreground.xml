@@ -1,83 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Launcher icon, after the Cocoon Shell theme on the Thor: a dark tile with a glowing gradient
-     outline (orange into pink, the app's accent) and the pad-on-a-dock mark drawn as glowing line work.
-     Vector drawables have no blur, so each glow is the same stroke repeated wider and fainter. -->
+<!-- Launcher icon: a white line-drawn pad between two opposing arrows, read as "switching".
+     Everything sits inside the 66dp safe circle; strokes stay >= 2dp so it holds up at 48dp.
+     Also the themed-icon (monochrome) layer: the launcher only uses its shapes. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Sized so the tile and its glow fit a circular mask as well as a square one. -->
-    <group android:scaleX="0.8125" android:scaleY="0.8125" android:pivotX="54" android:pivotY="54">
-    <path android:fillColor="#FF0E0E14" android:pathData="M35,22H73A13,13 0,0 1,86,35V73A13,13 0,0 1,73,86H35A13,13 0,0 1,22,73V35A13,13 0,0 1,35,22Z" />
     <path
-        android:pathData="M35,22H73A13,13 0,0 1,86,35V73A13,13 0,0 1,73,86H35A13,13 0,0 1,22,73V35A13,13 0,0 1,35,22Z"
-        android:strokeWidth="9"
-        android:strokeAlpha="0.1"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear" android:startX="22" android:startY="22" android:endX="86" android:endY="86"
-                android:startColor="#FFFF8A1F" android:endColor="#FFFF3D7F" />
-        </aapt:attr>
-    </path>
-    <path
-        android:pathData="M35,22H73A13,13 0,0 1,86,35V73A13,13 0,0 1,73,86H35A13,13 0,0 1,22,73V35A13,13 0,0 1,35,22Z"
-        android:strokeWidth="5"
-        android:strokeAlpha="0.22"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear" android:startX="22" android:startY="22" android:endX="86" android:endY="86"
-                android:startColor="#FFFF8A1F" android:endColor="#FFFF3D7F" />
-        </aapt:attr>
-    </path>
-    <path
-        android:pathData="M35,22H73A13,13 0,0 1,86,35V73A13,13 0,0 1,73,86H35A13,13 0,0 1,22,73V35A13,13 0,0 1,35,22Z"
-        android:strokeWidth="1.8"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear" android:startX="22" android:startY="22" android:endX="86" android:endY="86"
-                android:startColor="#FFFF8A1F" android:endColor="#FFFF3D7F" />
-        </aapt:attr>
-    </path>
-    <path
-        android:pathData="M38,41h32c6.5,0 10.5,4.5 11.5,11l1.5,10c0.8,5 -3.5,8 -7.5,5.5l-6,-4.5H38.5l-6,4.5c-4,2.5 -8.3,-0.5 -7.5,-5.5l1.5,-10c1,-6.5 5,-11 11.5,-11z"
+        android:pathData="M38,42H70C76,42 79,46 80,52L82,63C83,69 78,71 75,68L70,64H38L33,68C30,71 25,69 26,63L28,52C29,46 32,42 38,42ZM35,50a3,3 0,1 0,6 0a3,3 0,1 0,-6 0M59,57a3,3 0,1 0,6 0a3,3 0,1 0,-6 0M46,53.5v7M42.5,57h7M40,35Q54,26 68,35M66.1,30.4L68,35L63,35.2M68,73Q54,82 40,73M41.9,77.6L40,73L45,72.8"
         android:strokeColor="#FFFFFFFF"
-        android:strokeAlpha="0.12"
-        android:strokeWidth="6"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
-        android:pathData="M38,41h32c6.5,0 10.5,4.5 11.5,11l1.5,10c0.8,5 -3.5,8 -7.5,5.5l-6,-4.5H38.5l-6,4.5c-4,2.5 -8.3,-0.5 -7.5,-5.5l1.5,-10c1,-6.5 5,-11 11.5,-11z"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="3"
-        android:strokeLineJoin="round" />
-    <path
-        android:pathData="M37,51.5h8M41,47.5v8"
-        android:strokeColor="#FFFFFFFF"
-        android:strokeWidth="2.6"
-        android:strokeLineCap="round" />
-    <path android:fillColor="#FFFF8A1F" android:pathData="M65.1,49.5a1.9,1.9 0,1 0,3.8 0a1.9,1.9 0,1 0,-3.8 0z" />
-    <path android:fillColor="#FFFF3D7F" android:pathData="M69.6,53.5a1.9,1.9 0,1 0,3.8 0a1.9,1.9 0,1 0,-3.8 0z" />
-    <path
-        android:pathData="M37,75h34"
-        android:strokeWidth="9"
-        android:strokeAlpha="0.18"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear" android:startX="22" android:startY="22" android:endX="86" android:endY="86"
-                android:startColor="#FFFF8A1F" android:endColor="#FFFF3D7F" />
-        </aapt:attr>
-    </path>
-    <path
-        android:pathData="M37,75h34"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round">
-        <aapt:attr name="android:strokeColor">
-            <gradient android:type="linear" android:startX="22" android:startY="22" android:endX="86" android:endY="86"
-                android:startColor="#FFFF8A1F" android:endColor="#FFFF3D7F" />
-        </aapt:attr>
-    </path>
-    </group>
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M68.5,46.5a1.5,1.5 0,1 0,3 0a1.5,1.5 0,1 0,-3 0M68.5,53.5a1.5,1.5 0,1 0,3 0a1.5,1.5 0,1 0,-3 0M65,50a1.5,1.5 0,1 0,3 0a1.5,1.5 0,1 0,-3 0M72,50a1.5,1.5 0,1 0,3 0a1.5,1.5 0,1 0,-3 0" />
 </vector>

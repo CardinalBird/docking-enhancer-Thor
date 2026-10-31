@@ -11,14 +11,19 @@ fun List<ControllerDevice>.lockedPlayer1(name: String?, path: String?): Controll
         ?: firstOrNull { it.name.equals(name, ignoreCase = true) }
 }
 
-/** The external pad to mirror: the locked player 1 when it is connected, otherwise the first external. */
+/**
+ * The external pad to mirror. With a player 1 locked in, only that pad: an absent lock mirrors
+ * nothing, so a stray pad can never take over a slot the user assigned. Without a lock, the first
+ * external.
+ */
 fun List<ControllerDevice>.pickExternal(
     local: ControllerDevice?,
     player1Name: String?,
     player1Path: String? = null,
 ): ControllerDevice? {
     val externals = filter { !it.isInternal && (local == null || !it.isSamePhysicalControllerAs(local)) }
-    return externals.lockedPlayer1(player1Name, player1Path) ?: externals.firstOrNull()
+    if (player1Name != null) return externals.lockedPlayer1(player1Name, player1Path)
+    return externals.firstOrNull()
 }
 
 private fun ControllerDevice.isSamePhysicalControllerAs(other: ControllerDevice): Boolean =

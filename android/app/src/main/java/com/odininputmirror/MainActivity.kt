@@ -34,6 +34,11 @@ class MainActivity : ComponentActivity() {
     var onLPlusR: ((InputDevice) -> Unit)? = null
     private val shouldersHeld = mutableMapOf<Int, Int>()  // deviceId -> bits: 1 = L, 2 = R
 
+    // Set while the mapping editor listens for a press in the app (mirror off). Asked first; true
+    // swallows the event.
+    var onPadCapture: ((KeyEvent) -> Boolean)? = null
+    var onPadMotion: ((MotionEvent) -> Boolean)? = null
+
     private val handler = Handler(Looper.getMainLooper())
 
     private var stickY = 0f
@@ -89,6 +94,7 @@ class MainActivity : ComponentActivity() {
     // platform Activity method, overridden, and the androidx restriction does not apply.
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (onPadCapture?.invoke(event) == true) return true
         val picker = onLPlusR
         val bit = when (event.keyCode) {
             KeyEvent.KEYCODE_BUTTON_L1 -> 1
@@ -118,9 +124,11 @@ class MainActivity : ComponentActivity() {
     //    and status text — reachable, and keeps the page scrollable even while the mirror locks
     //    every control except the primary button (when focus navigation has nowhere to go).
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (onPadMotion?.invoke(event) == true) return true
         if (event.isFromSource(InputDevice.SOURCE_JOYSTICK) && event.action == MotionEvent.ACTION_MOVE) {
             handleStickScroll(event.getAxisValue(MotionEvent.AXIS_RZ))
-            handleFocusNav(event)
+            // Not while capturing: a stick push there is a binding, not a focus move.
+            if (onPadMotion == null) handleFocusNav(event)
             return true
         }
         return super.onGenericMotionEvent(event)

@@ -1,5 +1,5 @@
 /*
- * vgamepad — a scriptable synthetic gamepad for the Docking Enhancer e2e suite.
+ * vgamepad — a scriptable synthetic gamepad for the Control Switch e2e suite.
  *
  * Why this exists: every meaningful test of the mirror needs a controller, and driving one by hand
  * makes the suite unrepeatable — the physical pad sleeps mid-run, its event node renumbers, and no
@@ -49,6 +49,8 @@ static const int KEYS[] = {
     BTN_TL, BTN_TR, BTN_TL2, BTN_TR2,
     BTN_SELECT, BTN_START, BTN_MODE,
     BTN_THUMBL, BTN_THUMBR,
+    // The Thor pad declares these too; Home/Back mapping targets land on them.
+    KEY_HOME, KEY_BACK, KEY_APPSELECT,
 };
 
 static const int AXES[] = { ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ, ABS_HAT0X, ABS_HAT0Y };

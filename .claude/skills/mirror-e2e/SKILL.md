@@ -1,7 +1,7 @@
 ---
 name: mirror-e2e
 description: >
-  End-to-end test suite for the Docking Enhancer mirror, run against synthetic controllers on a
+  End-to-end test suite for the Control Switch mirror, run against synthetic controllers on a
   real handheld. Covers event forwarding, hiding and restoring the external pad, orphan recovery,
   the owner watchdog, and the refusal to unlink the wrong device. Use when changing input_mirror.c,
   the hide/restore or heal paths, the supervisor lifecycle, or before shipping a release — and
@@ -113,7 +113,7 @@ missing SELinux label, which is invisible to `ls`.
 The suite stops at the daemon boundary; the supervisor, the UI and the physical pad need a person.
 Run these against a debug build with `FORCE_DOCK_MODE_FOR_DEV = true` (and set it back before
 committing). Watch the system side with `pidof input_mirror`, `dumpsys input | grep -i 8bitdo`, and
-`run-as com.odininputmirror cat files/input_mirror.hidden`.
+`run-as com.controlswitch cat files/input_mirror.hidden`.
 
 1. **Auto-start** — with Automatic Mirror on, wake the pad. The mirror should start on its own, hide
    the pad, and beat its heartbeat.

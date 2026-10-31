@@ -3,14 +3,11 @@ package com.odininputmirror.domain.model
 /**
  * One slot the user can point a control at: what the target should be told, and what to call it.
  *
- * The list of slots is the whole editor. Nothing here is a step in a sequence — a slot with no
- * binding is not "unfinished", it is a control forwarded exactly as the pad reports it, which is the
- * right answer for most slots on most pads. Only the ones that are wrong need touching.
+ * The list of slots is the whole editor. A slot with no binding is not "unfinished", it is a control
+ * forwarded exactly as the pad reports it, which is the right answer for most slots on most pads.
  */
 data class MappingSlot(
     val label: String,
-    /** Which heading this sits under. Only for grouping the list. */
-    val group: String,
     val target: ControlRef,
     /** Which control this is on the pad, for the list to draw. */
     val icon: SlotIcon,
@@ -29,6 +26,8 @@ enum class SlotIcon {
     LEFT_STICK_UP, LEFT_STICK_DOWN, LEFT_STICK_LEFT, LEFT_STICK_RIGHT, LEFT_STICK_CLICK,
     RIGHT_STICK_UP, RIGHT_STICK_DOWN, RIGHT_STICK_LEFT, RIGHT_STICK_RIGHT, RIGHT_STICK_CLICK,
     VIEW, MENU,
+    /** The handheld's own Home and Back actions, as targets for a pad button. */
+    HOME, BACK,
 }
 
 /**
@@ -67,6 +66,10 @@ private const val BTN_DPAD_UP = 0x220
 private const val BTN_DPAD_DOWN = 0x221
 private const val BTN_DPAD_LEFT = 0x222
 private const val BTN_DPAD_RIGHT = 0x223
+// Linux KEY_HOME / KEY_BACK. The daemon turns a binding aimed at these into the Android action
+// rather than writing them to the target pad.
+const val KEY_HOME = 0x66
+const val KEY_BACK = 0x9e
 
 private const val ABS_X = 0x00
 private const val ABS_Y = 0x01
@@ -139,23 +142,23 @@ fun mappingSlots(traits: TargetTraits): List<MappingSlot> {
 
     // Face buttons, lettered by the layout file.
     labelled("BUTTON_A", BTN_SOUTH)?.let {
-        slots += MappingSlot("A", FACE, ControlRef.button(it), SlotIcon.A)
+        slots += MappingSlot("A", ControlRef.button(it), SlotIcon.A)
     }
     labelled("BUTTON_B", BTN_EAST)?.let {
-        slots += MappingSlot("B", FACE, ControlRef.button(it), SlotIcon.B)
+        slots += MappingSlot("B", ControlRef.button(it), SlotIcon.B)
     }
     labelled("BUTTON_X", BTN_NORTH)?.let {
-        slots += MappingSlot("X", FACE, ControlRef.button(it), SlotIcon.X)
+        slots += MappingSlot("X", ControlRef.button(it), SlotIcon.X)
     }
     labelled("BUTTON_Y", BTN_WEST)?.let {
-        slots += MappingSlot("Y", FACE, ControlRef.button(it), SlotIcon.Y)
+        slots += MappingSlot("Y", ControlRef.button(it), SlotIcon.Y)
     }
 
     labelled("BUTTON_L1", BTN_TL)?.let {
-        slots += MappingSlot("Left bumper", SHOULDERS, ControlRef.button(it), SlotIcon.LEFT_BUMPER)
+        slots += MappingSlot("Left bumper", ControlRef.button(it), SlotIcon.LEFT_BUMPER)
     }
     labelled("BUTTON_R1", BTN_TR)?.let {
-        slots += MappingSlot("Right bumper", SHOULDERS, ControlRef.button(it), SlotIcon.RIGHT_BUMPER)
+        slots += MappingSlot("Right bumper", ControlRef.button(it), SlotIcon.RIGHT_BUMPER)
     }
 
     // Trigger axes: what the layout calls a trigger, wherever it lives.
@@ -163,37 +166,37 @@ fun mappingSlots(traits: TargetTraits): List<MappingSlot> {
     val rightTrigger = axisLabelled(traits, setOf("RTRIGGER", "GAS"), ABS_GAS)
     when {
         leftTrigger != null ->
-            slots += MappingSlot("Left trigger", SHOULDERS, ControlRef.half(leftTrigger, 1), SlotIcon.LEFT_TRIGGER)
+            slots += MappingSlot("Left trigger", ControlRef.half(leftTrigger, 1), SlotIcon.LEFT_TRIGGER)
         key(BTN_TL2) ->
-            slots += MappingSlot("Left trigger", SHOULDERS, ControlRef.button(BTN_TL2), SlotIcon.LEFT_TRIGGER)
+            slots += MappingSlot("Left trigger", ControlRef.button(BTN_TL2), SlotIcon.LEFT_TRIGGER)
     }
     when {
         rightTrigger != null ->
-            slots += MappingSlot("Right trigger", SHOULDERS, ControlRef.half(rightTrigger, 1), SlotIcon.RIGHT_TRIGGER)
+            slots += MappingSlot("Right trigger", ControlRef.half(rightTrigger, 1), SlotIcon.RIGHT_TRIGGER)
         key(BTN_TR2) ->
-            slots += MappingSlot("Right trigger", SHOULDERS, ControlRef.button(BTN_TR2), SlotIcon.RIGHT_TRIGGER)
+            slots += MappingSlot("Right trigger", ControlRef.button(BTN_TR2), SlotIcon.RIGHT_TRIGGER)
     }
 
     // D-pad: the hat when there is one, the key codes otherwise. evdev counts hat Y downward, so up
     // is the negative half.
     if (axis(ABS_HAT0X) && axis(ABS_HAT0Y)) {
-        slots += MappingSlot("D-pad up", DPAD, ControlRef.half(ABS_HAT0Y, -1), SlotIcon.DPAD_UP)
-        slots += MappingSlot("D-pad down", DPAD, ControlRef.half(ABS_HAT0Y, 1), SlotIcon.DPAD_DOWN)
-        slots += MappingSlot("D-pad left", DPAD, ControlRef.half(ABS_HAT0X, -1), SlotIcon.DPAD_LEFT)
-        slots += MappingSlot("D-pad right", DPAD, ControlRef.half(ABS_HAT0X, 1), SlotIcon.DPAD_RIGHT)
+        slots += MappingSlot("D-pad up", ControlRef.half(ABS_HAT0Y, -1), SlotIcon.DPAD_UP)
+        slots += MappingSlot("D-pad down", ControlRef.half(ABS_HAT0Y, 1), SlotIcon.DPAD_DOWN)
+        slots += MappingSlot("D-pad left", ControlRef.half(ABS_HAT0X, -1), SlotIcon.DPAD_LEFT)
+        slots += MappingSlot("D-pad right", ControlRef.half(ABS_HAT0X, 1), SlotIcon.DPAD_RIGHT)
     } else if (key(BTN_DPAD_UP)) {
-        slots += MappingSlot("D-pad up", DPAD, ControlRef.button(BTN_DPAD_UP), SlotIcon.DPAD_UP)
-        slots += MappingSlot("D-pad down", DPAD, ControlRef.button(BTN_DPAD_DOWN), SlotIcon.DPAD_DOWN)
-        slots += MappingSlot("D-pad left", DPAD, ControlRef.button(BTN_DPAD_LEFT), SlotIcon.DPAD_LEFT)
-        slots += MappingSlot("D-pad right", DPAD, ControlRef.button(BTN_DPAD_RIGHT), SlotIcon.DPAD_RIGHT)
+        slots += MappingSlot("D-pad up", ControlRef.button(BTN_DPAD_UP), SlotIcon.DPAD_UP)
+        slots += MappingSlot("D-pad down", ControlRef.button(BTN_DPAD_DOWN), SlotIcon.DPAD_DOWN)
+        slots += MappingSlot("D-pad left", ControlRef.button(BTN_DPAD_LEFT), SlotIcon.DPAD_LEFT)
+        slots += MappingSlot("D-pad right", ControlRef.button(BTN_DPAD_RIGHT), SlotIcon.DPAD_RIGHT)
     }
 
     // Sticks. Up is the axis's NEGATIVE half: evdev counts Y downward.
     if (axis(ABS_X) && axis(ABS_Y)) {
-        slots += MappingSlot("Left stick up", LEFT_STICK, ControlRef.half(ABS_Y, -1), SlotIcon.LEFT_STICK_UP)
-        slots += MappingSlot("Left stick down", LEFT_STICK, ControlRef.half(ABS_Y, 1), SlotIcon.LEFT_STICK_DOWN)
-        slots += MappingSlot("Left stick left", LEFT_STICK, ControlRef.half(ABS_X, -1), SlotIcon.LEFT_STICK_LEFT)
-        slots += MappingSlot("Left stick right", LEFT_STICK, ControlRef.half(ABS_X, 1), SlotIcon.LEFT_STICK_RIGHT)
+        slots += MappingSlot("Left stick up", ControlRef.half(ABS_Y, -1), SlotIcon.LEFT_STICK_UP)
+        slots += MappingSlot("Left stick down", ControlRef.half(ABS_Y, 1), SlotIcon.LEFT_STICK_DOWN)
+        slots += MappingSlot("Left stick left", ControlRef.half(ABS_X, -1), SlotIcon.LEFT_STICK_LEFT)
+        slots += MappingSlot("Left stick right", ControlRef.half(ABS_X, 1), SlotIcon.LEFT_STICK_RIGHT)
     }
     val taken = setOfNotNull(leftTrigger, rightTrigger)
     val rightPair = listOf(ABS_Z to ABS_RZ, ABS_RX to ABS_RY).firstOrNull { (x, y) ->
@@ -201,24 +204,28 @@ fun mappingSlots(traits: TargetTraits): List<MappingSlot> {
     }
     if (rightPair != null) {
         val (rx, ry) = rightPair
-        slots += MappingSlot("Right stick up", RIGHT_STICK, ControlRef.half(ry, -1), SlotIcon.RIGHT_STICK_UP)
-        slots += MappingSlot("Right stick down", RIGHT_STICK, ControlRef.half(ry, 1), SlotIcon.RIGHT_STICK_DOWN)
-        slots += MappingSlot("Right stick left", RIGHT_STICK, ControlRef.half(rx, -1), SlotIcon.RIGHT_STICK_LEFT)
-        slots += MappingSlot("Right stick right", RIGHT_STICK, ControlRef.half(rx, 1), SlotIcon.RIGHT_STICK_RIGHT)
+        slots += MappingSlot("Right stick up", ControlRef.half(ry, -1), SlotIcon.RIGHT_STICK_UP)
+        slots += MappingSlot("Right stick down", ControlRef.half(ry, 1), SlotIcon.RIGHT_STICK_DOWN)
+        slots += MappingSlot("Right stick left", ControlRef.half(rx, -1), SlotIcon.RIGHT_STICK_LEFT)
+        slots += MappingSlot("Right stick right", ControlRef.half(rx, 1), SlotIcon.RIGHT_STICK_RIGHT)
     }
 
     labelled("BUTTON_SELECT", BTN_SELECT)?.let {
-        slots += MappingSlot("View", OTHER, ControlRef.button(it), SlotIcon.VIEW)
+        slots += MappingSlot("View", ControlRef.button(it), SlotIcon.VIEW)
     }
     labelled("BUTTON_START", BTN_START)?.let {
-        slots += MappingSlot("Menu", OTHER, ControlRef.button(it), SlotIcon.MENU)
+        slots += MappingSlot("Menu", ControlRef.button(it), SlotIcon.MENU)
     }
     labelled("BUTTON_THUMBL", BTN_THUMBL)?.let {
-        slots += MappingSlot("Left stick click", OTHER, ControlRef.button(it), SlotIcon.LEFT_STICK_CLICK)
+        slots += MappingSlot("Left stick click", ControlRef.button(it), SlotIcon.LEFT_STICK_CLICK)
     }
     labelled("BUTTON_THUMBR", BTN_THUMBR)?.let {
-        slots += MappingSlot("Right stick click", OTHER, ControlRef.button(it), SlotIcon.RIGHT_STICK_CLICK)
+        slots += MappingSlot("Right stick click", ControlRef.button(it), SlotIcon.RIGHT_STICK_CLICK)
     }
+    // The daemon writes these to the target node (the Thor declares and maps them), so a target
+    // without them would silently drop the press: offered only when declared.
+    if (key(KEY_HOME)) slots += MappingSlot("Home", ControlRef.button(KEY_HOME), SlotIcon.HOME)
+    if (key(KEY_BACK)) slots += MappingSlot("Back", ControlRef.button(KEY_BACK), SlotIcon.BACK)
 
     return slots
 }
@@ -228,22 +235,83 @@ private fun axisLabelled(traits: TargetTraits, labels: Set<String>, fallback: In
     return code.takeIf { it in traits.axes }
 }
 
-private const val FACE = "Face buttons"
-private const val SHOULDERS = "Shoulders and triggers"
-private const val DPAD = "D-pad"
-private const val LEFT_STICK = "Left stick"
-private const val RIGHT_STICK = "Right stick"
-private const val OTHER = "Other"
-
 /**
  * How a bound control reads in the list.
  *
- * Named by its raw code, because that is all we honestly know: the source is whatever the external
- * pad chose to report, and dressing 0x130 up as "A" would be a guess of exactly the kind the user
- * came here to correct.
+ * Named by the standard evdev meaning of its code, which is what nearly every pad reports: a reader
+ * wants "A / South", not "Button 304". Both halves of a face name are given because the code says
+ * where the button sits, not what is printed on it — a Nintendo pad's A reports as East. A code with
+ * no standard meaning keeps its number.
  */
 fun describeSource(source: ControlRef): String = when (source.kind) {
-    ControlKind.BUTTON -> "Button ${source.code}"
+    ControlKind.BUTTON -> BUTTON_NAMES[source.code] ?: "Button ${source.code}"
     ControlKind.AXIS -> if (source.direction < 0) "Axis ${source.code} (inverted)" else "Axis ${source.code}"
-    ControlKind.HALF_AXIS -> "${if (source.direction < 0) "−" else "+"}Axis ${source.code}"
+    ControlKind.HALF_AXIS -> HALF_AXIS_NAMES[source.code]?.let { if (source.direction < 0) it.first else it.second }
+        ?: "${if (source.direction < 0) "−" else "+"}Axis ${source.code}"
 }
+
+private val BUTTON_NAMES = mapOf(
+    BTN_SOUTH to "A / South", BTN_EAST to "B / East", BTN_NORTH to "X / North", BTN_WEST to "Y / West",
+    BTN_TL to "L1", BTN_TR to "R1", BTN_TL2 to "L2", BTN_TR2 to "R2",
+    BTN_SELECT to "Select", BTN_START to "Start", 0x13c to "Guide", BTN_THUMBL to "L3", BTN_THUMBR to "R3",
+    BTN_DPAD_UP to "D-pad up", BTN_DPAD_DOWN to "D-pad down",
+    BTN_DPAD_LEFT to "D-pad left", BTN_DPAD_RIGHT to "D-pad right",
+)
+
+/** Axis code -> (negative half, positive half). evdev counts Y downward, so up is negative. */
+private val HALF_AXIS_NAMES = mapOf(
+    ABS_X to ("Left stick left" to "Left stick right"),
+    ABS_Y to ("Left stick up" to "Left stick down"),
+    ABS_Z to ("Right stick left" to "Right stick right"),
+    ABS_RZ to ("Right stick up" to "Right stick down"),
+    ABS_RX to ("Right stick left" to "Right stick right"),
+    ABS_RY to ("Right stick up" to "Right stick down"),
+    ABS_HAT0X to ("D-pad left" to "D-pad right"),
+    ABS_HAT0Y to ("D-pad up" to "D-pad down"),
+    ABS_BRAKE to ("−L2" to "+L2"),
+    ABS_GAS to ("−R2" to "+R2"),
+)
+
+/** Which way round a pad's face buttons are printed. */
+enum class PadLayout { XBOX, NINTENDO }
+
+/**
+ * A whole mapping for a pad of this layout: every slot bound to the control that is printed with the
+ * slot's name, Home and Back left alone.
+ *
+ * Keyed by slot, not by code: the target side comes from [slots] (the live target's own key layout),
+ * so this only has to decide which SOURCE code drives each one. The source codes are what the source
+ * pad declares, read through the same rules [mappingSlots] applies to a target — hat or d-pad keys,
+ * trigger axes or trigger keys, Z/RZ or RX/RY — so a Switch Pro (d-pad keys, digital ZL/ZR, RX/RY
+ * stick) gets its own codes rather than an Xbox pad's. With nothing to inspect it assumes the
+ * standard HID pad: hat d-pad, Z/RZ right stick, BRAKE/GAS triggers.
+ *
+ * The face letters, worked through for the Thor:
+ * - Its target (`2020:0111`) layout says 0x130 BUTTON_A, 0x131 BUTTON_B, 0x133 BUTTON_X, 0x134
+ *   BUTTON_Y, so the "A" slot's target is 0x130, and so on.
+ * - The daemon applies its Nintendo A/B, X/Y swap only to UNBOUND events (`forward_event`'s `bound`
+ *   flag). A preset binds all four, so a bound event reaches the target as the slot's own code
+ *   unswapped: whatever drives the A slot arrives as 0x130 and Android reads BUTTON_A.
+ * - So the only question is what the pad reports for its printed A. An Xbox pad reports by label in
+ *   evdev's own naming: A 0x130, B 0x131, X 0x133, Y 0x134. A Nintendo pad under hid-nintendo reports
+ *   by POSITION in that same Xbox naming: its A sits east (0x131), B south (0x130), X north where
+ *   Xbox has Y (0x134), Y west where Xbox has X (0x133). Hence A←0x131, B←0x130, X←0x134, Y←0x133.
+ */
+fun presetBindings(layout: PadLayout, slots: List<MappingSlot>, source: TargetTraits?): Map<ControlRef, ControlRef> {
+    // A label-free read of the source, so its face codes are the Xbox naming above, never its own
+    // .kl's idea of them (which would swap a Nintendo pad a second time).
+    val traits = source?.copy(keyLabels = emptyMap(), axisLabels = emptyMap()) ?: odinFallbackTraits()
+    val sourceFor = mappingSlots(traits)
+        .filter { it.icon != SlotIcon.HOME && it.icon != SlotIcon.BACK }
+        .associate { it.icon to it.target }
+    return slots.mapNotNull { slot ->
+        val icon = if (layout == PadLayout.NINTENDO) NINTENDO_FACES[slot.icon] ?: slot.icon else slot.icon
+        sourceFor[icon]?.let { slot.target to it }
+    }.toMap()
+}
+
+/** The Xbox-named control that sits where a Nintendo pad prints this letter. */
+private val NINTENDO_FACES = mapOf(
+    SlotIcon.A to SlotIcon.B, SlotIcon.B to SlotIcon.A,
+    SlotIcon.X to SlotIcon.Y, SlotIcon.Y to SlotIcon.X,
+)

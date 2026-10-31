@@ -20,4 +20,7 @@ interface InputDeviceRepository {
      * controller database's indices only mean anything counted over exactly that set.
      */
     fun sourceTraits(key: MappingKey): TargetTraits? = null
+
+    /** evdev axis code -> Android axis name, from the key layout Android applies to this device. */
+    fun axisLabels(vendorId: Int, productId: Int): Map<Int, String> = emptyMap()
 }

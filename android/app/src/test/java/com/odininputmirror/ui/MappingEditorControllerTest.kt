@@ -11,6 +11,8 @@ import com.odininputmirror.domain.model.ControllerMapping
 import com.odininputmirror.domain.model.MappingKey
 import com.odininputmirror.domain.model.MirrorSettings
 import com.odininputmirror.domain.model.MirrorStartRequest
+import com.odininputmirror.domain.model.PadLayout
+import com.odininputmirror.domain.model.SlotIcon
 import com.odininputmirror.domain.model.mappingSlots
 import com.odininputmirror.domain.model.odinFallbackTraits
 import com.odininputmirror.domain.repository.InputDeviceRepository
@@ -161,6 +163,75 @@ class MappingEditorControllerTest {
         assertEquals("a look around rewrote the mapping", null, mappings.saved)
     }
 
+    @Test
+    fun `with the mirror off the app listens instead`() {
+        val process = FakeProcessRepository(daemonRunning = false)
+        val controller = controllerWith(process = process)
+
+        controller.openAndAwait()
+        controller.bind(slots[0])
+        awaitUntil("the app was never asked to listen") { controller.state.value.listenInApp }
+
+        controller.captured(ControlRef.button(BTN_EAST))
+        assertEquals(ControlRef.button(BTN_EAST), controller.state.value.bindings[slots[0].target])
+        assertEquals(null, controller.state.value.capturing)
+    }
+
+    @Test
+    fun `map all walks every slot, B skips and X stops`() {
+        val controller = controllerWith(process = FakeProcessRepository(daemonRunning = false))
+        controller.openAndAwait()
+
+        controller.mapAll()
+        assertEquals(slots[0], controller.state.value.capturing)
+        controller.captured(ControlRef.button(BTN_SOUTH))
+        assertEquals("a bind did not move the walk on", slots[1], controller.state.value.capturing)
+        assertEquals(1, controller.state.value.walk)
+
+        // Already bound to slot 0: refused, the walk waits on the same slot.
+        controller.captured(ControlRef.button(BTN_SOUTH))
+        assertEquals(slots[1], controller.state.value.capturing)
+
+        controller.cancelBind()
+        assertEquals("B did not skip", slots[2], controller.state.value.capturing)
+        assertEquals("a skipped slot was bound", null, controller.state.value.bindings[slots[1].target])
+
+        controller.stopWalk()
+        assertEquals(null, controller.state.value.capturing)
+        assertEquals(null, controller.state.value.walk)
+        assertEquals(1, controller.state.value.bindings.size)
+    }
+
+    @Test
+    fun `the last slot ends the walk`() {
+        val controller = controllerWith(process = FakeProcessRepository(daemonRunning = false))
+        controller.openAndAwait()
+
+        controller.mapAll()
+        repeat(slots.size) { controller.cancelBind() }
+        assertEquals(null, controller.state.value.capturing)
+        assertEquals(null, controller.state.value.walk)
+    }
+
+    @Test
+    fun `a preset replaces the whole mapping and is saved as the user's`() {
+        val mappings = FakeMappingRepository(
+            stored = ControllerMapping(listOf(Binding(ControlRef.button(400), slots[0].target))),
+        )
+        val controller = controllerWith(mappings = mappings)
+        controller.openAndAwait()
+
+        controller.autoMap(PadLayout.NINTENDO)
+        assertEquals(ControlRef.button(BTN_EAST), controller.state.value.bindings[slots[0].target])
+        assertEquals(false, controller.state.value.seeded)
+        controller.close()
+
+        awaitUntil("the preset was never saved") { mappings.saved != null }
+        // Everything but Home and Back, which a preset leaves alone (when the target offers them at all).
+        val bindable = slots.count { it.icon != SlotIcon.HOME && it.icon != SlotIcon.BACK }
+        assertEquals(bindable, mappings.saved?.bindings?.size)
+    }
+
     // ---- harness ----------------------------------------------------------------------------
 
     private val slots = mappingSlots(odinFallbackTraits())
@@ -226,6 +297,7 @@ class MappingEditorControllerTest {
         override fun setComboHoldKillAppEnabled(enabled: Boolean) = Unit
         override fun setVirtualMouseEnabled(enabled: Boolean) = Unit
         override fun setAutoMirrorEnabled(enabled: Boolean) = Unit
+        override fun setMirrorWhenHandheld(enabled: Boolean) = Unit
         override fun setManualInternalController(guid: String?) = Unit
         override fun bumpConfigGeneration() {
             bumps++
@@ -237,7 +309,7 @@ class MappingEditorControllerTest {
     }
 
     /** Records the order of every call, and hands out a press only when a test says so. */
-    private class FakeProcessRepository : MirrorProcessRepository {
+    private class FakeProcessRepository(private val daemonRunning: Boolean = true) : MirrorProcessRepository {
         val calls: List<String> = Collections.synchronizedList(mutableListOf())
 
         @Volatile
@@ -262,7 +334,7 @@ class MappingEditorControllerTest {
 
         override fun beginCapture(kind: CaptureKind): Boolean {
             record("beginCapture")
-            return true
+            return daemonRunning
         }
 
         override fun endCapture(): Boolean {

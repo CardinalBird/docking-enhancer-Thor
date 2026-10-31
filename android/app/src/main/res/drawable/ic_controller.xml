@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pro-style controller outline with cyan grips: the in-app controller picture and title icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="68dp"
+    android:height="52dp"
+    android:viewportWidth="68"
+    android:viewportHeight="52">
+    <group android:translateX="2" android:translateY="2">
+    <path android:pathData="M16,6 H48 C56,6 60,12 62,24 C64,36 62,44 56,44 C52,44 49,40 46,34 H18 C15,40 12,44 8,44 C2,44 0,36 2,24 C4,12 8,6 16,6 Z"
+        android:fillColor="#FF2A2A2A"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="2" />
+    <path android:pathData="M2.5,27 C1.5,38 3,44 8,44 C12,44 15,40 18,34"
+        android:strokeColor="#FFB4F2FD" android:strokeWidth="3" />
+    <path android:pathData="M61.5,27 C62.5,38 61,44 56,44 C52,44 49,40 46,34"
+        android:strokeColor="#FFB4F2FD" android:strokeWidth="3" />
+    <path android:pathData="M16,18 a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0 Z"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="1.5" />
+    <path android:pathData="M25.0,24.5 H27.0 V27.0 H29.5 V29.0 H27.0 V31.5 H25.0 V29.0 H22.5 V27.0 H25.0 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M44.6,13.5 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0 Z M48.1,17 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0 Z M44.6,20.5 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0 Z M41.1,17 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M36,28 a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0 Z"
+        android:strokeColor="#FFFFFFFF" android:strokeWidth="1.5" />
+    </group>
+</vector>

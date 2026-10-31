@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="88" alt="Docking Enhancer icon">
+<img src="android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" width="88" alt="Control Switch icon">
 
-# Docking Enhancer for AYN Thor
+# Control Switch for AYN Thor
 
 **Play docked with the controller in your hands — no remapping, no root.**
 
@@ -12,45 +12,49 @@
 ![Device](https://img.shields.io/badge/AYN%20Thor-tested-FF8A1F)
 
 A fork of [Ezequiel-CE/Docking-Enhancer](https://github.com/Ezequiel-CE/Docking-Enhancer), the Odin 2
-app, retargeted to the AYN Thor.
+app, retargeted to the AYN Thor and renamed Control Switch.
 
 <br>
 
-<img src="docking-enhancer-ui.png" alt="Main screen: the Thor's built-in controller, a locked Switch Pro Controller mirrored as player 1, and the settings menu" width="820">
+<img src="control-switch-ui.png" alt="Main screen: the Thor and its battery, the mirrored controller as player 1, and the four menu rows" width="820">
 
 <br><br>
 
-<img src="docking-enhancer-ui-3.png" alt="Player 1 picker: press L + R on the controller you want to use" width="820">
+<img src="control-switch-ui-3.png" alt="Change Input Order: press L + R on the controller you would like to use" width="820">
 
 <br><br>
 
-<img src="docking-enhancer-ui-2.png" alt="Button mapping editor: groups on the left, the D-pad group's slots on the right" width="820">
+<img src="control-switch-ui-2.png" alt="Button mapping: auto-map presets, then every button with a readable name" width="820">
 
 </div>
 
 ## What it does
 
 Dock your handheld to a TV and games still expect its *built-in* controller, not the pad you're
-actually holding — so every session starts with remapping. Docking Enhancer grabs your external
+actually holding — so every session starts with remapping. Control Switch grabs your external
 controller and replays its input onto the internal controller's input device, so everything just
-sees the built-in pad. Nothing to remap, ever.
+sees the built-in pad. Nothing to remap, ever. It can do the same undocked, whenever a controller
+is connected.
 
 It runs without root, using a privileged service the stock firmware already ships.
 
 ## Features
 
-- **Automatic** — starts on its own while docked, and survives reboots
-- **Player 1 lock** — press **L + R** on the controller you want, Switch-style, and it's the one
-  mirrored whenever it's connected. Identical pads are told apart while connected
+- **Automatic** — mirrors **Only when docked** or **Always when a controller is connected**, your
+  choice, and survives reboots
+- **Player 1 lock** — press **L + R** on the controller you want, Switch-style. Once locked, only
+  that pad is mirrored, whenever it's connected. Identical pads are told apart while connected
 - **Home button that goes Home** — the external pad's Home/Guide button goes to the launcher, or
   Back, or passes through to games. Hold it for **Recents**
+- **Home and Back on any button** — bind either to a pad button in the mapping editor
+- **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
-- **Per-controller button mapping** — press a control to bind it; triggers and stick halves can fill
-  button slots, and untouched controls keep working. Pads the bundled
+- **Guided button mapping** — the app asks for each button in turn and you press it; or pick
+  **Nintendo** or **Xbox** layout to map in one go. Triggers and stick halves can fill button
+  slots, and untouched controls keep working. Pads the bundled
   [SDL database](third-party/gamecontrollerdb/NOTICE.md) knows arrive already mapped, using the
   entry that fits the pad's driver
 - **Virtual mouse** — Select + R3 turns the pad into a pointer for tapping through Android UI
-- **Select + Start** (3s) closes the current app
 - **Nintendo layout aware** — swaps A/B and X/Y when the built-in pad is in its Nintendo profile
 - **Controller-first UI** — Switch-style screens with a button-hint bar; set it up without touching
   the screen
@@ -60,12 +64,17 @@ It runs without root, using a privileged service the stock firmware already ship
 
 ## Install
 
+Coming from Docking Enhancer v0.2.0? Uninstall it first. The app id changed (now
+`com.controlswitch`), so the new version installs as a separate app instead of upgrading, and two
+copies would fight over the controller. Settings don't carry over.
+
 1. Install the APK from this fork's [Releases](https://github.com/CardinalBird/docking-enhancer-Thor/releases)
    (allow "unknown sources" if prompted), or build it yourself — see [Building](#building).
    Upstream's releases don't include the Thor changes.
 2. Open it once. Check that the built-in controller ("Odin Controller" on the Thor) shows on the
-   left — tap it to fix it if not — then turn on **Automatic Mirror** and allow notifications.
-3. Pair a controller and dock. It takes over on its own.
+   left — tap it to fix it if not — then turn on **Automatic Mirror**, choose **Only when docked** or **Always when a controller is
+   connected**, and allow notifications.
+3. Pair a controller (and dock, if you chose docked only). It takes over on its own.
 4. Optional: with more than one pad, open **Player 1 controller** and press **L + R** on yours.
    On a frontend launcher, use **Add to home screen** to pin the app.
 

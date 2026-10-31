@@ -186,7 +186,7 @@ static void force_stop_foreground_app(void) {
         "task=$(dumpsys activity activities 2>/dev/null | sed -n 's/.*ResumedActivity: ActivityRecord{.* t\\([0-9][0-9]*\\)}.*/\\1/p' | head -n 1); "
         "[ -z \"$pkg\" ] && pkg=$(dumpsys window 2>/dev/null | sed -n 's/.*mFocusedApp=ActivityRecord{[^ ]* [^ ]* \\([^/ ]*\\)\\/.*/\\1/p' | head -n 1); "
         "[ -z \"$task\" ] && task=$(dumpsys window 2>/dev/null | sed -n 's/.*mFocusedApp=ActivityRecord{.* t\\([0-9][0-9]*\\)}.*/\\1/p' | head -n 1); "
-        "case \"$pkg\" in ''|com.odininputmirror|com.android.systemui|com.android.launcher*|*launcher*) ;; *) [ -n \"$task\" ] && cmd activity stack remove \"$task\" 2>/dev/null; am force-stop \"$pkg\" ;; esac"
+        "case \"$pkg\" in ''|com.controlswitch|com.odininputmirror|com.android.systemui|com.android.launcher*|*launcher*) ;; *) [ -n \"$task\" ] && cmd activity stack remove \"$task\" 2>/dev/null; am force-stop \"$pkg\" ;; esac"
     );
 }
 
@@ -300,6 +300,9 @@ struct mirror_state {
     // for a key it never saw go down.
     int home_swallowed;
     long long home_pressed_at_ms;
+
+    // When a bound Home / Back press went down (index 0 Home, 1 Back); 0 when none is held.
+    long long nav_pressed_at_ms[2];
 
     // Select+Start "close app" combo.
     int select_pressed;
@@ -721,6 +724,25 @@ static void handle_kill_combo_event(struct mirror_state *s, const struct input_e
     }
 }
 
+// A binding that targets Home or Back. Writing KEY_HOME / KEY_BACK / KEY_APPSELECT into the Thor's
+// pad node triggers the Android action itself (measured), so the press is held back and, on release,
+// written as one tap: Recents if it was held, the bound key otherwise — the Guide handler's semantics
+// without its `input keyevent` spawn. A release with no press seen (table swapped mid-hold) is dropped.
+static int tap_bound_nav_key(struct mirror_state *s, const struct input_event *out) {
+    long long *pressed_at = &s->nav_pressed_at_ms[out->code == KEY_BACK];
+    if (out->value == 1) {
+        *pressed_at = now_ms();
+    } else if (out->value == 0 && *pressed_at != 0) {
+        unsigned short code = now_ms() - *pressed_at >= HOME_HOLD_RECENTS_MS ? KEY_APPSELECT : out->code;
+        *pressed_at = 0;
+        if (target_write(s, EV_KEY, code, 1) != 0 || target_write(s, EV_SYN, SYN_REPORT, 0) != 0 ||
+            target_write(s, EV_KEY, code, 0) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 // Forward one event to the target: apply the Nintendo face-button swap, record what the target now
 // believes held/deflected (for mouse-mode entry), and queue it for the batch's single write. Returns 0,
 // or -1 if the target write kept failing.
@@ -740,6 +762,12 @@ static int forward_event(struct mirror_state *s, const struct input_event *ev) {
 
     for (int i = 0; i < count; i++) {
         struct input_event *out = &mapped[i];
+        if (bound && out->type == EV_KEY && (out->code == KEY_HOME || out->code == KEY_BACK)) {
+            if (tap_bound_nav_key(s, out) != 0) {
+                return -1;
+            }
+            continue;
+        }
         if (swap && out->type == EV_KEY) {
             out->code = swap_nintendo_face_button(out->code);
         }
@@ -1038,7 +1066,7 @@ int main(int argc, char **argv) {
 
     // Create the touch helper on every mirror start, regardless of the virtual-mouse setting: it is
     // what hides the cursor on mouse-mode exit when enabled, and its unavoidable "connected" toast
-    // ("Docking Enhancer Mirror connected") doubles as a consistent mirror-activation notification on
+    // ("Control Switch Mirror connected") doubles as a consistent mirror-activation notification on
     // each start. Created once and kept for the whole session so the toast doesn't repeat per toggle.
     mouse_create_touch_device(&s.mouse);
 

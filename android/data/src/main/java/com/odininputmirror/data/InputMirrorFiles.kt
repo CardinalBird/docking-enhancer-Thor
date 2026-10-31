@@ -86,6 +86,12 @@ internal class InputMirrorFiles(
     }
 
     fun ensureBinaryInstalled(): File {
+        installBinary()
+        return File(File(filesDir, "bin"), "input_mirror")
+    }
+
+    /** Extract the shipped daemon unless the installed copy already matches it. True when it was replaced. */
+    fun installBinary(): Boolean {
         val binDir = File(filesDir, "bin")
         if (!binDir.exists()) {
             binDir.mkdirs()
@@ -100,7 +106,7 @@ internal class InputMirrorFiles(
         val assetSha = openBinaryAsset().use { it.sha256() }
         val installedSha = runCatching { target.inputStream().use { it.sha256() } }.getOrNull()
         if (assetSha.contentEquals(installedSha)) {
-            return target
+            return false
         }
 
         val temp = File(binDir, "input_mirror.tmp")
@@ -120,7 +126,7 @@ internal class InputMirrorFiles(
 
         target.setReadable(true, false)
         target.setExecutable(true, false)
-        return target
+        return true
     }
 
     fun clearProcessFiles() {

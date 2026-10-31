@@ -1,30 +1,32 @@
 package com.odininputmirror.ui
 
-import com.odininputmirror.domain.model.HomeButtonMode
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
-import com.odininputmirror.R
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -32,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +46,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -50,15 +54,16 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.odininputmirror.MainActivity
+import com.odininputmirror.R
 import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.ui.theme.Palette
 import kotlinx.coroutines.delay
 
-private fun Context.canPinShortcut(): Boolean =
+internal fun Context.canPinShortcut(): Boolean =
     getSystemService(ShortcutManager::class.java)?.isRequestPinShortcutSupported == true
 
 // The home app answers with its own confirmation; there is nothing to do with its answer here.
-private fun Context.pinToHome() {
+internal fun Context.pinToHome() {
     val shortcut = ShortcutInfo.Builder(this, "open")
         .setShortLabel(getString(R.string.app_name))
         .setIcon(Icon.createWithResource(this, R.mipmap.ic_launcher))
@@ -76,52 +81,87 @@ internal fun Context.findMainActivity(): MainActivity? {
     return null
 }
 
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+// In order of depth: a higher page slides in from the right, going back slides the other way.
+private enum class Page { Main, Settings, Player1, Mapping }
+
 @Composable
 fun MirrorScreen(viewModel: MirrorViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val editorState by viewModel.mappingEditor.state.collectAsStateWithLifecycle()
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    val page = when {
+        // A whole screen rather than an overlay: mapping is the only thing happening while it is
+        // open, and the controller is answering it instead of driving whatever would show behind.
+        editorState.open -> Page.Mapping
+        state.pickingPlayer1 -> Page.Player1
+        settingsOpen -> Page.Settings
+        else -> Page.Main
+    }
 
-    // A whole screen rather than an overlay: mapping is the only thing happening while it is open,
-    // and the controller is answering it instead of driving whatever would show through behind.
-    if (editorState.open) {
-        MappingEditorScreen(
-            state = editorState,
-            onBind = { viewModel.mappingEditor.bind(it) },
-            onClear = { viewModel.mappingEditor.clear(it) },
-            onCancelBind = { viewModel.mappingEditor.cancelBind() },
-            onClearAll = { viewModel.mappingEditor.clearAll() },
-            onClose = { viewModel.mappingEditor.close() },
-        )
-        return
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onResume()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
-    if (state.pickingPlayer1) {
-        Player1Screen(
-            externals = state.devices.filter { !it.isInternal },
-            player1Name = state.player1Name,
-            player1Path = state.player1Path,
-            onPick = viewModel::choosePlayer1,
-            onUnlock = { viewModel.setPlayer1(null) },
-            onClose = viewModel::closePlayer1Picker,
-        )
-        return
+
+    AnimatedContent(
+        targetState = page,
+        modifier = Modifier.fillMaxSize().background(Palette.screen),
+        transitionSpec = {
+            val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
+            (slideInHorizontally(tween(PAGE_MS)) { dir * it / 8 } + fadeIn(tween(PAGE_MS))) togetherWith
+                (slideOutHorizontally(tween(PAGE_MS)) { -dir * it / 8 } + fadeOut(tween(PAGE_MS / 2)))
+        },
+        label = "page",
+    ) { shown ->
+        // Both pages are composed while one slides over the other. Only the arriving one may take
+        // the focus, or the leaving page's re-anchoring pulls it back off the new one.
+        val active = shown == page
+        when (shown) {
+            Page.Mapping -> MappingEditorScreen(
+                state = editorState,
+                onBind = { viewModel.mappingEditor.bind(it) },
+                onClear = { viewModel.mappingEditor.clear(it) },
+                onCancelBind = { viewModel.mappingEditor.cancelBind() },
+                onClearAll = { viewModel.mappingEditor.clearAll() },
+                onClose = { viewModel.mappingEditor.close() },
+                controller = viewModel.mappingEditor,
+            )
+            Page.Player1 -> Player1Screen(
+                externals = state.devices.filter { !it.isInternal },
+                player1Name = state.player1Name,
+                pendingName = state.pendingPlayer1Name,
+                pendingPath = state.pendingPlayer1Path,
+                onPick = viewModel::choosePlayer1,
+                onConfirm = viewModel::confirmPlayer1,
+                onClose = viewModel::closePlayer1Picker,
+            )
+            Page.Settings -> AdditionalSettingsScreen(state, viewModel, active, onBack = { settingsOpen = false })
+            Page.Main -> MainPage(state, viewModel, active, onOpenSettings = { settingsOpen = true })
+        }
     }
+
+    if (state.unsupported) {
+        UnsupportedDeviceDialog(serviceUnresponsive = state.serviceUnresponsive)
+    }
+}
+
+private const val PAGE_MS = 220
+
+@Composable
+private fun MainPage(state: MirrorUiState, viewModel: MirrorViewModel, active: Boolean, onOpenSettings: () -> Unit) {
     var pickerOpen by remember { mutableStateOf(false) }
     var screenHasFocus by remember { mutableStateOf(false) }
-    // Initial gamepad focus prefers the first control (the Local Controller card) and falls back to
-    // the always-present primary button for when the card isn't focusable (mirror on / busy).
+    // Initial gamepad focus prefers the first row and falls back to the always-enabled mirroring
+    // row, for when the first is disabled (busy).
     val topFocus = remember { FocusRequester() }
     val primaryFocus = remember { FocusRequester() }
-    val scrollState = rememberScrollState()
-
-    // Bridge the Activity's analog-stick handler to this screen's scroll state so the right stick
-    // free-scrolls the whole page (header included), independent of which control has focus.
     val context = LocalContext.current
-    DisposableEffect(context, scrollState) {
-        val activity = context.findMainActivity()
-        activity?.scrollConsumer = { delta -> scrollState.dispatchRawDelta(delta) }
-        onDispose { activity?.scrollConsumer = null }
-    }
 
     // Anchor gamepad focus on the first control, leaving touch mode first. On a touchscreen handheld
     // the window starts in Touch input mode, in which requestFocus() is a silent no-op and the D-pad
@@ -141,42 +181,31 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     // Re-anchor the instant the window gains focus. The launch-time effect below can lose the race
     // when the window isn't focused yet (e.g. while controllers are scanned), so without this the
     // D-pad/stick have no focus to move from until a button press hands it out.
-    DisposableEffect(context, anchorFocus) {
+    DisposableEffect(context, anchorFocus, active) {
         val activity = context.findMainActivity()
         // The Activity hook wants a plain callback; whether the anchor took is only the retry
         // loop's business.
         // Only when nothing here holds focus: returning from a dialog or the shade used to throw the
         // user back to the top row from wherever they were.
-        activity?.onWindowFocused = { if (!screenHasFocus) anchorFocus() }
-        onDispose { activity?.onWindowFocused = null }
-    }
-
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.onResume()
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        if (active) activity?.onWindowFocused = { if (!screenHasFocus) anchorFocus() }
+        onDispose { if (active) activity?.onWindowFocused = null }
     }
 
     // Give the gamepad a focus anchor so the D-pad works immediately, retrying across a few frames
     // because the focus node is not necessarily placed on the first pass.
     //
-    // Keyed on the editor: coming back from it this whole screen is composed again, and it must take
-    // the focus back — the editor's rows are gone and nothing else holds it.
+    // This page is composed afresh every time it comes back (from the editor, the picker, settings),
+    // and it must take the focus back — the other page's rows are gone and nothing else holds it.
     //
     // The loop stops on OBSERVED focus, not on what requestFocus() reported. That distinction is the
     // whole bug: on the return trip the anchor node exists immediately, so the request "succeeds" on
     // the first frame while the focus goes nowhere, the loop congratulates itself and exits, and the
     // pad is left with nothing to navigate from.
-    LaunchedEffect(editorState.open) {
-        if (editorState.open) return@LaunchedEffect
-        // Let go of the focus before asking for it. Leaving the editor destroys the node that held it,
-        // and Compose is then left pointing at something that no longer exists — in that state a fresh
-        // requestFocus() is refused outright, which is why the retry loop alone was not enough.
+    LaunchedEffect(active) {
+        if (!active) return@LaunchedEffect
+        // Let go of the focus before asking for it. Leaving the other page destroys the node that held
+        // it, and Compose is then left pointing at something that no longer exists — in that state a
+        // fresh requestFocus() is refused outright, which is why the retry loop alone was not enough.
         focusManager.clearFocus(force = true)
         repeat(24) {
             if (screenHasFocus) return@LaunchedEffect
@@ -190,169 +219,111 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     }
 
     // When a state change disables whatever had focus — toggling the mirror briefly makes the
-    // button busy, and starting/stopping it locks the cards and rows — Compose clears focus and
-    // the D-pad has nothing to navigate from. Re-anchor to the first available control so gamepad
-    // navigation keeps working after every transition.
-    LaunchedEffect(state.enabled, state.autoMirrorEnabled, state.busy) {
-        if (!screenHasFocus) anchorFocus()
+    // rows busy, and starting/stopping it locks the handheld tile — Compose clears focus and the
+    // D-pad has nothing to navigate from. Re-anchor so gamepad navigation survives every transition.
+    LaunchedEffect(state.enabled, state.autoMirrorEnabled, state.busy, active) {
+        if (active && !screenHasFocus) anchorFocus()
     }
 
     val externals = state.devices.filter { !it.isInternal }
-    // A binder call; asked once, not on every recomposition.
-    val canPin = remember(context) { context.canPinShortcut() }
     val lockedPad = externals.lockedPlayer1(state.player1Name, state.player1Path)
-    val homeModes = HomeButtonMode.entries
-    fun cycleHome(step: Int) {
-        viewModel.setHomeMode(homeModes[(state.homeMode.ordinal + step + homeModes.size) % homeModes.size])
-    }
+    // Batteries are binder calls; read again only when the snapshot moves, not every recomposition.
+    val systemBattery = remember(state.devices, state.enabled) { handheldBattery(context) }
+    val padBatteries = remember(state.devices, state.enabled) { externals.take(4).map(::padBattery) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Palette.screen)
-            // Whether anything at all on this screen holds focus. `hasFocus` covers the whole subtree,
+            // Whether anything at all on this page holds focus. `hasFocus` covers the whole subtree,
             // so one modifier on the root answers a question no FocusRequester can: requestFocus()
             // reports success as soon as its node exists, which is not the same as the node having
             // taken focus.
             .onFocusChanged { screenHasFocus = it.hasFocus }
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
-        Header(enabled = state.enabled, docked = state.docked, loading = state.loading)
+        Header(loading = state.loading)
         Rule(Modifier.padding(horizontal = 28.dp))
 
         Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp)) {
-            // Left: the handheld, then every pad it can see, with player 1's lamp lit.
+            // Left: the handheld, then the pads it can see, player 1's lamp lit.
             Column(
-                modifier = Modifier.weight(1f).fillMaxHeight().padding(vertical = 8.dp, horizontal = 8.dp),
+                modifier = Modifier.weight(1f).fillMaxHeight().padding(horizontal = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                HandheldTile(
-                    device = state.localDevice,
-                    hint = when {
-                        state.autoMirrorEnabled -> "Built-in · locked while mirror is on"
-                        state.hasKnownInternalProfile -> "Built-in · auto-detected"
-                        else -> "Built-in · tap to change"
-                    },
-                    onClick = if (state.busy || state.autoMirrorEnabled) null else ({ pickerOpen = true }),
-                )
-                Rule(Modifier.padding(vertical = 4.dp))
-                if (externals.isEmpty()) {
-                    Text("Connect a controller to play docked.", color = Palette.textMuted, fontSize = 14.sp)
-                } else {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
-                        externals.take(4).forEach { pad ->
-                            PadTile(
-                                device = pad,
-                                player1 = pad.path == state.externalDevice?.path,
-                                locked = pad == lockedPad,
-                                modifier = Modifier.weight(1f),
-                            )
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    SectionLabel("System")
+                    HandheldTile(
+                        battery = systemBattery,
+                        hint = when {
+                            state.autoMirrorEnabled || state.busy -> null
+                            state.hasKnownInternalProfile -> "Auto-detected"
+                            else -> "Press to change built-in controller"
+                        },
+                        onClick = if (state.busy || state.autoMirrorEnabled) null else ({ pickerOpen = true }),
+                    )
+                }
+                Rule(Modifier.padding(horizontal = 24.dp))
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    SectionLabel("Controllers")
+                    val missing = state.player1Name?.takeIf { lockedPad == null }
+                    when {
+                        missing != null -> Note("$missing isn't connected. Change Input Order to pick another.")
+                        externals.isEmpty() -> Note("Connect a controller to mirror it.")
+                    }
+                    if (externals.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth()) {
+                            externals.take(4).forEachIndexed { i, pad ->
+                                PadTile(
+                                    device = pad,
+                                    player1 = pad.path == state.externalDevice?.path,
+                                    battery = padBatteries.getOrNull(i),
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            // Keep a lone pad from stretching across the whole half.
+                            repeat(4 - externals.size.coerceAtMost(4)) { Spacer(Modifier.weight(1f)) }
                         }
-                        repeat(4 - externals.size.coerceAtMost(4)) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
 
             Box(Modifier.fillMaxHeight().width(1.dp).padding(vertical = 16.dp).background(Palette.border))
 
-            // Right: the menu.
+            // Right: the menu. Four rows, no scrolling.
             Column(
-                modifier = Modifier.weight(1f).fillMaxHeight().verticalScroll(scrollState)
-                    .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
+                modifier = Modifier.weight(1f).fillMaxHeight().padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.Center,
             ) {
                 MenuRow(
-                    title = "Player 1 controller",
-                    subtitle = "Pick with L + R",
+                    title = "Change Input Order",
                     onClick = if (state.busy) null else viewModel::openPlayer1Picker,
                     modifier = Modifier.focusRequester(topFocus),
-                ) {
-                    RowValue(if (state.player1Name != null) "Locked" else "First connected", accent = state.player1Name != null)
-                }
+                )
                 MenuRow(
-                    title = "Button mapping",
-                    subtitle = state.externalDevice?.name,
+                    title = "Button Mapping",
                     // Only offered once the controller has an identity to save a mapping against.
                     onClick = if (state.externalDevice?.mappingKey != null) viewModel::openMappingEditor else null,
-                ) {
-                    RowValue(
-                        when {
-                            (state.mappedControlCount ?: 0) > 0 -> "${state.mappedControlCount} custom"
-                            state.hasSeededMapping -> "Profile"
-                            else -> "As reported"
-                        },
-                        accent = (state.mappedControlCount ?: 0) > 0,
-                    )
-                }
+                )
+                MenuRow(title = "Additional Settings", onClick = onOpenSettings)
                 MenuRow(
-                    title = "Home button",
-                    subtitle = if (state.homeMode == HomeButtonMode.PASS_THROUGH) "Sent to games" else "Hold for Recents",
-                    onClick = if (state.busy) null else ({ cycleHome(1) }),
-                    onLeft = { cycleHome(-1) },
-                    onRight = { cycleHome(1) },
-                ) {
-                    RowValue(
-                        "‹  " + when (state.homeMode) {
-                            HomeButtonMode.HOME -> "Home"
-                            HomeButtonMode.BACK -> "Back"
-                            HomeButtonMode.PASS_THROUGH -> "Pass through"
-                        } + "  ›",
-                        accent = true,
-                    )
-                }
-                MenuRow(
-                    title = "Select + Start closes app",
-                    subtitle = "Hold both for 3 seconds",
-                    onClick = if (state.busy) null else ({ viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) }),
-                ) {
-                    RowSwitch(state.comboHoldKillApp, !state.busy)
-                }
-                MenuRow(
-                    title = "Virtual mouse",
-                    subtitle = "Select + R3 toggles · A click · B right-click · R1 shade",
-                    onClick = if (state.busy) null else ({ viewModel.toggleVirtualMouse(!state.virtualMouse) }),
-                ) {
-                    RowSwitch(state.virtualMouse, !state.busy)
-                }
-                // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
-                // can ask to be pinned itself. Shown only when the home app takes pin requests.
-                if (canPin) {
-                    MenuRow(title = "Add to home screen", subtitle = "Pin this app to your launcher", onClick = { context.pinToHome() })
-                }
-                Spacer(Modifier.height(16.dp))
-                PrimaryButton(
-                    text = when {
-                        state.busy -> "Processing..."
-                        state.autoMirrorEnabled -> "Turn off automatic mirror"
-                        else -> "Turn on automatic mirror"
-                    },
-                    stop = state.autoMirrorEnabled,
-                    focusRequester = primaryFocus,
-                    // The ViewModel ignores presses while busy, so the button can stay focusable
-                    // (a disabled control would drop D-pad focus mid-toggle).
+                    title = if (state.autoMirrorEnabled) "End Mirroring" else "Start Mirroring",
+                    titleColor = if (state.autoMirrorEnabled) Palette.danger else Palette.textPrimary,
+                    // The ViewModel ignores presses while busy, so the row can stay focusable (a
+                    // disabled control would drop D-pad focus mid-toggle).
                     onClick = { viewModel.toggleAutoMirrorEnabled(!state.autoMirrorEnabled) },
+                    modifier = Modifier.focusRequester(primaryFocus),
                 )
             }
         }
 
-        // Status sits in the bottom band, left of the hints, so the controller pane never runs out of room.
-        Row(Modifier.fillMaxWidth().background(Palette.band), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (state.loading) "Scanning controllers..."
-                else if (state.restartWaiting) "Waiting for automatic mirror start..."
-                else state.message,
-                color = Palette.textSecondary,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(start = 28.dp).weight(1f),
-            )
-            Box(Modifier.weight(1f)) {
-                HintBar(
-                    hints = listOf(
-                        HintAction(PromptGlyph.B, "Back", null),
-                        HintAction(PromptGlyph.A, "OK", null),
-                    ),
-                )
-            }
-        }
+        Footer(
+            status = when {
+                state.loading -> "Scanning controllers..."
+                state.restartWaiting -> "Waiting for mirroring to start..."
+                else -> state.message
+            },
+            hints = listOf(HintAction("B", "Back", null), HintAction("A", "OK", null)),
+        )
     }
 
     if (pickerOpen) {
@@ -370,8 +341,23 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             onClose = { pickerOpen = false },
         )
     }
+}
 
-    if (state.unsupported) {
-        UnsupportedDeviceDialog(serviceUnresponsive = state.serviceUnresponsive)
+@Composable
+internal fun SectionLabel(text: String) {
+    Text(text, color = Palette.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(bottom = 4.dp))
+}
+
+@Composable
+private fun Note(text: String) {
+    Text(text, color = Palette.textMuted, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(4.dp))
+}
+
+/** Bottom of every page, on the page colour: a status line left, the button hints right. */
+@Composable
+internal fun Footer(status: String, hints: List<HintAction>) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(status, color = Palette.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 28.dp).weight(1f))
+        Box(Modifier.weight(1f)) { HintBar(hints) }
     }
 }

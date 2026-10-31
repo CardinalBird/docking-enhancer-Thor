@@ -5,31 +5,44 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import com.odininputmirror.R
 
-// Thor fork: Switch-style flat charcoal with one AYN orange accent for focus and selection.
+// Switch 2 menu grey with the Cocoon Shell teal-blue for focus and selection.
 object Palette {
-    val screen = Color(0xFF2B2B2B)
-    val surface = Color(0xFF363636)
-    val surfaceRaised = Color(0xFF404040)
-    val border = Color(0xFF4A4A4A)
-    val borderStrong = Color(0xFF6A6A6A)
+    // Flat page colour everywhere: the Switch 2 menus have no lighter panel and no darker bands.
+    val screen = Color(0xFF1C1C1C)
+    val surface = Color(0xFF262626)
+    val surfaceRaised = Color(0xFF303030)
+    val border = Color(0xFF3A3A3A)
+    val borderStrong = Color(0xFF5A5A5A)
     val textPrimary = Color(0xFFFFFFFF)
     val textSecondary = Color(0xFFC8C8C8)
-    val textMuted = Color(0xFF9A9A9A)
-    val accent = Color(0xFFFF8A1F)
-    val accentSoft = Color(0xFF4A3220)
+    val textMuted = Color(0xFF8E8E8E)
+    // Cocoon blue: fills (A chip, switch track, selected radio).
+    val accent = Color(0xFF0080B3)
+    val accentSoft = Color(0xFF13303C)
+    // Pale cyan for small accents, where the blue would be too dark to read as text.
+    val cyan = Color(0xFFB4F2FD)
     val danger = Color(0xFFFF6B6B)
     val dangerSoft = Color(0xFF4A2626)
-    val focus = Color(0xFFFF8A1F)
-    val focusBg = Color(0xFF474038)
-    // The header and hint bar bands, a step darker than the screen like the Switch's.
-    val band = Color(0xFF1E1E1E)
+    // Solid stand-in for [focusBrush] where a brush can't go; the middle of the gradient.
+    val focus = Color(0xFF008A90)
+    val focusBg = Color(0xFF2A2D2E)
+    // The focused item's outline, blue to teal to green like Cocoon's highlight.
+    val focusBrush = Brush.linearGradient(listOf(Color(0xFF0080B3), Color(0xFF008A90), Color(0xFF1DAC85)))
+    // Kept for callers that used to paint the header and hint bands; now the page colour, so the
+    // hints sit on the page like the Switch 2's.
+    val band = screen
     // Behind a prompt that owns the screen. Dark enough to say "answer this first", sheer enough to
     // leave the row it belongs to legible underneath.
     val scrim = Color(0xCC111111)
-    // Reserved for a controller carrying a mapping the user captured themselves: it marks the card
-    // as "yours", distinct from the blue that means "selected".
+    // Green: player lamps, and a controller carrying a mapping the user captured themselves.
     val custom = Color(0xFF4ADE80)
     val customSoft = Color(0xFF14301F)
 }
@@ -47,6 +60,22 @@ private val DarkColors = darkColorScheme(
     error = Palette.danger,
 )
 
+// Only the SemiBold cut is bundled, so every weight resolves to it: Poppins SemiBold throughout,
+// like Cocoon. See third-party/poppins/NOTICE.md.
+private val Poppins = FontFamily(Font(R.font.poppins_semibold, FontWeight.SemiBold))
+
+private fun TextStyle.poppins() = copy(fontFamily = Poppins)
+
+private val AppTypography = Typography().run {
+    Typography(
+        displayLarge.poppins(), displayMedium.poppins(), displaySmall.poppins(),
+        headlineLarge.poppins(), headlineMedium.poppins(), headlineSmall.poppins(),
+        titleLarge.poppins(), titleMedium.poppins(), titleSmall.poppins(),
+        bodyLarge.poppins(), bodyMedium.poppins(), bodySmall.poppins(),
+        labelLarge.poppins(), labelMedium.poppins(), labelSmall.poppins(),
+    )
+}
+
 @Composable
 fun DockingEnhancerTheme(
     @Suppress("UNUSED_PARAMETER") darkTheme: Boolean = isSystemInDarkTheme(),
@@ -54,7 +83,7 @@ fun DockingEnhancerTheme(
 ) {
     MaterialTheme(
         colorScheme = DarkColors,
-        typography = Typography(),
+        typography = AppTypography,
         content = content,
     )
 }

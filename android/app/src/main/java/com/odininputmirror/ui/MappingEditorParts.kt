@@ -107,16 +107,11 @@ internal fun SlotRow(
     Rule(Modifier.padding(horizontal = 8.dp))
 }
 
-/** A group in the left pane. Focusing it is selecting it. */
+/** A one-press action above the slots: an auto-map preset, or the reset. */
 @Composable
-internal fun GroupRow(group: String, selected: Boolean, onFocus: () -> Unit) {
+internal fun ActionRow(label: String, detail: String, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    // Immediate, so a quick Down then Right lands in the group passed through; the screen ignores the
-    // passing focus the overlay's closing causes.
-    LaunchedEffect(focused) {
-        if (focused) onFocus()
-    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -124,15 +119,17 @@ internal fun GroupRow(group: String, selected: Boolean, onFocus: () -> Unit) {
             .clip(RoundedCornerShape(8.dp))
             .background(if (focused) Palette.focusBg else Palette.screen)
             .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
-            .clickable(interactionSource = interaction, indication = null, onClick = onFocus)
-            .padding(horizontal = 14.dp),
+            // Swallowed: Android turns an unhandled X into a select, which would apply the preset.
+            .onPreviewKeyEvent { it.key == Key.ButtonX }
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The Switch's selection bar: a stripe beside the group whose rows are showing.
-        Box(Modifier.width(4.dp).height(26.dp).background(if (selected) Palette.accent else Palette.screen))
-        Spacer(Modifier.width(12.dp))
-        Text(group, color = if (selected) Palette.textPrimary else Palette.textSecondary, fontSize = 17.sp)
+        Spacer(Modifier.width(44.dp))
+        Text(label, color = Palette.textPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        Text(detail, color = Palette.textMuted, fontSize = 14.sp)
     }
+    Rule(Modifier.padding(horizontal = 8.dp))
 }
 
 /**
@@ -168,7 +165,11 @@ internal fun SlotGlyph(slot: MappingSlot) {
         SlotIcon.RIGHT_STICK_CLICK -> PromptGlyph.RIGHT_STICK_CLICK
         SlotIcon.VIEW -> PromptGlyph.VIEW
         SlotIcon.MENU -> PromptGlyph.MENU
+        SlotIcon.HOME -> "⌂"
+        SlotIcon.BACK -> "↩"
     }
+    // Plain characters, not PromptFont remaps: the font would turn these into unrelated arrows.
+    val plainText = slot.icon == SlotIcon.HOME || slot.icon == SlotIcon.BACK
     // The face buttons keep the colours they are printed in — on an Xbox pad "the green one" is as
     // much the button's name as the letter is. Everything else is one ink, because it is on the pad.
     val colour = when (slot.icon) {
@@ -179,16 +180,16 @@ internal fun SlotGlyph(slot: MappingSlot) {
         else -> Palette.textSecondary
     }
     Box(modifier = Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-        Text(glyph, color = colour, fontFamily = promptFontFamily(), fontSize = 26.sp)
+        Text(glyph, color = colour, fontFamily = if (plainText) null else promptFontFamily(), fontSize = 26.sp)
     }
 }
 
 /**
  * The capture prompt. Sits over the list so the slot it belongs to stays visible behind it.
  *
- * Cancel is the only action on it, deliberately. Anything else here is a button the user cannot reach:
- * the first control they press to navigate towards it is the control that gets captured, which binds
- * the slot and closes the prompt. Clearing lives on the row, where nothing is listening.
+ * Cancel (Skip and Stop during a walk) is all there is, deliberately. Anything more is a button the
+ * user cannot reach on the pad being mapped: the first control they press to navigate towards it is
+ * the control that gets captured. Clearing lives on the row, where nothing is listening.
  */
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
@@ -197,6 +198,10 @@ internal fun CaptureOverlay(
     source: ControlRef?,
     notice: String?,
     onCancel: () -> Unit,
+    /** "3 of 26" while Map all walks the list; null for a single rebind. */
+    progress: String? = null,
+    /** Ends the walk (X). Present only during one, when Cancel becomes Skip (B). */
+    onStop: (() -> Unit)? = null,
 ) {
     // Focus has to come here, and not just for looks: the handheld's pad is still driving the list
     // behind, so without taking focus a press meant for the overlay would open a different slot.
@@ -223,6 +228,13 @@ internal fun CaptureOverlay(
             modifier = Modifier
                 .focusProperties { exit = { FocusRequester.Cancel } }
                 .focusGroup()
+                // The handheld's own X. The pad being mapped never gets here: the daemon has it
+                // grabbed, or the app-side capture swallows it first.
+                .onPreviewKeyEvent {
+                    if (onStop == null || it.key != Key.ButtonX) return@onPreviewKeyEvent false
+                    if (it.type == KeyEventType.KeyUp) onStop()
+                    true
+                }
                 .widthIn(max = 460.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(Palette.surface)
@@ -232,7 +244,7 @@ internal fun CaptureOverlay(
             Text(slot.label, color = Palette.textPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Press the control on your controller to bind it here.",
+                "Press the control for ${slot.label}" + (progress?.let { "  ·  $it" } ?: ""),
                 color = Palette.textSecondary,
                 fontSize = 14.sp,
             )
@@ -253,7 +265,8 @@ internal fun CaptureOverlay(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
             ) {
-                EditorButton("Cancel", Palette.surface, onCancel, Modifier.focusRequester(cancelFocus))
+                if (onStop != null) EditorButton("Stop", Palette.surface, onStop)
+                EditorButton(if (onStop != null) "Skip" else "Cancel", Palette.surface, onCancel, Modifier.focusRequester(cancelFocus))
             }
         }
     }

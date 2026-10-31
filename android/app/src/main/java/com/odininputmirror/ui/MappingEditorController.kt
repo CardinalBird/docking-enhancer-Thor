@@ -7,8 +7,11 @@ import com.odininputmirror.domain.model.ControlRef
 import com.odininputmirror.domain.model.ControllerMapping
 import com.odininputmirror.domain.model.MappingKey
 import com.odininputmirror.domain.model.MappingSlot
+import com.odininputmirror.domain.model.PadLayout
+import com.odininputmirror.domain.model.TargetTraits
 import com.odininputmirror.domain.model.mappingSlots
 import com.odininputmirror.domain.model.odinFallbackTraits
+import com.odininputmirror.domain.model.presetBindings
 import com.odininputmirror.domain.repository.InputDeviceRepository
 import com.odininputmirror.domain.repository.MappingRepository
 import com.odininputmirror.domain.repository.MirrorProcessRepository
@@ -39,6 +42,15 @@ data class MappingEditorUiState(
     val notice: String? = null,
     /** True when what is on screen is an untouched database default rather than the user's work. */
     val seeded: Boolean = false,
+    /** Index of [capturing] in [slots] while "Map all" walks the list; null outside a walk. */
+    val walk: Int? = null,
+    /**
+     * True when the daemon is not running, so the app itself listens for the press: with the mirror
+     * off the pad is not grabbed and reaches the Activity like any other.
+     */
+    val listenInApp: Boolean = false,
+    /** The handheld's own pad, whose presses drive the editor and must never be captured. */
+    val internalPadName: String? = null,
 ) {
     val boundCount: Int get() = bindings.size
 }
@@ -46,13 +58,14 @@ data class MappingEditorUiState(
 /**
  * Drives the mapping editor.
  *
- * Every event comes from the daemon: while the mirror runs the controller is grabbed and its node
- * unlinked, so the app never sees its input directly. Binding a slot opens a capture on the daemon
- * and polls the append-only log for a result.
+ * While the mirror runs the controller is grabbed and its node unlinked, so the app never sees its
+ * input directly: binding a slot opens a capture on the daemon and polls the append-only log for a
+ * result. With the mirror off nobody is listening there, so the screen captures the press in the app
+ * instead and hands it to [captured].
  *
- * A list rather than a walk, because a walk got the default backwards. Most slots on most pads are
- * already right, and marching the user through all twenty-four of them to fix two made the common
- * case the expensive one. Here an untouched slot costs nothing and means exactly what it looks like.
+ * A list first, with the walk ("Map all") as an option rather than the way in. Most slots on most
+ * pads are already right, and forcing the user through all of them to fix two made the common case
+ * the expensive one.
  */
 class MappingEditorController(
     private val mappings: MappingRepository,
@@ -86,7 +99,13 @@ class MappingEditorController(
     /** Whether the mapping on screen came from the database untouched. */
     private var seededOnOpen = false
 
-    fun open(controllerName: String, key: MappingKey) {
+    /** Whether the mirror was off when the editor opened, so captures listen in the app. */
+    private var listenInAppOnOpen = false
+
+    /** What the real external pad declares, for the auto-map presets. Null when unreadable. */
+    private var sourceTraits: TargetTraits? = null
+
+    fun open(controllerName: String, key: MappingKey, internalPadName: String? = null) {
         if (_state.value.open) return
         mappingKey = key
         scope.launch {
@@ -101,7 +120,11 @@ class MappingEditorController(
                 seedDefaultMapping(key)
                 val mapping = mappings.get(key)
                 seededOnOpen = runCatching { mappings.isSeeded(key) }.getOrDefault(false)
+                // Known now rather than after the first capture asks the daemon: the overlay is up
+                // before that answer comes back, and a press in the gap would reach the screen.
+                listenInAppOnOpen = runCatching { !process.isRunning() }.getOrDefault(false)
                 val traits = runCatching { devices.targetTraits() }.getOrNull()
+                sourceTraits = runCatching { devices.sourceTraits(key) }.getOrNull()
                 mapping to mappingSlots(traits ?: odinFallbackTraits())
             }
 
@@ -124,6 +147,8 @@ class MappingEditorController(
                 slots = slots,
                 bindings = openedWith,
                 seeded = seededOnOpen,
+                internalPadName = internalPadName,
+                listenInApp = listenInAppOnOpen,
             )
         }
     }
@@ -135,8 +160,48 @@ class MappingEditorController(
         startCapture()
     }
 
-    /** Close the overlay without changing anything. */
+    /** Walk every slot in order, opening the capture for each. */
+    fun mapAll() {
+        val first = _state.value.slots.firstOrNull() ?: return
+        if (!_state.value.open) return
+        _state.update { it.copy(walk = 0) }
+        bind(first)
+    }
+
+    /** End a walk, leaving what it has bound so far. */
+    fun stopWalk() {
+        _state.update { it.copy(walk = null) }
+        cancelBind()
+    }
+
+    /** Replace the whole mapping with a layout preset. Held until [close], like any other edit. */
+    fun autoMap(layout: PadLayout) {
+        if (!_state.value.open) return
+        stopPolling()
+        _state.update {
+            it.copy(
+                bindings = presetBindings(layout, it.slots, sourceTraits),
+                capturing = null, walk = null, notice = null, seeded = false,
+            )
+        }
+        scope.launch(fifo) { process.endCapture() }
+    }
+
+    /** A press the app heard itself (mirror off). Main thread only. */
+    fun captured(source: ControlRef) {
+        if (accept(source) == CaptureVerdict.Next) startCapture()
+    }
+
+    /** The key layout of a pad the app hears directly, to name its axes by evdev code. */
+    fun axisLabels(vendorId: Int, productId: Int): Map<Int, String> =
+        runCatching { devices.axisLabels(vendorId, productId) }.getOrDefault(emptyMap())
+
+    /** Close the overlay without changing anything. During a walk, skip to the next slot instead. */
     fun cancelBind() {
+        if (advanceWalk()) {
+            startCapture()
+            return
+        }
         stopPolling()
         scope.launch(fifo) { process.endCapture() }
         _state.update { it.copy(capturing = null, notice = null) }
@@ -146,7 +211,7 @@ class MappingEditorController(
     fun clear(slot: MappingSlot) {
         if (!_state.value.open) return
         _state.update {
-            it.copy(bindings = it.bindings - slot.target, capturing = null, notice = null, seeded = false)
+            it.copy(bindings = it.bindings - slot.target, capturing = null, walk = null, notice = null, seeded = false)
         }
         stopPolling()
         scope.launch(fifo) { process.endCapture() }
@@ -158,7 +223,7 @@ class MappingEditorController(
         stopPolling()
         // No longer "the profile as it came": what is on screen is the user's doing from here on,
         // even though clearing it all is what will hand the profile back on the way out.
-        _state.update { it.copy(bindings = emptyMap(), capturing = null, notice = null, seeded = false) }
+        _state.update { it.copy(bindings = emptyMap(), capturing = null, walk = null, notice = null, seeded = false) }
         scope.launch(fifo) { process.endCapture() }
     }
 
@@ -170,6 +235,9 @@ class MappingEditorController(
      * reload per press — twenty of them to remap a pad, each one a chance to be caught half-applied.
      */
     fun close() {
+        // The page lingers for its exit animation, so a second B can land here: the state is then
+        // already empty and a second write would wipe what the first one saved.
+        if (!_state.value.open) return
         stopPolling()
         val key = mappingKey
         val bindings = _state.value.bindings
@@ -230,16 +298,11 @@ class MappingEditorController(
             // Always the button mode, even for a stick direction: what a slot wants is one control
             // pushed one way, and that is exactly what this mode reports — a code for a button, a
             // code and a direction for an axis.
-            // The daemon is what listens. With the mirror off nobody does, and the overlay waited for
-            // a press that could never arrive; say why instead.
-            if (!process.beginCapture(CaptureKind.BUTTON)) {
-                withContext(Dispatchers.Main) {
-                    _state.update {
-                        it.copy(capturing = null, notice = "Can't listen for a press while the mirror is off. Dock, or turn it on.")
-                    }
-                }
-                return@launch
-            }
+            // The daemon listens when it runs. With the mirror off it cannot, but then the pad is not
+            // grabbed either and reaches the app, so the screen listens instead.
+            val daemon = process.beginCapture(CaptureKind.BUTTON)
+            withContext(Dispatchers.Main) { _state.update { it.copy(listenInApp = !daemon) } }
+            if (!daemon) return@launch
             var lastBegin = System.currentTimeMillis()
 
             while (isActive && _state.value.capturing != null) {
@@ -251,17 +314,24 @@ class MappingEditorController(
                 }
                 val read = process.readCaptures(offset)
                 offset = read.offset
-                val result = read.results.firstOrNull()
-                if (result != null) {
-                    when (withContext(Dispatchers.Main) { accept(result) }) {
+                val source = when (val result = read.results.firstOrNull()) {
+                    is CaptureResult.Button -> ControlRef.button(result.code)
+                    // The pad reports this control as an axis — a trigger, usually, or a stick being
+                    // pushed at a slot. Half of that axis's travel is the source, so it fills any slot.
+                    is CaptureResult.AxisButton -> ControlRef.half(result.code, result.sign)
+                    is CaptureResult.Stick, null -> null
+                }
+                if (source != null) {
+                    when (withContext(Dispatchers.Main) { accept(source) }) {
                         CaptureVerdict.Accepted -> {
                             process.endCapture()
                             return@launch
                         }
                         // Reopen: the daemon latches as soon as it has a result, so without this the
-                        // overlay would sit there refusing to see the next press. Done HERE rather
-                        // than from accept() so it cannot race the loop that is still reading.
-                        CaptureVerdict.Refused -> {
+                        // overlay would sit there refusing to see the next press (or, in a walk,
+                        // the next slot's). Done HERE rather than from accept() so it cannot race
+                        // the loop that is still reading.
+                        CaptureVerdict.Refused, CaptureVerdict.Next -> {
                             process.clearCaptures()
                             offset = 0L
                             process.beginCapture(CaptureKind.BUTTON)
@@ -287,6 +357,9 @@ class MappingEditorController(
         /** The control belongs to another slot; reopen and wait for a different press. */
         Refused,
 
+        /** It filled the slot and the walk moved on; reopen for the next one. */
+        Next,
+
         /** Nothing this mode can use; keep waiting. */
         Ignored,
     }
@@ -298,15 +371,8 @@ class MappingEditorController(
      * dispatcher), so cancelling the poller or reopening the capture from in here would be the loop
      * reaching around itself — in the reopen case, resetting the offset of a read still in flight.
      */
-    private fun accept(result: CaptureResult): CaptureVerdict {
+    private fun accept(source: ControlRef): CaptureVerdict {
         val slot = _state.value.capturing ?: return CaptureVerdict.Ignored
-        val source = when (result) {
-            is CaptureResult.Button -> ControlRef.button(result.code)
-            // The pad reports this control as an axis — a trigger, usually, or a stick being pushed
-            // at a slot. Half of that axis's travel is the source, so it fills any slot properly.
-            is CaptureResult.AxisButton -> ControlRef.half(result.code, result.sign)
-            is CaptureResult.Stick -> return CaptureVerdict.Ignored
-        }
 
         // Refusing beats stealing. Letting the newer binding win silently is how a user ends up with
         // a control torn off a slot they set earlier with nothing on screen to connect the two — and
@@ -314,21 +380,31 @@ class MappingEditorController(
         val taken = _state.value.bindings.entries.firstOrNull {
             it.value == source && it.key != slot.target
         }
-        if (taken != null) {
+        // Except mid-walk, from a slot still ahead: the walk is going to ask for that one anyway, and
+        // refusing would make swapping two buttons impossible without clearing first.
+        val walk = _state.value.walk
+        val ownerIndex = taken?.let { t -> _state.value.slots.indexOfFirst { it.target == t.key } } ?: -1
+        if (taken != null && walk != null && ownerIndex > walk) {
+            _state.update { it.copy(bindings = it.bindings - taken.key) }
+        } else if (taken != null) {
             val owner = _state.value.slots.firstOrNull { it.target == taken.key }?.label ?: "another slot"
             _state.update { it.copy(notice = "That control is already bound to $owner") }
             return CaptureVerdict.Refused
         }
 
         _state.update {
-            it.copy(
-                bindings = it.bindings + (slot.target to source),
-                capturing = null,
-                notice = null,
-                seeded = false,
-            )
+            it.copy(bindings = it.bindings + (slot.target to source), capturing = null, notice = null, seeded = false)
         }
-        return CaptureVerdict.Accepted
+        return if (advanceWalk()) CaptureVerdict.Next else CaptureVerdict.Accepted
+    }
+
+    /** Move a walk on to the next slot, or end it after the last. True while there is a next slot. */
+    private fun advanceWalk(): Boolean {
+        val walk = _state.value.walk ?: return false
+        val next = walk + 1
+        val slot = _state.value.slots.getOrNull(next)
+        _state.update { it.copy(walk = slot?.let { next }, capturing = slot, notice = null) }
+        return slot != null
     }
 
     private companion object {
