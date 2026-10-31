@@ -186,7 +186,7 @@ static void force_stop_foreground_app(void) {
         "task=$(dumpsys activity activities 2>/dev/null | sed -n 's/.*ResumedActivity: ActivityRecord{.* t\\([0-9][0-9]*\\)}.*/\\1/p' | head -n 1); "
         "[ -z \"$pkg\" ] && pkg=$(dumpsys window 2>/dev/null | sed -n 's/.*mFocusedApp=ActivityRecord{[^ ]* [^ ]* \\([^/ ]*\\)\\/.*/\\1/p' | head -n 1); "
         "[ -z \"$task\" ] && task=$(dumpsys window 2>/dev/null | sed -n 's/.*mFocusedApp=ActivityRecord{.* t\\([0-9][0-9]*\\)}.*/\\1/p' | head -n 1); "
-        "case \"$pkg\" in ''|com.odininputmirror|com.android.systemui|com.android.launcher*|*launcher*) ;; *) [ -n \"$task\" ] && cmd activity stack remove \"$task\" 2>/dev/null; am force-stop \"$pkg\" ;; esac"
+        "case \"$pkg\" in ''|com.controlswitch|com.odininputmirror|com.android.systemui|com.android.launcher*|*launcher*) ;; *) [ -n \"$task\" ] && cmd activity stack remove \"$task\" 2>/dev/null; am force-stop \"$pkg\" ;; esac"
     );
 }
 
@@ -1083,7 +1083,7 @@ int main(int argc, char **argv) {
 
     // Create the touch helper on every mirror start, regardless of the virtual-mouse setting: it is
     // what hides the cursor on mouse-mode exit when enabled, and its unavoidable "connected" toast
-    // ("Docking Enhancer Mirror connected") doubles as a consistent mirror-activation notification on
+    // ("Control Switch Mirror connected") doubles as a consistent mirror-activation notification on
     // each start. Created once and kept for the whole session so the toast doesn't repeat per toggle.
     mouse_create_touch_device(&s.mouse);
 

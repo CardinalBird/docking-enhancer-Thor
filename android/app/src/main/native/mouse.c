@@ -93,7 +93,7 @@ static int create_uinput_mouse(void) {
     setup.id.vendor = 0x2323;
     setup.id.product = 0x0001;
     setup.id.version = 1;
-    snprintf(setup.name, sizeof(setup.name), "Docking Enhancer Mouse");
+    snprintf(setup.name, sizeof(setup.name), "Control Switch Mouse");
 
     if (ioctl(fd, UI_DEV_SETUP, &setup) < 0) {
         fprintf(stderr, "UI_DEV_SETUP failed: %s\n", strerror(errno));
@@ -161,7 +161,7 @@ static int create_touch_device(void) {
     // the name is chosen so that toast reads as an intentional mirror-activation message. The device
     // is created once per mirror start and kept for the whole session, so the toast shows once on
     // start (not on every mouse-mode toggle).
-    snprintf(setup.name, sizeof(setup.name), "Docking Enhancer Mirror");
+    snprintf(setup.name, sizeof(setup.name), "Control Switch Mirror");
 
     if (ioctl(fd, UI_DEV_SETUP, &setup) < 0 || ioctl(fd, UI_DEV_CREATE) < 0) {
         close(fd);

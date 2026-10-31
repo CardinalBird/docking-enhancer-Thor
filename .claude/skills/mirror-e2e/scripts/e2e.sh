@@ -68,6 +68,7 @@ echo "=== setup ==="
 
 # The app's supervisor would fight the suite for the controllers, so park it first.
 am force-stop com.odininputmirror 2>/dev/null
+am force-stop com.controlswitch 2>/dev/null
 stop_mirror
 
 rm -rf $TMP
@@ -570,7 +571,7 @@ echo "=== T12: el raton virtual aparece y se va con el combo ==="
 # The pointer's own node, by the name mouse.c gives it. The handlers line reads
 # "H: Handlers=event7 mouse2", so the prefix has to come off before the fields mean anything.
 mouse_node() {
-    awk '/Name="Docking Enhancer Mouse"/{f=1}
+    awk '/Name="Control Switch Mouse"/{f=1}
          f && /Handlers=/ {
              sub(/.*Handlers=/, "")
              for (i = 1; i <= NF; i++) if ($i ~ /^event/) { print "/dev/input/" $i; exit }
@@ -641,7 +642,7 @@ else
 
         # Leaving must hide the cursor WITHOUT touching the screen: the helper may hover (a tracking
         # id) but never press BTN_TOUCH, which is what used to tap (0,0) and dismiss open dialogs.
-        TOUCHN=$(awk '/Name="Docking Enhancer Mirror"/{f=1} f && /Handlers=/ { sub(/.*Handlers=/, ""); for (i = 1; i <= NF; i++) if ($i ~ /^event/) { print "/dev/input/" $i; exit } }' /proc/bus/input/devices 2>/dev/null)
+        TOUCHN=$(awk '/Name="Control Switch Mirror"/{f=1} f && /Handlers=/ { sub(/.*Handlers=/, ""); for (i = 1; i <= NF; i++) if ($i ~ /^event/) { print "/dev/input/" $i; exit } }' /proc/bus/input/devices 2>/dev/null)
         # Launched bare, not behind a `[ ] &&`: killing the pid of a backgrounded list kills the
         # subshell and orphans getevent, which then holds adb's output open and the run never returns.
         T12T=
