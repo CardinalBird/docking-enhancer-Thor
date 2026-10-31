@@ -1,5 +1,5 @@
 /*
- * vgamepad — a scriptable synthetic gamepad for the Docking Enhancer e2e suite.
+ * vgamepad — a scriptable synthetic gamepad for the Control Switch e2e suite.
  *
  * Why this exists: every meaningful test of the mirror needs a controller, and driving one by hand
  * makes the suite unrepeatable — the physical pad sleeps mid-run, its event node renumbers, and no

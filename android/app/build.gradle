@@ -23,7 +23,7 @@ android {
     compileSdk 37
 
     defaultConfig {
-        applicationId "com.odininputmirror"
+        applicationId "com.controlswitch"
         minSdk 28
         // Newer lint flags any targetSdk below the latest release. Raising it changes runtime
         // behaviour on the device, so it is its own PR, like the dependency-age checks above.

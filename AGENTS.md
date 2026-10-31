@@ -9,7 +9,12 @@ This is CardinalBird's fork of Ezequiel-CE/Docking-Enhancer, retargeted to the *
 - Gradle 9.8.2, Android Gradle Plugin 9.5.0 (Kotlin is built in: no `kotlin.android` plugin, no `kotlinOptions`), Kotlin 2.4.21, Java/JVM 17 bytecode for `:app`/`:data`.
 - Compose BOM 2026.09.00, activity-compose 1.13.0, lifecycle 2.11.0 (kotlinx-coroutines pinned to what lifecycle pulls: 1.9.0). Versions live ONLY in `android/gradle/libs.versions.toml`; the root `build.gradle` uses the catalog aliases.
 - No root: privileged commands run through the stock firmware's PServerBinder service (reflection + binder transact). minSdk 28, targetSdk 35, compileSdk 37 for `:app` (Compose 1.12 / core 1.19 / activity 1.13 refuse less) and 35 for `:data`. Raising targetSdk is its own PR; lint's `OldTargetApi` is suppressed at the site.
-- App id is `com.odininputmirror`. App label is `Docking Enhancer` (`strings.xml`).
+- App id (`applicationId`) is `com.controlswitch`. App label is `Control Switch` (`strings.xml`).
+- The Kotlin package, Gradle `namespace` and source paths are still `com.odininputmirror` on purpose:
+  renaming them is a large, behaviour-free diff, so only the install id changed. Use
+  `com.controlswitch` for anything addressed by app id (`am`, `run-as`, `/data/data/...`, the
+  daemon's don't-kill-myself check); keep `com.odininputmirror` for imports and class names.
+  v0.2.0 shipped as `com.odininputmirror`, so it installs alongside rather than upgrading.
 
 ## Repo layout that matters
 - Android multi-module project under `android/`.
@@ -119,7 +124,7 @@ Run from `android/`. On Windows use `gradlew.bat` and the `.ps1` scripts; on mac
 
 ## Known install quirk (seen on Odin)
 - Install may fail with `Failed to parse APK file` / `avc ... Permission denied` even when build succeeds.
-- Fallback: `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`, then launch `com.odininputmirror/.MainActivity`.
+- Fallback: `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`, then launch `com.controlswitch/com.odininputmirror.MainActivity`.
 
 ## Agent-local files
 - `.agents/` is intentionally gitignored; do not re-add it to tracking.
