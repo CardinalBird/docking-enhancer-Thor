@@ -117,8 +117,8 @@ static int create_uinput_mouse(void) {
  * its ~3s inactivity timeout. Android *does* hide it at once the moment a touch arrives (input
  * switches to touch mode). The device is created at mirror start so Android has fully enumerated and
  * opened it by the time we need it (a device created and used within the same instant is never read —
- * enumeration takes ~100ms+). On leaving mouse mode we push one touch-DOWN through it and cancel the
- * gesture, so Android switches to touch mode (cursor hidden immediately) with nothing dispatched.
+ * enumeration takes ~100ms+). On leaving mouse mode we push one HOVER through it (a contact that never
+ * presses BTN_TOUCH), which fades the cursor at once and dispatches no touch at all.
  */
 static int create_touch_device(void) {
     int fd = open("/dev/uinput", O_RDWR | O_CLOEXEC | O_NONBLOCK);
@@ -170,35 +170,31 @@ static int create_touch_device(void) {
     return fd;
 }
 
-// Push a touch-DOWN through the persistent touch device to switch Android into touch mode (hiding
-// the mouse cursor immediately), then cancel the gesture so it is never completed as a tap/click —
-// without destroying the device (which would re-trigger a "connected" toast on the next use).
+// Hide the cursor on the way out of mouse mode with a HOVER through the persistent touch device: a
+// contact (tracking id) that never presses BTN_TOUCH. Android fades the pointer for it like for any
+// touch, but reports only HOVER_ENTER/EXIT: no ACTION_DOWN, so nothing is tapped, no popup gets an
+// ACTION_OUTSIDE, and the window does not even switch to touch mode.
 //
-// The cancel uses SYN_DROPPED: after the DOWN we set the device's state back to "no touch" but,
-// instead of reporting it normally (which would be a tap), we emit SYN_DROPPED. Android's EventHub
-// treats that as a lost-sync signal, discards the in-flight packet, re-reads the device state (now
-// released) and cancels the active touch — no ACTION_UP, so nothing is clicked.
-static void flush_touch_cancel(int touch_fd) {
+// This used to be a touch-DOWN "cancelled" with SYN_DROPPED. The kernel's input core does not pass a
+// SYN_DROPPED written through uinput, so what reached Android was a plain DOWN and UP: a real 40 ms
+// tap at (0,0) on every exit, verified with getevent on the Thor, which dismissed whatever dialog
+// was open. Destroying the pointer alone is not enough either, the firmware's always-present "ODIN
+// Station Virtual Mouse" keeps the cursor on screen indefinitely (6.5 s and counting, measured).
+static void hide_cursor_with_hover(int touch_fd) {
     if (touch_fd < 0) {
         return;
     }
-    // Touch DOWN at (0,0): coordinate is irrelevant because the gesture is cancelled.
     emit_event(touch_fd, EV_ABS, ABS_MT_SLOT, 0);
     emit_event(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, 1);
     emit_event(touch_fd, EV_ABS, ABS_MT_POSITION_X, 0);
     emit_event(touch_fd, EV_ABS, ABS_MT_POSITION_Y, 0);
-    emit_event(touch_fd, EV_KEY, BTN_TOUCH, 1);
     emit_event(touch_fd, EV_SYN, SYN_REPORT, 0);
 
-    // Let Android read the DOWN (switch to touch mode → cursor hidden) before we cancel.
+    // Let Android read the hover-enter (which fades the pointer) before the contact lifts.
     usleep(40000);
 
-    // Release the contact in the device state, then signal a dropped sync so Android discards this
-    // packet and re-reads the (released) state as a cancel rather than a tap.
     emit_event(touch_fd, EV_ABS, ABS_MT_SLOT, 0);
     emit_event(touch_fd, EV_ABS, ABS_MT_TRACKING_ID, -1);
-    emit_event(touch_fd, EV_KEY, BTN_TOUCH, 0);
-    emit_event(touch_fd, EV_SYN, SYN_DROPPED, 0);
     emit_event(touch_fd, EV_SYN, SYN_REPORT, 0);
 }
 
@@ -252,7 +248,7 @@ void mouse_leave(struct mouse_state *m) {
         m->uinput_fd = -1;
     }
     m->left_click_down = m->right_click_down = 0;
-    flush_touch_cancel(m->touch_fd);
+    hide_cursor_with_hover(m->touch_fd);
 }
 
 // Emit accumulated cursor/scroll motion on the frame cadence. A moving stick streams ABS events so
