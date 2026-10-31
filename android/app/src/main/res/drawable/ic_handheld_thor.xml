@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimalist AYN Thor, opened: main screen on the lid, second screen, sticks and buttons on the deck. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="100dp"
+    android:viewportWidth="120"
+    android:viewportHeight="100">
+    <path android:pathData="M16,4 H104 A6,6 0 0 1 110,10 V44 A6,6 0 0 1 104,50 H16 A6,6 0 0 1 10,44 V10 A6,6 0 0 1 16,4 Z"
+        android:fillColor="#FF2A2A2A"
+        android:strokeColor="#FFB8B8B8" android:strokeWidth="2" />
+    <path android:pathData="M19,9 H101 A3,3 0 0 1 104,12 V42 A3,3 0 0 1 101,45 H19 A3,3 0 0 1 16,42 V12 A3,3 0 0 1 19,9 Z"
+        android:fillColor="#FF0C0C0C" />
+    <path android:pathData="M16,54 H104 A6,6 0 0 1 110,60 V90 A6,6 0 0 1 104,96 H16 A6,6 0 0 1 10,90 V60 A6,6 0 0 1 16,54 Z"
+        android:fillColor="#FF2A2A2A"
+        android:strokeColor="#FFB8B8B8" android:strokeWidth="2" />
+    <path android:pathData="M44,59 H76 A2,2 0 0 1 78,61 V83 A2,2 0 0 1 76,85 H44 A2,2 0 0 1 42,83 V61 A2,2 0 0 1 44,59 Z"
+        android:fillColor="#FF0C0C0C" />
+    <path android:pathData="M19,66 a6,6 0 1 0 12,0 a6,6 0 1 0 -12,0 Z"
+        android:strokeColor="#FFB4F2FD" android:strokeWidth="2" />
+    <path android:pathData="M23.5,80 H26.5 V83.5 H30 V86.5 H26.5 V90 H23.5 V86.5 H20 V83.5 H23.5 Z"
+        android:fillColor="#FFB8B8B8" />
+    <path android:pathData="M93,61 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z M98,66 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z M93,71 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z M88,66 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 Z"
+        android:fillColor="#FFB8B8B8" />
+    <path android:pathData="M89,85 a6,6 0 1 0 12,0 a6,6 0 1 0 -12,0 Z"
+        android:strokeColor="#FFB4F2FD" android:strokeWidth="2" />
+</vector>

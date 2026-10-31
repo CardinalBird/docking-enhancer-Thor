@@ -46,7 +46,7 @@ internal fun UnsupportedDeviceDialog(serviceUnresponsive: Boolean) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF1A2230))
+                .background(Palette.surface)
                 .border(1.dp, Palette.border, RoundedCornerShape(14.dp))
                 .padding(horizontal = 24.dp, vertical = 22.dp),
         ) {
@@ -61,7 +61,7 @@ internal fun UnsupportedDeviceDialog(serviceUnresponsive: Boolean) {
                         "responding. This can happen on some firmware versions."
                 } else {
                     "This app needs the built-in PServer service that ships on handhelds like the AYN " +
-                        "Odin 2 family. Your device doesn't have it, so the dock mirror can't run here."
+                        "Odin 2 family. Your device doesn't have it, so controller mirroring can't run here."
                 },
                 color = Palette.textSecondary,
                 fontSize = 14.sp,
@@ -82,7 +82,7 @@ internal fun InternalControllerPicker(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF1A2230))
+                .background(Palette.surface)
                 .border(1.dp, Palette.border, RoundedCornerShape(14.dp))
                 .padding(horizontal = 24.dp, vertical = 20.dp),
         ) {
@@ -124,6 +124,7 @@ internal fun PickerOption(name: String, selected: Boolean, onClick: () -> Unit) 
             .heightIn(min = 58.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (focused) Palette.focusBg else Color.Transparent)
+            .focusOutline(focused, RoundedCornerShape(8.dp))
             .clickable(interactionSource = interaction, indication = null) { onClick() }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -132,7 +133,7 @@ internal fun PickerOption(name: String, selected: Boolean, onClick: () -> Unit) 
             modifier = Modifier
                 .size(20.dp)
                 .clip(CircleShape)
-                .border(2.dp, if (selected) Palette.accent else Color(0xFF5B6175), CircleShape),
+                .border(2.dp, if (selected) Palette.accent else Palette.borderStrong, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (selected) {

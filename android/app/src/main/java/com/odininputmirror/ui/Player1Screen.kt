@@ -2,23 +2,23 @@ package com.odininputmirror.ui
 
 import android.view.InputDevice
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,17 +30,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,25 +54,27 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.odininputmirror.R
 import com.odininputmirror.domain.model.ControllerDevice
 import com.odininputmirror.domain.model.lockedPlayer1
 import com.odininputmirror.ui.theme.Palette
 
 /**
- * "Press L + R on the controller you want to use." The pad that does becomes player 1: the one the
- * mirror replays as the built-in controller whenever it is connected.
+ * Change Input Order: "Press L + R on the controller you'd like to use." Slot 1 stays empty until a
+ * pad does; that pad is staged ([pendingName]), and A on any pad saves it as player 1 — the one the
+ * mirror replays as the built-in controller whenever it is connected. B leaves without saving.
  *
- * The supervisor holds the mirror off while this is open, so every external pad reports as itself.
- * B leaves, X unlocks (back to "first connected").
+ * The supervisor holds the mirror off while this is open, so every pad reports as itself and its A
+ * reaches this screen through normal key dispatch.
  */
-@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun Player1Screen(
     externals: List<ControllerDevice>,
     player1Name: String?,
-    player1Path: String?,
+    pendingName: String?,
+    pendingPath: String?,
     onPick: (InputDevice) -> Unit,
-    onUnlock: () -> Unit,
+    onConfirm: () -> Unit,
     onClose: () -> Unit,
 ) {
     BackHandler(onBack = onClose)
@@ -84,14 +92,12 @@ fun Player1Screen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Locked pad first so it sits in the P1 tile, then the rest; four tiles like the Switch screen.
-    val locked = externals.lockedPlayer1(player1Name, player1Path)
-    val ordered = externals.sortedByDescending { it == locked }
-    val glyphs = promptFontFamily()
+    val pending = remember(externals, pendingName, pendingPath) { externals.lockedPlayer1(pendingName, pendingPath) }
+    val pendingBattery = remember(pending) { padBattery(pending) }
 
     // Nothing on this screen is focusable, and Compose routes keys to the focused node's ancestors
-    // only, so X never arrived. The screen itself is the focus target. Both halves of X are taken:
-    // Android otherwise turns an unhandled X press into a select.
+    // only, so A never arrived. The screen itself is the focus target. Both halves of A are taken
+    // and the confirm waits for the release: the A that opened this page lifts after it appears.
     val anchor = remember { FocusRequester() }
     val inputModeManager = LocalInputModeManager.current
     LaunchedEffect(Unit) {
@@ -102,125 +108,120 @@ fun Player1Screen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Palette.screen)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .focusRequester(anchor)
             .onPreviewKeyEvent {
-                if (it.key != Key.ButtonX) return@onPreviewKeyEvent false
-                if (it.type == KeyEventType.KeyUp) onUnlock()
+                if (it.key != Key.ButtonA) return@onPreviewKeyEvent false
+                if (it.type == KeyEventType.KeyUp && pendingName != null) onConfirm()
                 true
             }
             .focusable(),
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth().background(Palette.band)
-                .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 28.dp, vertical = 18.dp),
-        ) {
-            Text("Player 1 controller", color = Palette.textPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        }
+        Header(title = "Change Input Order")
+        Rule(Modifier.padding(horizontal = 28.dp))
 
         Column(
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 40.dp, vertical = 20.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 56.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Press ", color = Palette.textPrimary, fontSize = 24.sp)
-                ButtonChip(PromptGlyph.LEFT_BUMPER, glyphs)
-                Text("  +  ", color = Palette.textPrimary, fontSize = 24.sp)
-                ButtonChip(PromptGlyph.RIGHT_BUMPER, glyphs)
-                Text(" on the controller you want to use", color = Palette.textPrimary, fontSize = 24.sp)
+                Text("Press  ", color = Palette.textPrimary, fontSize = 19.sp)
+                ButtonIcon("L")
+                Text("  +  ", color = Palette.textPrimary, fontSize = 19.sp)
+                ButtonIcon("R")
+                Text("  on the controller you'd like to use.", color = Palette.textPrimary, fontSize = 19.sp)
             }
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                repeat(4) { slot ->
-                    PlayerTile(
-                        slot = slot,
-                        device = ordered.getOrNull(slot),
-                        locked = locked != null && ordered.getOrNull(slot) == locked,
-                        modifier = Modifier.weight(1f),
-                    )
+                PlayerOneSlot(pendingName, pendingBattery, Modifier.weight(1f))
+                for (slot in 2..4) {
+                    Slot(filled = false, Modifier.weight(1f)) {
+                        Text("$slot", color = Palette.textMuted, fontSize = 34.sp)
+                    }
                 }
             }
-            Spacer(Modifier.height(24.dp))
-            Text(
-                if (player1Name == null) {
-                    "No lock yet: the first connected controller plays as player 1."
-                } else {
-                    "Locked: $player1Name plays as player 1 whenever it's connected."
-                },
-                color = Palette.textSecondary,
-                fontSize = 15.sp,
-                textAlign = TextAlign.Center,
-            )
+            Spacer(Modifier.height(20.dp))
+            if (pendingName != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Press  ", color = Palette.textPrimary, fontSize = 17.sp)
+                    ButtonIcon("A")
+                    Text("  when you're ready.", color = Palette.textPrimary, fontSize = 17.sp)
+                }
+            } else {
+                Text(
+                    player1Name?.let { "Player 1 is $it." } ?: "No controller is player 1 yet.",
+                    color = Palette.textMuted,
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
 
         HintBar(
-            hints = listOf(
-                HintAction(PromptGlyph.X, "Unlock", onUnlock),
-                HintAction(PromptGlyph.B, "Done", onClose),
+            hints = listOfNotNull(
+                HintAction("B", "Back", onClose),
+                if (pendingName != null) HintAction("A", "OK", onConfirm) else null,
             ),
         )
     }
 }
 
+/** Slot 1: empty until a pad presses L + R, then that pad scales and fades in, lamp lit. */
 @Composable
-private fun PlayerTile(slot: Int, device: ControllerDevice?, locked: Boolean, modifier: Modifier) {
-    val shape = RoundedCornerShape(14.dp)
-    Column(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clip(shape)
-            .background(if (device != null) Palette.surfaceRaised else Palette.screen)
-            .border(if (locked) 3.dp else 1.dp, if (locked) Palette.accent else Palette.border, shape)
-            .padding(14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // The four player lamps, this tile's one lit.
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            repeat(4) { lamp ->
-                Box(
-                    Modifier.size(10.dp).background(
-                        if (lamp == slot && device != null) Palette.accent else Palette.borderStrong,
-                    ),
-                )
+private fun PlayerOneSlot(name: String?, battery: Int?, modifier: Modifier) {
+    Slot(filled = name != null, modifier) {
+        AnimatedContent(
+            targetState = name,
+            transitionSpec = {
+                (scaleIn(tween(300), initialScale = 0.6f) + fadeIn(tween(300))) togetherWith fadeOut(tween(150))
+            },
+            label = "player1",
+        ) { shown ->
+            if (shown == null) {
+                Text("1", color = Palette.textMuted, fontSize = 34.sp)
+            } else {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlayerLamps(lit = true)
+                    Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 60.dp, height = 46.dp))
+                    battery?.let { Battery(it) }
+                    Text(shown, color = Palette.textPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
-        if (device == null) {
-            Text("${slot + 1}", color = Palette.textMuted, fontSize = 40.sp)
-        } else {
-            Text("🎮", fontSize = 44.sp)
-        }
-        Text(
-            device?.name ?: "",
-            color = if (locked) Palette.accent else Palette.textSecondary,
-            fontSize = 13.sp,
-            fontWeight = if (locked) FontWeight.Bold else FontWeight.Normal,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
 @Composable
-private fun ButtonChip(glyph: String, glyphs: androidx.compose.ui.text.font.FontFamily) {
+private fun Slot(filled: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Palette.accent).padding(horizontal = 10.dp),
+        modifier = modifier
+            .height(160.dp)
+            .clip(shape)
+            .background(if (filled) Palette.surfaceRaised else Palette.screen)
+            .let { if (filled) it.focusOutline(true, shape) else it.border(1.dp, Palette.borderStrong, shape) }
+            .padding(10.dp),
         contentAlignment = Alignment.Center,
-    ) {
-        Text(glyph, color = Palette.band, fontFamily = glyphs, fontSize = 30.sp)
-    }
+    ) { content() }
 }
 
 internal data class HintAction(val glyph: String, val label: String, val onClick: (() -> Unit)?)
 
-/** The Switch-style strip along the bottom: which pad button does what. Tappable too. */
+// Hints naming a face button or bumper get the drawn Switch-style icon, whether the caller passes the
+// letter or the PromptFont glyph; anything else still renders as its PromptFont glyph.
+private val iconFor = mapOf(
+    PromptGlyph.A to "A", PromptGlyph.B to "B", PromptGlyph.X to "X", PromptGlyph.Y to "Y",
+    PromptGlyph.LEFT_BUMPER to "L", PromptGlyph.RIGHT_BUMPER to "R",
+)
+
+/** The Switch-style hints along the bottom, on the page: which pad button does what. Tappable too. */
 @Composable
 internal fun HintBar(hints: List<HintAction>) {
     val glyphs = promptFontFamily()
     Row(
-        modifier = Modifier.fillMaxWidth().background(Palette.band).padding(horizontal = 28.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.End),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         hints.forEach { hint ->
@@ -230,9 +231,14 @@ internal fun HintBar(hints: List<HintAction>) {
                     .let { m -> hint.onClick?.let { m.clickable(onClick = it) } ?: m }.padding(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(hint.glyph, color = Palette.textPrimary, fontFamily = glyphs, fontSize = 24.sp)
+                val icon = iconFor[hint.glyph] ?: hint.glyph.takeIf { it in iconFor.values }
+                if (icon != null) {
+                    ButtonIcon(icon, size = 24.dp)
+                } else {
+                    Text(hint.glyph, color = Palette.textPrimary, fontFamily = glyphs, fontSize = 24.sp)
+                }
                 Spacer(Modifier.size(8.dp))
-                Text(hint.label, color = Palette.textPrimary, fontSize = 16.sp)
+                Text(hint.label, color = Palette.textPrimary, fontSize = 15.sp)
             }
         }
     }
