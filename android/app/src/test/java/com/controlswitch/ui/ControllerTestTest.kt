@@ -185,4 +185,22 @@ class ControllerTestTest {
         assertNull(PAD_KEYS[KeyEvent.KEYCODE_BACK])
         assertEquals(SlotIcon.HOME, PAD_KEYS[KeyEvent.KEYCODE_BUTTON_MODE])
     }
+
+    @Test
+    fun `an axis passes once turned fast enough, either way round`() {
+        val g = { p: Float, y: Float, r: Float -> floatArrayOf(p, y, r) }
+        val a = floatArrayOf(0f, 1f, 0f)
+        val slow = MotionTest().feed(g(60f, -89f, 10f), a)
+        assertEquals(0, slow.passedCount)
+        assertEquals(listOf(60f, -89f, 10f), slow.rates)
+        val turned = slow.feed(g(0f, -90f, 0f), a).feed(g(95f, 0f, 0f), a)
+        assertTrue(turned.passed(Axis.YAW) && turned.passed(Axis.PITCH))
+        assertFalse(turned.passed(Axis.ROLL))
+        assertEquals(2, turned.passedCount)
+        assertEquals(3, turned.samples)
+        // The bubble follows gravity's sideways and forward parts.
+        val tilted = turned.feed(g(0f, 0f, 0f), floatArrayOf(0.3f, 0.9f, -0.2f))
+        assertEquals(0.3f, tilted.tiltX)
+        assertEquals(0.2f, tilted.tiltY)
+    }
 }

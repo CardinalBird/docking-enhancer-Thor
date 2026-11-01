@@ -85,7 +85,9 @@ It runs without root, using a privileged service the stock firmware already ship
   handheld, your controller's gyro while mirroring (Switch-style pads)
 - **Controller tests** — a live drawing of the pad lights up as you press, and a checklist ticks
   off every button, both sticks (a full circle, plus the click) and both triggers, for the Thor's
-  own pad or any controller. Hold **B** to leave. The Thor's Home key can't be tested in-app
+  own pad or any controller; hold **B** to leave. **Y** tests motion instead: turn the pad about
+  each axis, with a bubble level and live deg/s (a controller's gyro needs mirroring to be allowed,
+  since the daemon reads it). The Thor's Home key can't be tested in-app
 - **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Guided button mapping** — press a button for each row, or let **Map all** walk the list; or pick

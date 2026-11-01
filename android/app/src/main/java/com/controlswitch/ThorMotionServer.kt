@@ -157,7 +157,7 @@ internal object Dsu {
     const val MSG_VERSION = 0x100000
     const val MSG_INFO = 0x100001
     const val MSG_DATA = 0x100002
-    private const val PROTOCOL = 1001
+    const val PROTOCOL = 1001
     private const val GRAVITY = 9.80665f
     private const val DEG_PER_RAD = 57.29578f
 

@@ -45,6 +45,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.text.style.TextOverflow
@@ -52,6 +57,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
+import com.controlswitch.DsuClient
 import com.controlswitch.MirrorStateStore
 import com.controlswitch.domain.model.PadLayout
 import com.controlswitch.domain.model.SlotIcon
@@ -59,6 +65,9 @@ import com.controlswitch.ui.theme.Palette
 import com.controlswitch.ui.theme.Teal
 import kotlinx.coroutines.delay
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /**
  * Controller Tests: pick a pad, then press everything and watch the drawing light up while the
@@ -69,11 +78,6 @@ import java.util.Locale
  */
 @Composable
 internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack: () -> Unit) {
-    LifecycleStartEffect(Unit) {
-        MirrorStateStore.setTestingPad(true)
-        onStopOrDispose { MirrorStateStore.setTestingPad(false) }
-    }
-
     val internalName = state.localDevice?.name
     // Re-read when the supervisor sees pads come or go, and when the mirror stops and the external
     // pad reappears to Android.
@@ -84,13 +88,48 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
     // A pad that drops out mid-test ends the test rather than lighting a ghost.
     val testing = testingRaw && pad != null && pad.id == padId
     var test by remember { mutableStateOf(PadTest(emptyList())) }
+    // The motion step: the pad's gyro over the app's DSU port. For an external pad that is the
+    // daemon's, so the mirror is let run for the step; the handheld's own is served while it's off.
+    // Remembered at the start rather than re-read: once the mirror runs for the step, Android no
+    // longer lists the external pad, so the picked device cannot be looked up again.
+    var motion by remember { mutableStateOf(false) }
+    var motionBuiltIn by remember { mutableStateOf(false) }
+    var motionLabel by remember { mutableStateOf("") }
+    var motionTest by remember { mutableStateOf(MotionTest()) }
     val builtIn = pad != null && pad.name.equals(internalName, ignoreCase = true)
+    val holdWanted = !(motion && !motionBuiltIn)
+    LifecycleStartEffect(holdWanted) {
+        MirrorStateStore.setTestingPad(holdWanted)
+        onStopOrDispose { MirrorStateStore.setTestingPad(false) }
+    }
+    val motionLive = motion && (motionBuiltIn || state.enabled)
+    DisposableEffect(motionLive) {
+        if (!motionLive) return@DisposableEffect onDispose { }
+        val client = DsuClient { gyro, accel -> motionTest = motionTest.feed(gyro, accel) }
+        client.start()
+        onDispose { client.stop() }
+    }
+    // A pad without a gyro (or a daemon not serving one) never answers: say so after a moment.
+    var motionWaited by remember { mutableStateOf(false) }
+    LaunchedEffect(motionLive) {
+        motionWaited = false
+        if (motionLive) {
+            delay(3000)
+            motionWaited = true
+        }
+    }
     val layout = if (builtIn) PadLayout.NINTENDO else state.padLayout
     // The mirror is still being stood down: until it is, an external pad's presses arrive as the
     // built-in one, so there is nothing to test yet.
     val ready = !state.enabled && pad != null
 
-    BackHandler(enabled = active) { if (testing) testingRaw = false else onBack() }
+    BackHandler(enabled = active) {
+        when {
+            testing -> testingRaw = false
+            motion -> motion = false
+            else -> onBack()
+        }
+    }
 
     fun start() {
         val chosen = pad ?: return
@@ -101,6 +140,15 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
         )
         padId = chosen.id
         testingRaw = true
+    }
+
+    fun startMotion() {
+        val chosen = pad ?: return
+        if (!ready) return
+        motionTest = MotionTest()
+        motionBuiltIn = builtIn
+        motionLabel = padLabel(chosen, pads, internalName)
+        motion = true
     }
 
     // Every physical pad feeds the test, not only the picked one: with an external pad connected
@@ -161,8 +209,8 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
     var hasFocus by remember { mutableStateOf(false) }
     val first = remember { FocusRequester() }
     val inputModeManager = LocalInputModeManager.current
-    LaunchedEffect(active, testing) {
-        if (!active || testing) return@LaunchedEffect
+    LaunchedEffect(active, testing, motion) {
+        if (!active || testing || motion) return@LaunchedEffect
         repeat(24) {
             if (hasFocus) return@LaunchedEffect
             inputModeManager.requestInputMode(InputMode.Keyboard)
@@ -176,7 +224,13 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
     }
     CompositionLocalProvider(LocalPadLayout provides layout) {
         Column(
-            Modifier.fillMaxSize().onFocusChanged { hasFocus = it.hasFocus }.windowInsetsPadding(WindowInsets.safeDrawing),
+            Modifier.fillMaxSize().onFocusChanged { hasFocus = it.hasFocus }.windowInsetsPadding(WindowInsets.safeDrawing)
+                // Y on the picker starts the motion step. Both halves are taken: an unhandled Y turns into Back.
+                .onPreviewKeyEvent {
+                    if (it.key != Key.ButtonY || testing || motion) return@onPreviewKeyEvent false
+                    if (it.type == KeyEventType.KeyUp) startMotion()
+                    true
+                },
         ) {
             Header(title = "Controller Tests")
             Rule(Modifier.padding(horizontal = 28.dp))
@@ -185,28 +239,45 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
                     MenuRow(
                         title = "Controller",
                         minHeight = 44.dp,
-                        onClick = { start() },
-                        onLeft = if (testing) null else ({ cycle(-1) }),
-                        onRight = if (testing) null else ({ cycle(1) }),
+                        // Mirroring may run during the motion step, so a pad's A would reach this row.
+                        onClick = if (motion) null else ({ start() }),
+                        onLeft = if (testing || motion) null else ({ cycle(-1) }),
+                        onRight = if (testing || motion) null else ({ cycle(1) }),
                         modifier = Modifier.focusRequester(first),
                     ) {
                         RowValue(
                             when {
                                 pad == null -> "No controller connected"
-                                !ready -> "Pausing mirroring…"
+                                !ready && !motion -> "Pausing mirroring…"
+                                motion -> motionLabel
                                 testing -> padLabel(pad, pads, internalName)
                                 else -> "‹  ${padLabel(pad, pads, internalName)}  ›"
                             },
-                            accent = ready && !testing,
+                            accent = ready && !testing && !motion,
                         )
                     }
                     Spacer(Modifier.height(10.dp))
-                    PadDiagram(test, layout, builtIn, dim = !testing)
+                    Box(contentAlignment = Alignment.Center) {
+                        PadDiagram(test, layout, builtIn, dim = !testing)
+                        if (motion) Bubble(motionTest)
+                    }
                 }
                 Spacer(Modifier.width(32.dp))
-                Checklist(test, layout, Modifier.width(300.dp).padding(top = 8.dp))
+                if (motion) MotionChecklist(motionTest, Modifier.width(300.dp).padding(top = 8.dp))
+                else Checklist(test, layout, Modifier.width(300.dp).padding(top = 8.dp))
             }
-            if (testing) {
+            if (motion) {
+                val waiting = !motionBuiltIn && !state.enabled
+                Footer(
+                    status = when {
+                        waiting && !state.docked && !state.mirrorWhenHandheld -> "Motion needs mirroring: dock, or set Allow mirroring to Always."
+                        waiting -> "Starting mirroring…"
+                        motionWaited && motionTest.samples == 0 -> "No motion data from this controller."
+                        else -> "Turn the controller about each axis: tip it forward, twist it flat, roll it sideways."
+                    },
+                    hints = listOf(HintAction(SlotIcon.B, "Done") { motion = false }),
+                )
+            } else if (testing) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Press every button, pull both triggers and turn each stick in a full circle.",
@@ -221,9 +292,13 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
                         // With another pad connected the handheld's presses come through that pad, so
                         // the two can't be told apart.
                         builtIn && pads.size > 1 -> "Turn off other controllers to test this handheld alone."
-                        else -> "Choose a controller, then press A."
+                        else -> "Choose a controller: A tests the buttons, Y the motion."
                     },
-                    hints = listOf(HintAction(SlotIcon.B, "Back", onBack), HintAction(SlotIcon.A, "Start", null)),
+                    hints = listOf(
+                        HintAction(SlotIcon.B, "Back", onBack),
+                        HintAction(SlotIcon.Y, "Motion") { startMotion() },
+                        HintAction(SlotIcon.A, "Buttons", null),
+                    ),
                 )
             }
         }
@@ -257,6 +332,46 @@ private fun HoldHint(progress: Float) {
         }
         Spacer(Modifier.width(8.dp))
         Text("Hold to stop", color = Palette.textPrimary, fontSize = 15.sp)
+    }
+}
+
+/** The three rotation axes, with their live rate. */
+@Composable
+private fun MotionChecklist(test: MotionTest, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text("${test.passedCount}/${Axis.entries.size} passed", color = Palette.textPrimary, fontSize = 17.sp, modifier = Modifier.padding(bottom = 6.dp))
+        Rule()
+        for (axis in Axis.entries) {
+            val passed = test.passed(axis)
+            Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(axis.label, color = Palette.textSecondary, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                Text(
+                    "${test.rates[axis.ordinal].roundToInt()}°/s",
+                    color = if (abs(test.rates[axis.ordinal]) >= 90f) Teal else Palette.textMuted, fontSize = 13.sp,
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(if (passed) "✓" else "·", color = if (passed) Palette.custom else Palette.textMuted, fontSize = 15.sp, modifier = Modifier.padding(end = 8.dp))
+            }
+        }
+    }
+}
+
+/** A bubble level from the accelerometer: the dot sits where gravity leans. */
+@Composable
+private fun Bubble(test: MotionTest) {
+    val ring = Palette.textPrimary
+    val face = Palette.screen
+    Canvas(Modifier.size(90.dp)) {
+        val r = size.minDimension / 2
+        val c = Offset(r, r)
+        drawCircle(face, r, c)
+        drawCircle(ring, r, c, style = Stroke(2.dp.toPx()))
+        drawCircle(ring, r * 0.25f, c, style = Stroke(1.dp.toPx()))
+        var dx = test.tiltX
+        var dy = test.tiltY
+        val len = hypot(dx, dy)
+        if (len > 1f) { dx /= len; dy /= len }
+        drawCircle(Teal, r * 0.16f, c + Offset(dx * r * 0.8f, dy * r * 0.8f))
     }
 }
 

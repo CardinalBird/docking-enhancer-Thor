@@ -5,6 +5,7 @@ import android.view.MotionEvent
 import com.controlswitch.domain.model.PadLayout
 import com.controlswitch.domain.model.SlotIcon
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -193,3 +194,32 @@ internal fun itemLabel(icon: SlotIcon, layout: PadLayout): String {
         else -> icon.name
     }
 }
+
+/** The three rotation axes of the motion test, in DSU's order. */
+internal enum class Axis(val label: String) { PITCH("Pitch"), YAW("Yaw"), ROLL("Roll") }
+
+/** Progress of the motion test: an axis passes once the pad has been turned fast enough about it. */
+internal data class MotionTest(
+    // deg/s: pitch, yaw, roll
+    val rates: List<Float> = listOf(0f, 0f, 0f),
+    // The bubble level: gravity's sideways and forward components, in g.
+    val tiltX: Float = 0f,
+    val tiltY: Float = 0f,
+    val done: Set<Axis> = emptySet(),
+    val samples: Int = 0,
+) {
+    /** [gyro] pitch/yaw/roll in deg/s, [accel] x/y/z in g (DSU axes: x right, y up, z toward you). */
+    fun feed(gyro: FloatArray, accel: FloatArray): MotionTest = copy(
+        rates = gyro.toList(),
+        tiltX = accel[0],
+        tiltY = -accel[2],
+        done = done + Axis.entries.filter { abs(gyro[it.ordinal]) >= TURN },
+        samples = samples + 1,
+    )
+
+    fun passed(axis: Axis): Boolean = axis in done
+    val passedCount: Int get() = done.size
+}
+
+/** A turn this fast about an axis is a deliberate one. */
+private const val TURN = 90f
