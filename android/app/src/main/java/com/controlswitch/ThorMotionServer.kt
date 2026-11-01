@@ -118,8 +118,10 @@ internal class ThorMotionServer(context: Context) : SensorEventListener {
         listening = true
         // Delivered off the main thread: the callback sends packets, and Android refuses network
         // I/O on the main thread (the send would fail silently inside runCatching).
-        sensors?.registerListener(this, accelSensor, SensorManager.SENSOR_DELAY_GAME, sensorHandler)
-        sensors?.registerListener(this, gyroSensor, SensorManager.SENSOR_DELAY_GAME, sensorHandler)
+        // 200 Hz, about what a Switch pad's IMU delivers, instead of SENSOR_DELAY_GAME's 50 Hz; the
+        // sh5001 goes to 879 Hz. Zero report latency so the sensor hub hands each sample over at once.
+        sensors?.registerListener(this, accelSensor, SAMPLE_PERIOD_US, 0, sensorHandler)
+        sensors?.registerListener(this, gyroSensor, SAMPLE_PERIOD_US, 0, sensorHandler)
     }
 
     @Synchronized
@@ -145,6 +147,7 @@ internal class ThorMotionServer(context: Context) : SensorEventListener {
         const val TAG = "ThorMotionServer"
         // Clients re-ask about once a second.
         const val SUBSCRIPTION_MS = 5_000L
+        const val SAMPLE_PERIOD_US = 5_000
     }
 }
 
