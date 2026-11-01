@@ -58,6 +58,10 @@ class InputMirrorGraph private constructor(context: Context, forceDockMode: Bool
     )
 
     /** Seed a known controller's default mapping if the user has never mapped it. Safe to repeat. */
+    /** Charge of each Switch-protocol pad, by name. Blocks on a root shell call: never on main. */
+    fun readPadBatteries(): Map<String, com.controlswitch.domain.model.PadBattery> =
+        readPadBatteries(shell, java.io.File(appContext.filesDir, "pad_battery.sh"))
+
     fun seedDefaultMapping(key: com.controlswitch.domain.model.MappingKey) {
         runCatching { defaultMappingSeeder.seedIfEmpty(key) }
     }

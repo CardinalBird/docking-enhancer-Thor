@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.controlswitch.R
 import com.controlswitch.domain.model.ControllerDevice
+import com.controlswitch.domain.model.PadBattery
 import com.controlswitch.ui.theme.Palette
 import com.controlswitch.ui.theme.FocusBrush
 import kotlin.math.roundToInt
@@ -91,15 +92,40 @@ internal fun iconTint() = ColorFilter.tint(Palette.textSecondary)
 
 /** A battery outline filled to [percent], and the number. */
 @Composable
-internal fun Battery(percent: Int) {
-    val tint = if (percent <= 15) Palette.danger else Palette.textSecondary
+internal fun Battery(percent: Int) = BatteryIcon(percent.coerceIn(0, 100) / 100f, percent <= 15, "$percent%")
+
+/**
+ * A battery outline filled to [fill] (0–1), red when [low], with an optional [label] beside it.
+ * [charging] adds a bolt, for the pads that only report a level.
+ */
+@Composable
+internal fun BatteryIcon(fill: Float, low: Boolean, label: String?, charging: Boolean = false) {
+    val tint = if (low) Palette.danger else Palette.textSecondary
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 24.dp, height = 12.dp).border(1.5.dp, tint, RoundedCornerShape(3.dp)).padding(2.5.dp)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(percent.coerceIn(0, 100) / 100f).background(tint, RoundedCornerShape(1.dp)))
+            Box(Modifier.fillMaxHeight().fillMaxWidth(fill).background(tint, RoundedCornerShape(1.dp)))
         }
         Box(Modifier.size(width = 2.dp, height = 5.dp).background(tint))
-        Spacer(Modifier.width(6.dp))
-        Text("$percent%", color = Palette.textSecondary, fontSize = 12.sp)
+        if (charging) Text(" ⚡", color = Palette.textSecondary, fontSize = 12.sp)
+        if (label != null) {
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = Palette.textSecondary, fontSize = 12.sp)
+        }
+    }
+}
+
+/**
+ * A pad's charge: Android's percentage when it has one, else the level a Switch-protocol pad
+ * reports in [levels] as a bar with no number (the pad gives four steps, so a % would be made up),
+ * else nothing. Never 0%.
+ */
+@Composable
+internal fun PadBatteryIndicator(device: ControllerDevice?, levels: Map<String, PadBattery>) {
+    val percent = remember(device) { padBattery(device) }
+    val level = device?.let { levels[it.name] }
+    when {
+        percent != null && percent > 0 -> Battery(percent)
+        level != null -> BatteryIcon(level.level / 4f, level.level <= 1, null, level.charging)
     }
 }
 
@@ -162,13 +188,13 @@ internal fun HandheldTile(battery: Int?, hint: String?, onClick: (() -> Unit)?, 
  * extra player.
  */
 @Composable
-internal fun PadTile(device: ControllerDevice, player1: Boolean, battery: Int?, modifier: Modifier = Modifier) {
+internal fun PadTile(device: ControllerDevice, player1: Boolean, levels: Map<String, PadBattery>, modifier: Modifier = Modifier) {
     Column(modifier = modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         PlayerLamps(player = if (player1) 1 else device.controllerNumber)
         Spacer(Modifier.height(6.dp))
         Image(painterResource(R.drawable.ic_controller), contentDescription = null, colorFilter = iconTint(), modifier = Modifier.size(width = 52.dp, height = 40.dp))
         Spacer(Modifier.height(4.dp))
-        battery?.let { Battery(it) }
+        PadBatteryIndicator(device, levels)
         Text(
             device.name,
             color = Palette.textPrimary,

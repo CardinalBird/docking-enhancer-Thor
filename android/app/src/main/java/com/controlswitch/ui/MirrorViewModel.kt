@@ -25,6 +25,7 @@ import com.controlswitch.domain.model.findSavedControllerDevice
 import com.controlswitch.domain.model.lockedPlayer1
 import com.controlswitch.domain.model.pickExternal
 import kotlinx.coroutines.Dispatchers
+import com.controlswitch.domain.model.PadBattery
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,6 +69,8 @@ data class MirrorUiState(
     val theme: AppTheme = AppTheme.DARK,
     // Which console's button icons to draw: the preset last applied to the external pad.
     val padLayout: PadLayout = PadLayout.XBOX,
+    // Switch-protocol pads' charge by name, read from their raw reports (see refreshPadBatteries).
+    val padLevels: Map<String, PadBattery> = emptyMap(),
 ) {
     // On a recognised handheld (e.g. Odin) the native layer flags the internal controller by
     // hardware signature and locks it. Otherwise the internal defaults to the first detected
@@ -77,6 +80,19 @@ data class MirrorUiState(
 }
 
 class MirrorViewModel(private val appContext: Context) : ViewModel() {
+    /**
+     * Re-read the Switch-protocol pads' charge. A root shell call per pad report, so the screen asks
+     * only while it is visible, every 30 s; one in flight at a time.
+     */
+    fun refreshPadBatteries() {
+        if (batteryJob?.isActive == true || _state.value.devices.none { !it.isInternal }) return
+        batteryJob = viewModelScope.launch {
+            val levels = withContext(Dispatchers.IO) { graph.readPadBatteries() }
+            _state.update { it.copy(padLevels = levels) }
+        }
+    }
+    private var batteryJob: kotlinx.coroutines.Job? = null
+
     // Literally the same graph the supervisor uses, not a second one configured to match. They have
     // to agree about whether a dock is present — when only one was told to force dock mode the screen
     // flipped to "undocked" the moment anything made it re-read, telling the user the dock had gone

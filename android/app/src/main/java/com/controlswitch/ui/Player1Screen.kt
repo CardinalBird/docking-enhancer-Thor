@@ -59,6 +59,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.controlswitch.R
 import com.controlswitch.domain.model.ControllerDevice
+import com.controlswitch.domain.model.PadBattery
 import com.controlswitch.domain.model.lockedPlayer1
 import com.controlswitch.ui.theme.Palette
 import kotlinx.coroutines.delay
@@ -78,6 +79,7 @@ fun Player1Screen(
     player1Path: String?,
     pendingName: String?,
     pendingPath: String?,
+    levels: Map<String, PadBattery>,
     /** False while this page slides out: Back then belongs to the page arriving. */
     active: Boolean,
     onPick: (InputDevice) -> Unit,
@@ -104,7 +106,6 @@ fun Player1Screen(
     // The slot shows the pad just picked, else the saved player 1 (named even while it is away).
     val shownPad = if (pendingName != null) pending else locked
     val shownName = pendingName ?: player1Name
-    val shownBattery = remember(shownPad) { padBattery(shownPad) }
     val others = externals.filter { it.path != shownPad?.path }
 
     // Nothing on this screen is focusable, and Compose routes keys to the focused node's ancestors
@@ -157,11 +158,11 @@ fun Player1Screen(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            PlayerOneSlot(shownName, connected = shownPad != null, shownBattery)
+            PlayerOneSlot(shownName, shownPad, levels)
             if (others.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    others.forEach { OtherPad(it) }
+                    others.forEach { OtherPad(it, levels) }
                 }
             }
         }
@@ -180,7 +181,8 @@ fun Player1Screen(
  * scales and fades in. A saved player 1 that is away keeps its name, marked not connected.
  */
 @Composable
-private fun PlayerOneSlot(name: String?, connected: Boolean, battery: Int?) {
+private fun PlayerOneSlot(name: String?, pad: ControllerDevice?, levels: Map<String, PadBattery>) {
+    val connected = pad != null
     val shape = RoundedCornerShape(14.dp)
     Box(
         modifier = Modifier
@@ -214,7 +216,7 @@ private fun PlayerOneSlot(name: String?, connected: Boolean, battery: Int?) {
                         colorFilter = iconTint(),
                         modifier = Modifier.size(width = 64.dp, height = 49.dp).alpha(if (connected) 1f else 0.4f),
                     )
-                    if (connected) battery?.let { Battery(it) }
+                    if (connected) PadBatteryIndicator(pad, levels)
                     Text(shown, color = Palette.textPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (!connected) Text("Not connected", color = Palette.textMuted, fontSize = 12.sp)
                 }
@@ -225,8 +227,7 @@ private fun PlayerOneSlot(name: String?, connected: Boolean, battery: Int?) {
 
 /** Another connected pad, small: just so you can see what is plugged in. */
 @Composable
-private fun OtherPad(device: ControllerDevice) {
-    val battery = remember(device) { padBattery(device) }
+private fun OtherPad(device: ControllerDevice, levels: Map<String, PadBattery>) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
@@ -237,7 +238,7 @@ private fun OtherPad(device: ControllerDevice) {
     ) {
         Image(painterResource(R.drawable.ic_controller), contentDescription = null, colorFilter = iconTint(), modifier = Modifier.size(width = 30.dp, height = 23.dp))
         Text(device.name, color = Palette.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
-        battery?.let { Battery(it) }
+        PadBatteryIndicator(device, levels)
     }
 }
 

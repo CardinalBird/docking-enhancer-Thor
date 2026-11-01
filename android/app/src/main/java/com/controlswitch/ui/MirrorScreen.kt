@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,6 +90,18 @@ private enum class Page { Main, Settings, Player1, Mapping }
 @Composable
 fun MirrorScreen(viewModel: MirrorViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Pad charge comes from a root read, so poll it only while the screen is visible. Restarted when
+    // the set of pads changes, so a pad that just connected shows its charge at once.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val padNames = state.devices.filter { !it.isInternal }.map { it.name }
+    LaunchedEffect(lifecycle, padNames) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                viewModel.refreshPadBatteries()
+                delay(30_000)
+            }
+        }
+    }
     val editorState by viewModel.mappingEditor.state.collectAsStateWithLifecycle()
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     val page = when {
@@ -141,6 +154,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                 player1Path = state.player1Path,
                 pendingName = state.pendingPlayer1Name,
                 pendingPath = state.pendingPlayer1Path,
+                levels = state.padLevels,
                 active = active,
                 onPick = viewModel::choosePlayer1,
                 onConfirm = viewModel::confirmPlayer1,
@@ -235,7 +249,6 @@ private fun MainPage(state: MirrorUiState, viewModel: MirrorViewModel, active: B
     val lockedPad = externals.lockedPlayer1(state.player1Name, state.player1Path)
     // Batteries are binder calls; read again only when the snapshot moves, not every recomposition.
     val systemBattery = remember(state.devices, state.enabled) { handheldBattery(context) }
-    val padBatteries = remember(state.devices, state.enabled) { externals.take(4).map(::padBattery) }
 
     Column(
         modifier = Modifier
@@ -278,11 +291,11 @@ private fun MainPage(state: MirrorUiState, viewModel: MirrorViewModel, active: B
                     }
                     if (externals.isNotEmpty()) {
                         Row(Modifier.fillMaxWidth()) {
-                            externals.take(4).forEachIndexed { i, pad ->
+                            externals.take(4).forEach { pad ->
                                 PadTile(
                                     device = pad,
                                     player1 = pad.path == state.externalDevice?.path,
-                                    battery = padBatteries.getOrNull(i),
+                                    levels = state.padLevels,
                                     modifier = Modifier.weight(1f),
                                 )
                             }
