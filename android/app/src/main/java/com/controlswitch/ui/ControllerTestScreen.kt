@@ -41,8 +41,9 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -177,7 +178,7 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     MenuRow(
                         title = "Controller",
-                        minHeight = 52.dp,
+                        minHeight = 44.dp,
                         onClick = { start() },
                         onLeft = if (testing) null else ({ cycle(-1) }),
                         onRight = if (testing) null else ({ cycle(1) }),
@@ -285,12 +286,39 @@ private fun Checklist(test: PadTest, layout: PadLayout, builtIn: Boolean, modifi
     }
 }
 
-// The drawing: a Switch Pro-shaped pad in a 360 x 200 dp box. Shapes are drawn on a Canvas in that
-// coordinate space (one unit = one dp), and the button prompts sit on top as PadIcons.
-private const val W = 360f
-private const val H = 200f
+// The drawing: Kenney's Switch Pro silhouette (the same art as the pad tile), scaled up, with the
+// controls drawn into its cut-outs. Coordinates are the icon's own 64-unit grid, so a spot from
+// the SVG is a spot here; [S] is dp per unit and the shoulders sit in a band above the body.
+private const val S = 5.5f
+private const val SHOULDERS = 22f
+private const val PAD_LEFT = 8f
+private const val PAD_TOP = 14.6f
+private const val W = 48f * S
+private const val H = 35.5f * S + SHOULDERS
 
-private data class Spot(val x: Float, val y: Float)
+// Kenney Input Prompts 1.5 (CC0): Nintendo Switch 2/Vector/controller_switch_pro.svg.
+private const val PRO_PATH = "M51 25 Q51 24.15 50.4 23.55 49.85 23 49 23 48.15 23 47.6 23.55 47 24.15 47 25 47 25.8 47.6 26.4 48.15 27 49 27 49.85 27 50.4 26.4 51 25.8 51 25 M43 25 Q43 24.15 42.4 23.55 41.85 23 41 23 40.15 23 39.6 23.55 39 24.15 39 25 39 25.8 39.6 26.4 40.15 27 41 27 41.85 27 42.4 26.4 43 25.8 43 25 M47 22 Q47 21.15 46.4 20.55 45.85 20 45 20 44.15 20 43.6 20.55 43 21.15 43 22 43 22.8 43.6 23.4 44.15 24 45 24 45.85 24 46.4 23.4 47 22.8 47 22 M21.55 38.9 Q20.05 38.9 19.4 40.5 L16.2 46.75 Q14.4 49.7 11.65 48.8 8.05 47.55 8 43 8.85 33.25 10.8 23.75 11.8 19.2 13.2 18.3 14.3 15.45 18.05 14.5 22.25 13.45 24.7 14.6 L39.3 14.6 Q41.75 13.45 45.95 14.5 49.7 15.45 50.85 18.3 52.2 19.2 53.2 23.75 55.15 33.25 56 43 55.95 47.55 52.35 48.8 49.6 49.7 47.8 46.75 L44.6 40.5 Q43.95 38.9 42.45 38.9 L21.55 38.9 M24 29 L24 31 22 31 22 33 24 33 24 35 26 35 26 33 28 33 28 31 26 31 26 29 24 29 M41 32 Q41 30.75 40.1 29.85 39.25 29 38 29 36.75 29 35.85 29.85 35 30.75 35 32 35 33.2 35.85 34.05 36.75 35 38 35 39.25 35 40.1 34.05 41 33.2 41 32 M22 24 Q22 22.75 21.1 21.85 20.25 21 19 21 17.75 21 16.85 21.85 16 22.75 16 24 16 25.2 16.85 26.05 17.75 27 19 27 20.25 27 21.1 26.05 22 25.2 22 24 M47 28 Q47 27.15 46.4 26.55 45.85 26 45 26 44.15 26 43.6 26.55 43 27.15 43 28 43 28.8 43.6 29.4 44.15 30 45 30 45.85 30 46.4 29.4 47 28.8 47 28"
+
+/** A point on the icon's grid. */
+private data class Spot(val x: Float, val y: Float) {
+    val dx: Float get() = (x - PAD_LEFT) * S
+    val dy: Float get() = (y - PAD_TOP) * S + SHOULDERS
+}
+
+// The silhouette's cut-outs.
+private val SOUTH = Spot(45f, 28f)
+private val EAST = Spot(49f, 25f)
+private val NORTH = Spot(45f, 22f)
+private val WEST = Spot(41f, 25f)
+private val LEFT_STICK = Spot(19f, 24f)
+private val RIGHT_STICK = Spot(38f, 32f)
+private val DPAD = Spot(25f, 32f)
+// Not in the silhouette, placed where the Pro has them: − and + flanking the top, Capture under −,
+// Home under +.
+private val MINUS = Spot(28f, 18.5f)
+private val PLUS = Spot(36f, 18.5f)
+private val HOME = Spot(36f, 23f)
+private val READOUT_Y = 52.5f
 
 @Composable
 private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: Boolean) {
@@ -303,80 +331,95 @@ private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: 
         else -> if (nintendo) WEST else NORTH
     }
     val faces = listOf(SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y).map { it to at(faceLabel(it, layout, builtIn)) }
-    val idle = Palette.borderStrong
-    val body = Palette.surfaceRaised
-    val ink = Palette.textPrimary
+    val body = Palette.borderStrong
+    val hole = Palette.screen
     val good = Palette.custom
-    val tint = if (dim) Palette.textMuted else ink
+    val tint = if (dim) Palette.textMuted else Palette.textPrimary
     val showHome = SlotIcon.HOME in test.items || (test.items.isEmpty() && !builtIn)
+    val silhouette = remember { PathParser().parsePathString(PRO_PATH).toPath() }
 
     Box(Modifier.size(W.dp, H.dp)) {
         Canvas(Modifier.fillMaxSize()) {
             val u = size.width / W
-            fun fill(icon: SlotIcon) = if (test.lit(icon)) Teal else idle
-            fun DrawScope.passRing(icon: SlotIcon, center: Spot, radius: Float) {
-                if (test.passed(icon)) drawCircle(good, radius * u, Offset(center.x * u, center.y * u), style = Stroke(2f * u))
+            fun Spot.px() = Offset(dx * u, dy * u)
+            fun fill(icon: SlotIcon) = if (test.lit(icon)) Teal else hole
+            fun passRing(icon: SlotIcon, center: Spot, radius: Float) {
+                if (test.passed(icon)) drawCircle(good, radius * u, center.px(), style = Stroke(2f * u))
             }
-            // Body and grips.
-            drawRoundRect(body, Offset(40f * u, 42f * u), Size(280f * u, 88f * u), CornerRadius(40f * u))
-            drawOval(body, Offset(74f * u, 100f * u), Size(52f * u, 70f * u))
-            drawOval(body, Offset(234f * u, 100f * u), Size(52f * u, 70f * u))
-            // Triggers: the bar fills with the pull. Bumpers: lit while held.
+            // Shoulders: a bar each for ZL/ZR (filling with the pull) and L/R, above the body.
             for ((icon, x, value) in listOf(
-                Triple(SlotIcon.LEFT_TRIGGER, 52f, test.leftTrigger), Triple(SlotIcon.RIGHT_TRIGGER, 228f, test.rightTrigger),
+                Triple(SlotIcon.LEFT_TRIGGER, 12f, test.leftTrigger), Triple(SlotIcon.RIGHT_TRIGGER, 37f, test.rightTrigger),
             )) {
-                drawRoundRect(idle, Offset(x * u, 2f * u), Size(80f * u, 18f * u), CornerRadius(9f * u))
-                if (value > 0f) drawRoundRect(Teal, Offset(x * u, 2f * u), Size(80f * value * u, 18f * u), CornerRadius(9f * u))
-                if (test.passed(icon)) drawRoundRect(good, Offset(x * u, 2f * u), Size(80f * u, 18f * u), CornerRadius(9f * u), style = Stroke(2f * u))
+                val at = Offset((x - PAD_LEFT) * S * u, 0f)
+                val sz = Size(15f * S * u, 9f * u)
+                drawRoundRect(if (test.lit(icon)) Teal else body, at, sz, CornerRadius(4.5f * u))
+                if (value > 0f) drawRoundRect(Teal, at, sz.copy(width = sz.width * value), CornerRadius(4.5f * u))
+                if (test.passed(icon)) drawRoundRect(good, at, sz, CornerRadius(4.5f * u), style = Stroke(2f * u))
             }
-            for ((icon, x) in listOf(SlotIcon.LEFT_BUMPER to 48f, SlotIcon.RIGHT_BUMPER to 220f)) {
-                drawRoundRect(fill(icon), Offset(x * u, 23f * u), Size(92f * u, 16f * u), CornerRadius(8f * u))
-                if (test.passed(icon)) drawRoundRect(good, Offset(x * u, 23f * u), Size(92f * u, 16f * u), CornerRadius(8f * u), style = Stroke(2f * u))
+            for ((icon, x) in listOf(SlotIcon.LEFT_BUMPER to 11f, SlotIcon.RIGHT_BUMPER to 36f)) {
+                val at = Offset((x - PAD_LEFT) * S * u, 11f * u)
+                val sz = Size(17f * S * u, 10f * u)
+                drawRoundRect(if (test.lit(icon)) Teal else body, at, sz, CornerRadius(5f * u))
+                if (test.passed(icon)) drawRoundRect(good, at, sz, CornerRadius(5f * u), style = Stroke(2f * u))
             }
-            // Sticks: eight arc segments go green as the stick reaches them, the dot follows the stick.
+            // The body, with the lit controls showing through its cut-outs.
             for ((stick, center, click) in listOf(
                 Triple(test.left, LEFT_STICK, SlotIcon.LEFT_STICK_CLICK), Triple(test.right, RIGHT_STICK, SlotIcon.RIGHT_STICK_CLICK),
             )) {
-                val c = Offset(center.x * u, center.y * u)
+                drawCircle(if (test.lit(click)) Teal else hole, 3f * S * u, center.px())
+            }
+            for ((icon, dx, dy) in listOf(
+                Triple(SlotIcon.DPAD_UP, 0f, -2f), Triple(SlotIcon.DPAD_DOWN, 0f, 2f),
+                Triple(SlotIcon.DPAD_LEFT, -2f, 0f), Triple(SlotIcon.DPAD_RIGHT, 2f, 0f),
+            )) {
+                val c = Spot(DPAD.x + dx, DPAD.y + dy).px()
+                drawRect(fill(icon), c - Offset(S * u, S * u), Size(2f * S * u, 2f * S * u))
+            }
+            drawRect(hole, Spot(DPAD.x - 1f, DPAD.y - 1f).px(), Size(2f * S * u, 2f * S * u))
+            for ((icon, spot) in faces) drawCircle(fill(icon), 2f * S * u, spot.px())
+            withTransform({
+                translate(-PAD_LEFT * S * u, (SHOULDERS - PAD_TOP * S) * u)
+                scale(S * u, S * u, pivot = Offset.Zero)
+            }) { drawPath(silhouette, body) }
+            // On top of the body: stick rings and dots, −/+/Home, pass rings.
+            for ((stick, center, click) in listOf(
+                Triple(test.left, LEFT_STICK, SlotIcon.LEFT_STICK_CLICK), Triple(test.right, RIGHT_STICK, SlotIcon.RIGHT_STICK_CLICK),
+            )) {
+                val c = center.px()
                 for (i in 0 until 8) {
                     val hit = stick.octants and (1 shl i) != 0
                     drawArc(
-                        if (hit) good else idle, startAngle = i * 45f - 20f, sweepAngle = 40f, useCenter = false,
-                        topLeft = c - Offset(28f * u, 28f * u), size = Size(56f * u, 56f * u), style = Stroke(3f * u),
+                        if (hit) good else hole, startAngle = i * 45f - 20f, sweepAngle = 40f, useCenter = false,
+                        topLeft = c - Offset(3.9f * S * u, 3.9f * S * u), size = Size(7.8f * S * u, 7.8f * S * u), style = Stroke(2.5f * u),
                     )
                 }
-                drawCircle(if (test.lit(click)) Teal else idle, 22f * u, c, style = Stroke(2f * u))
-                drawCircle(if (test.lit(click)) Teal else tint, 9f * u, c + Offset(stick.x * 16f * u, stick.y * 16f * u))
-                passRing(click, center, 12f)
+                drawCircle(if (test.lit(click)) Teal else tint, 1.1f * S * u, c + Offset(stick.x * 1.7f * S * u, stick.y * 1.7f * S * u))
+                passRing(click, center, 3.3f * S)
             }
-            // D-pad.
             for ((icon, dx, dy) in listOf(
-                Triple(SlotIcon.DPAD_UP, 0f, -17f), Triple(SlotIcon.DPAD_DOWN, 0f, 17f),
-                Triple(SlotIcon.DPAD_LEFT, -17f, 0f), Triple(SlotIcon.DPAD_RIGHT, 17f, 0f),
+                Triple(SlotIcon.DPAD_UP, 0f, -2f), Triple(SlotIcon.DPAD_DOWN, 0f, 2f),
+                Triple(SlotIcon.DPAD_LEFT, -2f, 0f), Triple(SlotIcon.DPAD_RIGHT, 2f, 0f),
             )) {
-                val topLeft = Offset((DPAD.x + dx - 7.5f) * u, (DPAD.y + dy - 7.5f) * u)
-                drawRoundRect(fill(icon), topLeft, Size(15f * u, 15f * u), CornerRadius(3f * u))
-                if (test.passed(icon)) drawRoundRect(good, topLeft, Size(15f * u, 15f * u), CornerRadius(3f * u), style = Stroke(2f * u))
+                if (test.passed(icon)) {
+                    val c = Spot(DPAD.x + dx, DPAD.y + dy).px()
+                    drawRect(good, c - Offset(S * u, S * u), Size(2f * S * u, 2f * S * u), style = Stroke(2f * u))
+                }
             }
-            // Face halos, −/+, Home: the prompts sit on top.
-            for ((icon, spot) in faces) {
-                drawCircle(fill(icon), 13f * u, Offset(spot.x * u, spot.y * u))
-                passRing(icon, spot, 15f)
-            }
+            for ((icon, spot) in faces) passRing(icon, spot, 2.4f * S)
             for ((icon, spot) in listOf(SlotIcon.VIEW to MINUS, SlotIcon.MENU to PLUS)) {
-                drawCircle(fill(icon), 10f * u, Offset(spot.x * u, spot.y * u))
-                passRing(icon, spot, 12f)
+                drawCircle(fill(icon), 1.6f * S * u, spot.px())
+                passRing(icon, spot, 2f * S)
             }
             if (showHome) {
-                drawCircle(fill(SlotIcon.HOME), 10f * u, Offset(HOME.x * u, HOME.y * u))
-                passRing(SlotIcon.HOME, HOME, 12f)
+                drawCircle(fill(SlotIcon.HOME), 1.6f * S * u, HOME.px())
+                passRing(SlotIcon.HOME, HOME, 2f * S)
             }
         }
-        for ((icon, spot) in faces) Prompt(faceLabel(icon, layout, builtIn), spot, 22.dp, tint)
-        Prompt(SlotIcon.LEFT_TRIGGER, Spot(92f, 11f), 18.dp, tint)
-        Prompt(SlotIcon.RIGHT_TRIGGER, Spot(268f, 11f), 18.dp, tint)
-        Prompt(SlotIcon.LEFT_BUMPER, Spot(94f, 31f), 16.dp, tint)
-        Prompt(SlotIcon.RIGHT_BUMPER, Spot(266f, 31f), 16.dp, tint)
+        for ((icon, spot) in faces) Prompt(faceLabel(icon, layout, builtIn), spot, (3.6f * S).dp, tint)
+        Prompt(SlotIcon.LEFT_TRIGGER, Spot(19.5f, PAD_TOP - SHOULDERS / S + 4.5f / S), 18.dp, tint)
+        Prompt(SlotIcon.RIGHT_TRIGGER, Spot(44.5f, PAD_TOP - SHOULDERS / S + 4.5f / S), 18.dp, tint)
+        Prompt(SlotIcon.LEFT_BUMPER, Spot(19.5f, PAD_TOP - SHOULDERS / S + 16f / S), 16.dp, tint)
+        Prompt(SlotIcon.RIGHT_BUMPER, Spot(44.5f, PAD_TOP - SHOULDERS / S + 16f / S), 16.dp, tint)
         Prompt(SlotIcon.VIEW, MINUS, 16.dp, tint)
         Prompt(SlotIcon.MENU, PLUS, 16.dp, tint)
         if (showHome) Prompt(SlotIcon.HOME, HOME, 16.dp, tint)
@@ -385,28 +428,15 @@ private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: 
     }
 }
 
-private val SOUTH = Spot(255f, 100f)
-private val EAST = Spot(277f, 78f)
-private val NORTH = Spot(255f, 56f)
-private val WEST = Spot(233f, 78f)
-private val LEFT_STICK = Spot(105f, 78f)
-private val RIGHT_STICK = Spot(220f, 132f)
-private val DPAD = Spot(140f, 132f)
-private val MINUS = Spot(152f, 56f)
-private val PLUS = Spot(208f, 56f)
-private val HOME = Spot(180f, 80f)
-// Both stick readouts on one line under the grips, clear of the D-pad.
-private const val READOUT_Y = 186f
-
 /** A prompt icon centred on [spot] of the drawing. */
 @Composable
 private fun Prompt(icon: SlotIcon, spot: Spot, size: Dp, tint: Color) {
-    Box(Modifier.offset(spot.x.dp - size / 2, spot.y.dp - size / 2)) { PadIcon(icon, size, tint) }
+    Box(Modifier.offset(spot.dx.dp - size / 2, spot.dy.dp - size / 2)) { PadIcon(icon, size, tint) }
 }
 
 @Composable
 private fun StickReadout(stick: StickState, spot: Spot) {
-    Box(Modifier.offset(spot.x.dp - 40.dp, spot.y.dp - 6.dp).width(80.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.offset(spot.dx.dp - 40.dp, spot.dy.dp - 6.dp).width(80.dp), contentAlignment = Alignment.Center) {
         Text(String.format(Locale.ROOT, "%+.2f  %+.2f", stick.x, stick.y), color = Palette.textMuted, fontSize = 10.sp, maxLines = 1)
     }
 }
