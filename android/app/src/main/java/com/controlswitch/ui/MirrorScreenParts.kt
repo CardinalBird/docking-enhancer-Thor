@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -80,6 +81,13 @@ internal fun Rule(modifier: Modifier = Modifier) {
 /** The focus outline every selectable item wears: thick, rounded, blue to green in every theme. */
 internal fun Modifier.focusOutline(focused: Boolean, shape: RoundedCornerShape): Modifier =
     if (focused) border(3.dp, FocusBrush, shape) else this
+
+/**
+ * Tint for the white one-colour icons (the Kenney pad, the handheld drawings): the theme's secondary
+ * text colour, so they stay visible on Light as well as the dark themes.
+ */
+@Composable
+internal fun iconTint() = ColorFilter.tint(Palette.textSecondary)
 
 /** A battery outline filled to [percent], and the number. */
 @Composable
@@ -137,6 +145,7 @@ internal fun HandheldTile(battery: Int?, hint: String?, onClick: (() -> Unit)?, 
         Image(
             painterResource(if (thor) R.drawable.ic_handheld_thor else R.drawable.ic_handheld_odin),
             contentDescription = null,
+            colorFilter = iconTint(),
             modifier = Modifier.height(if (thor) 84.dp else 56.dp),
         )
         Spacer(Modifier.height(6.dp))
@@ -157,7 +166,7 @@ internal fun PadTile(device: ControllerDevice, player1: Boolean, battery: Int?, 
     Column(modifier = modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         PlayerLamps(player = if (player1) 1 else device.controllerNumber)
         Spacer(Modifier.height(6.dp))
-        Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 52.dp, height = 40.dp))
+        Image(painterResource(R.drawable.ic_controller), contentDescription = null, colorFilter = iconTint(), modifier = Modifier.size(width = 52.dp, height = 40.dp))
         Spacer(Modifier.height(4.dp))
         battery?.let { Battery(it) }
         Text(

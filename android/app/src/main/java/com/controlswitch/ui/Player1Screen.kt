@@ -211,6 +211,7 @@ private fun PlayerOneSlot(name: String?, connected: Boolean, battery: Int?) {
                     Image(
                         painterResource(R.drawable.ic_controller),
                         contentDescription = null,
+                        colorFilter = iconTint(),
                         modifier = Modifier.size(width = 64.dp, height = 49.dp).alpha(if (connected) 1f else 0.4f),
                     )
                     if (connected) battery?.let { Battery(it) }
@@ -234,7 +235,7 @@ private fun OtherPad(device: ControllerDevice) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 30.dp, height = 23.dp))
+        Image(painterResource(R.drawable.ic_controller), contentDescription = null, colorFilter = iconTint(), modifier = Modifier.size(width = 30.dp, height = 23.dp))
         Text(device.name, color = Palette.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
         battery?.let { Battery(it) }
     }
