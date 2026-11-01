@@ -181,8 +181,10 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             Page.Main -> MainPage(state, viewModel, active, onOpenSettings = { settingsOpen = true })
         }
     }
-    // Not over the tests or the picker: those stand the mirror down on purpose and read the pad raw.
-    if (page == Page.Main || page == Page.Settings) StartingGuard(state.starting)
+    // Only the main page: it is where B closes the app. Elsewhere B just goes back, and the tests
+    // and the picker stand the mirror down on purpose and read the pad raw.
+    if (page == Page.Main) StartingGuard(state.starting)
+
     }
     }
 
