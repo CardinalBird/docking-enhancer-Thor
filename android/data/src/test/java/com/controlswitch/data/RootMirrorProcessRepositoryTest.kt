@@ -394,6 +394,8 @@ private class FakeSettingsRepository(
         state = state.copy(virtualMouse = enabled)
     }
 
+    override fun setRumbleStrength(percent: Int) = Unit
+
     override fun setAutoMirrorEnabled(enabled: Boolean) {
         state = state.copy(autoMirrorEnabled = enabled)
     }

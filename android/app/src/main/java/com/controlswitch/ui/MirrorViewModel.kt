@@ -57,6 +57,8 @@ data class MirrorUiState(
     // telling that owner their device "doesn't have it" would be flatly wrong.
     val serviceUnresponsive: Boolean = false,
     val virtualMouse: Boolean = false,
+    // Percent, 0 = off: how hard the pad rumbles when a game vibrates the Thor.
+    val rumbleStrength: Int = 80,
     // The pad locked in as player 1 with L + R, or null for "first connected".
     val player1Name: String? = null,
     val player1Path: String? = null,
@@ -216,6 +218,7 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
                 homeMode = saved.homeMode,
                 comboHoldKillApp = saved.comboHoldKillApp,
                 virtualMouse = saved.virtualMouse,
+                rumbleStrength = saved.rumbleStrength,
                 mirrorWhenHandheld = saved.mirrorWhenHandheld,
                 autoMirrorEnabled = status.autoMirrorEnabled,
                 restartWaiting = status.expectedRunning && !status.running,
@@ -404,6 +407,16 @@ class MirrorViewModel(private val appContext: Context) : ViewModel() {
             } catch (error: Exception) {
                 _state.update { it.copy(virtualMouse = !nextValue, message = error.message ?: error.toString()) }
             }
+        }
+    }
+
+    fun setRumbleStrength(percent: Int) {
+        val next = percent.coerceIn(0, 100)
+        _state.update { it.copy(rumbleStrength = next) }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { graph.settingsRepository.setRumbleStrength(next) }
+            // Reaches a running mirror at once, through the same config reload as the toggles.
+            MirrorStateStore.wake()
         }
     }
 

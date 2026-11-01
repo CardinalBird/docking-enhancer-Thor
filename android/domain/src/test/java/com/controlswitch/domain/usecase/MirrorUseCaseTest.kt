@@ -633,6 +633,8 @@ private class FakeMirrorSettingsRepository(
         state = state.copy(virtualMouse = enabled)
     }
 
+    override fun setRumbleStrength(percent: Int) = Unit
+
     override fun bumpConfigGeneration() {
         state = state.copy(configGeneration = state.configGeneration + 1)
     }

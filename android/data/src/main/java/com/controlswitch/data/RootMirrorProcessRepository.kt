@@ -42,6 +42,7 @@ internal class RootMirrorProcessRepository(
                 homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
                 virtualMouse = settings.virtualMouse,
+                rumbleStrength = settings.rumbleStrength,
                 mapping = request.mapping,
             ),
         )
@@ -172,6 +173,7 @@ internal class RootMirrorProcessRepository(
                 homeMode = settings.homeMode,
                 comboHoldKillApp = settings.comboHoldKillApp,
                 virtualMouse = settings.virtualMouse,
+                rumbleStrength = settings.rumbleStrength,
                 mapping = mapping,
             ),
         )
@@ -312,6 +314,7 @@ private fun configJson(
     homeMode: HomeButtonMode,
     comboHoldKillApp: Boolean,
     virtualMouse: Boolean,
+    rumbleStrength: Int,
     mapping: ControllerMapping,
 ): String = """
     {
@@ -319,6 +322,7 @@ private fun configJson(
       "home_mode": ${homeMode.wire},
       "combo_hold_kill_app": $comboHoldKillApp,
       "virtual_mouse": $virtualMouse,
+      "rumble_strength": $rumbleStrength,
       "mapping": {
         "bindings": [${mapping.configBindingRows()}],
         "chords": [${mapping.configChordRows()}]

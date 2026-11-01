@@ -559,6 +559,7 @@ static void apply_config(struct mirror_state *s, const struct config *next) {
     s->home_mode = next->home_mode;
     s->combo_hold_kill_app = next->combo_hold_kill_app;
     s->virtual_mouse = next->virtual_mouse;
+    rumble_set_strength(&s->rumble, next->rumble_strength);
     s->config_generation = next->generation;
 
     // A control held now was forwarded under the old table and its release would be resolved under
@@ -1124,6 +1125,7 @@ int main(int argc, char **argv) {
             .home_mode = s.home_mode,
             .combo_hold_kill_app = s.combo_hold_kill_app,
             .virtual_mouse = s.virtual_mouse,
+                .rumble_strength = s.rumble.strength,
             .generation = 0,
         };
         struct config initial = from_flags;
@@ -1305,6 +1307,7 @@ int main(int argc, char **argv) {
                 .home_mode = s.home_mode,
                 .combo_hold_kill_app = s.combo_hold_kill_app,
                 .virtual_mouse = s.virtual_mouse,
+                .rumble_strength = s.rumble.strength,
                 .generation = s.config_generation,
             };
             struct config next = running;

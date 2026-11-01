@@ -9,6 +9,7 @@ struct rumble {
     int from_bridge;  // helper's stdout; -1 when no helper runs
     int to_bridge;    // helper's stdin; closing it is what stops the helper
     int on;
+    int strength;     // percent from the app's Rumble strength setting; 0 plays nothing
 };
 
 void rumble_init(struct rumble *r);
@@ -16,6 +17,8 @@ void rumble_init(struct rumble *r);
 void rumble_start(struct rumble *r, int pad_fd, const char *apk_path);
 // Call when from_bridge polls readable.
 void rumble_on_readable(struct rumble *r);
+// Adopt a new strength, re-uploading the effect if one is loaded.
+void rumble_set_strength(struct rumble *r, int percent);
 void rumble_stop(struct rumble *r);
 
 #endif
