@@ -357,7 +357,7 @@ private fun MotionChecklist(test: MotionTest, modifier: Modifier = Modifier) {
     }
 }
 
-/** A bubble level from the accelerometer: the dot sits where gravity leans. */
+/** A ball on the pad, from the accelerometer: it rolls to whichever side is low. */
 @Composable
 private fun Bubble(test: MotionTest) {
     val ring = Palette.textPrimary

@@ -198,9 +198,9 @@ class ControllerTestTest {
         assertFalse(turned.passed(Axis.ROLL))
         assertEquals(2, turned.passedCount)
         assertEquals(3, turned.samples)
-        // The bubble follows gravity's sideways and forward parts.
+        // The ball rolls to the low side, opposite to where gravity's sideways and forward parts point.
         val tilted = turned.feed(g(0f, 0f, 0f), floatArrayOf(0.3f, 0.9f, -0.2f))
-        assertEquals(0.3f, tilted.tiltX)
-        assertEquals(0.2f, tilted.tiltY)
+        assertEquals(-0.3f, tilted.tiltX)
+        assertEquals(-0.2f, tilted.tiltY)
     }
 }

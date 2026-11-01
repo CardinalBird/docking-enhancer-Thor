@@ -202,7 +202,7 @@ internal enum class Axis(val label: String) { PITCH("Pitch"), YAW("Yaw"), ROLL("
 internal data class MotionTest(
     // deg/s: pitch, yaw, roll
     val rates: List<Float> = listOf(0f, 0f, 0f),
-    // The bubble level: gravity's sideways and forward components, in g.
+    // The ball: where it rolls to, which is the low side. Gravity's sideways and forward parts, in g.
     val tiltX: Float = 0f,
     val tiltY: Float = 0f,
     val done: Set<Axis> = emptySet(),
@@ -211,8 +211,8 @@ internal data class MotionTest(
     /** [gyro] pitch/yaw/roll in deg/s, [accel] x/y/z in g (DSU axes: x right, y up, z toward you). */
     fun feed(gyro: FloatArray, accel: FloatArray): MotionTest = copy(
         rates = gyro.toList(),
-        tiltX = accel[0],
-        tiltY = -accel[2],
+        tiltX = -accel[0],
+        tiltY = accel[2],
         done = done + Axis.entries.filter { abs(gyro[it.ordinal]) >= TURN },
         samples = samples + 1,
     )
