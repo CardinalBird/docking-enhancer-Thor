@@ -13,9 +13,10 @@
         android:pathData="M18,4 H102 A6,6 0 0 1 108,10 V40 A6,6 0 0 1 102,46 H18 A6,6 0 0 1 12,40 V10 A6,6 0 0 1 18,4 Z" />
     <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.5"
         android:pathData="M20,10 H100 A2,2 0 0 1 102,12 V38 A2,2 0 0 1 100,40 H20 A2,2 0 0 1 18,38 V12 A2,2 0 0 1 20,10 Z" />
-    <!-- Hinge -->
+    <!-- Hinge: a hairline between the halves, as the real one is seen from the front -->
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M24,47.5 H96 A2.5,2.5 0 0 1 98.5,50 A2.5,2.5 0 0 1 96,52.5 H24 A2.5,2.5 0 0 1 21.5,50 A2.5,2.5 0 0 1 24,47.5 Z" />
+        android:pathData="M32,49.25 H88 A0.75,0.75 0 0 1 88.75,50 A0.75,0.75 0 0 1 88,50.75 H32 A0.75,0.75 0 0 1 31.25,50 A0.75,0.75 0 0 1 32,49.25 Z" />
+
     <!-- Deck -->
     <path android:strokeColor="#FFFFFFFF" android:strokeWidth="3"
         android:pathData="M18,54 H102 A6,6 0 0 1 108,60 V90 A6,6 0 0 1 102,96 H18 A6,6 0 0 1 12,90 V60 A6,6 0 0 1 18,54 Z" />
