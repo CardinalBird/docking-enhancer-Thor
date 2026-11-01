@@ -57,12 +57,13 @@ internal class RootMirrorProcessRepository(
         val hiddenStateArg = " --hidden-state-file ${files.hiddenStateFile.absolutePath.shellQuote()}"
         val pidFileArg = " --pid-file ${files.pidFile.absolutePath.shellQuote()}"
         val heartbeatFileArg = " --heartbeat-file ${files.heartbeatFile.absolutePath.shellQuote()}"
+        val rumbleArg = files.apkPath?.let { " --rumble-apk ${it.shellQuote()}" } ?: ""
         // Foreground invocation only; launchDaemon backgrounds it appropriately per backend. The
         // binary writes (and chmods) its own pid/heartbeat files via --pid-file/--heartbeat-file,
         // so no `echo $! > pidfile` bookkeeping is needed here.
         //
         val launch =
-            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeModeArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg"
+            "nice -n -20 ${binary.absolutePath.shellQuote()} ${request.source.shellQuote()} ${request.target.shellQuote()}$homeModeArg$comboHoldKillAppArg$virtualMouseArg$hideNodeArgs$hiddenStateArg$configArg$controlFifoArg$captureArg$pidFileArg$heartbeatFileArg$rumbleArg"
 
         // Only skip the launch for a daemon already mirroring THESE nodes.
         //

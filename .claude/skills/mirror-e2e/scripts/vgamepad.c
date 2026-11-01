@@ -10,7 +10,7 @@
  *
  * Usage:
  *   vgamepad --path-file PATH [--name NAME] [--vendor HEX] [--product HEX] [--plain]
- *            [--range MIN MAX]
+ *            [--range MIN MAX] [--rumble-log PATH]
  *
  * Creates the device, writes its /dev/input/eventN path to --path-file (so a test can wait for the
  * file rather than guess a delay), then executes one command per line of stdin:
@@ -32,6 +32,7 @@
 #include <fcntl.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -99,8 +100,44 @@ static int resolve_event_path(int fd, char *out, size_t out_len) {
     return found;
 }
 
+// --rumble-log: declare FF_RUMBLE and log "play 1"/"play 0" per EV_FF the daemon writes, so the
+// e2e suite can check that the Thor's vibration reaches the pad. Uploads must be answered, or the
+// daemon's EVIOCSFF blocks for 30 s, hence the thread.
+static int rumble_fd = -1;
+static FILE *rumble_log = NULL;
+
+static void *serve_ff(void *unused) {
+    (void)unused;
+    struct pollfd pfd = {.fd = rumble_fd, .events = POLLIN};
+    for (;;) {
+        if (poll(&pfd, 1, -1) < 0) continue;
+        struct input_event ev;
+        while (read(rumble_fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev)) {
+            if (ev.type == EV_UINPUT && ev.code == UI_FF_UPLOAD) {
+                struct uinput_ff_upload up;
+                memset(&up, 0, sizeof(up));
+                up.request_id = (unsigned int)ev.value;
+                ioctl(rumble_fd, UI_BEGIN_FF_UPLOAD, &up);
+                up.retval = 0;
+                ioctl(rumble_fd, UI_END_FF_UPLOAD, &up);
+            } else if (ev.type == EV_UINPUT && ev.code == UI_FF_ERASE) {
+                struct uinput_ff_erase er;
+                memset(&er, 0, sizeof(er));
+                er.request_id = (unsigned int)ev.value;
+                ioctl(rumble_fd, UI_BEGIN_FF_ERASE, &er);
+                er.retval = 0;
+                ioctl(rumble_fd, UI_END_FF_ERASE, &er);
+            } else if (ev.type == EV_FF) {
+                fprintf(rumble_log, "play %d\n", ev.value);
+                fflush(rumble_log);
+            }
+        }
+    }
+    return NULL;
+}
+
 static int create_device(const char *name, int vendor, int product, int plain, int axis_min, int axis_max) {
-    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    int fd = open("/dev/uinput", (rumble_log ? O_RDWR : O_WRONLY) | O_NONBLOCK);
     if (fd < 0) {
         perror("vgamepad: open /dev/uinput");
         return -1;
@@ -162,8 +199,16 @@ static int create_device(const char *name, int vendor, int product, int plain, i
         }
     }
 
+    if (rumble_log != NULL &&
+        (ioctl(fd, UI_SET_EVBIT, EV_FF) < 0 || ioctl(fd, UI_SET_FFBIT, FF_RUMBLE) < 0)) {
+        perror("vgamepad: UI_SET_FFBIT");
+        close(fd);
+        return -1;
+    }
+
     struct uinput_setup setup;
     memset(&setup, 0, sizeof(setup));
+    setup.ff_effects_max = rumble_log != NULL ? 1 : 0;
     setup.id.bustype = BUS_USB;
     setup.id.vendor = (unsigned short)vendor;
     setup.id.product = (unsigned short)product;
@@ -311,6 +356,12 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--range") == 0 && i + 2 < argc) {
             axis_min = (int)strtol(argv[++i], NULL, 0);
             axis_max = (int)strtol(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--rumble-log") == 0 && i + 1 < argc) {
+            rumble_log = fopen(argv[++i], "w");
+            if (rumble_log == NULL) {
+                perror("vgamepad: --rumble-log");
+                return 1;
+            }
         } else if (strcmp(argv[i], "--product") == 0 && i + 1 < argc) {
             product = (int)strtol(argv[++i], NULL, 0);
         } else {
@@ -322,6 +373,12 @@ int main(int argc, char **argv) {
     int fd = create_device(name, vendor, product, plain, axis_min, axis_max);
     if (fd < 0) {
         return 1;
+    }
+
+    if (rumble_log != NULL) {
+        rumble_fd = fd;
+        pthread_t thread;
+        pthread_create(&thread, NULL, serve_ff, NULL);
     }
 
     char event_path[128];

@@ -1085,6 +1085,52 @@ else
 fi
 rm -f $CAPLOG $TMP/t21e.out $CFG $FIFO
 
+# --- T22: rumble ----------------------------------------------------------------------------------
+
+echo ""
+echo "=== T22: la vibracion del Thor llega al pad como rumble ==="
+# A game rumbles the Thor's own motor (the built-in pad has no force feedback). The daemon's
+# RumbleBridge helper hears the vibrator turn on/off and replays it as FF_RUMBLE on the pad.
+# The Thor's firmware twins every pad that declares force feedback (whatever its vendor) and deletes
+# the real node, so the daemon reads the twin and reaches the real pad through mknod: root only.
+# Without su, check it through the app instead: a debug build with applicationIdSuffix ".dev"
+# installs beside the release one, and its PServer daemon mirrors this same --rumble-log pad.
+if ! command -v su >/dev/null 2>&1; then
+    echo "  NOTE: no su; T22 needs root (see the comment above for the manual check)"
+else
+    APK=$(pm path com.controlswitch 2>/dev/null | head -n 1 | cut -d: -f2)
+    RFIFO=$TMP/rumble.fifo
+    RLOG=$TMP/rumble.log
+    mkfifo $RFIFO
+    $VPAD --name "E2E Rumble Pad" --vendor 0x1234 --product 0x5678 --rumble-log $RLOG --path-file $TMP/rumble.path < $RFIFO &
+    exec 5> $RFIFO
+    wait_for_file $TMP/rumble.path
+    sleep 1
+    RSRC=$(cat $TMP/rumble.path)
+    # Twinned: read the twin, as the app does.
+    if [ ! -e "$RSRC" ]; then
+        for e in /sys/class/input/event*; do
+            if [ "$(cat $e/device/name)" = "E2E Rumble Pad" ] && [ "$(cat $e/device/id/vendor)" = "2020" ]; then
+                RSRC=/dev/input/$(basename $e)
+            fi
+        done
+    fi
+    start_mirror "$RSRC" "$DST" --rumble-apk "$APK" --heartbeat-file $HEART
+    i=0
+    while ! grep -q "Rumble: bridge started" $LOG 2>/dev/null && [ "$i" -lt 30 ]; do sleep 0.1; i=$((i + 1)); done
+    expect_contains $LOG "Rumble: bridge started" "el daemon sube el efecto y arranca el puente"
+    sleep 2  # app_process needs a moment to register its listener
+    cmd vibrator_manager synced oneshot -f 300 >/dev/null 2>&1
+    sleep 1
+    GOT=$(tr '\n' '|' < $RLOG | sed 's/|$//')
+    if [ "$GOT" = "play 1|play 0" ]; then ok "una vibracion de 300 ms da rumble on y luego off"; else bad "rumble [$GOT]"; fi
+    stop_mirror
+    sleep 1
+    if [ -z "$(pidof control_switch_rumble)" ]; then ok "el puente muere con el daemon (incluso tras SIGKILL)"; else bad "el puente sigue vivo tras matar el daemon"; fi
+    exec 5>&-
+    rm -f $RFIFO $RLOG $TMP/rumble.path
+fi
+
 # --- teardown ------------------------------------------------------------------------------------
 
 echo ""

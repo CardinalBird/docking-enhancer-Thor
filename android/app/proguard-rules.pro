@@ -4,3 +4,4 @@
 -keep class com.controlswitch.InputMirrorBootReceiver { *; }
 -keep class com.controlswitch.MainActivity { *; }
 -keep class com.controlswitch.MainApplication { *; }
+-keep class com.controlswitch.data.RumbleBridge { public static void main(java.lang.String[]); }
