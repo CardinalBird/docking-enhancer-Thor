@@ -12,7 +12,7 @@ package com.controlswitch
  * absorbed into the offset until the next real rest; widen the window if that ever shows up.
  */
 internal class GyroBias(
-    private val window: Int = 50,          // ~1 s at SENSOR_DELAY_GAME
+    private val window: Int = 200,         // ~1 s at the 200 Hz ThorMotionServer samples at
     private val stillGyro: Float = 0.03f,  // ~1.7 deg/s: tighter than a hand, looser than a table
     private val stillAccel: Float = 0.3f,
 ) {

@@ -85,7 +85,7 @@ internal fun Context.findMainActivity(): MainActivity? {
 }
 
 // In order of depth: a higher page slides in from the right, going back slides the other way.
-private enum class Page { Main, Settings, Player1, Mapping }
+private enum class Page { Main, Settings, Tests, Player1, Mapping }
 
 @Composable
 fun MirrorScreen(viewModel: MirrorViewModel) {
@@ -104,11 +104,13 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     }
     val editorState by viewModel.mappingEditor.state.collectAsStateWithLifecycle()
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var testsOpen by rememberSaveable { mutableStateOf(false) }
     val page = when {
         // A whole screen rather than an overlay: mapping is the only thing happening while it is
         // open, and the controller is answering it instead of driving whatever would show behind.
         editorState.open -> Page.Mapping
         state.pickingPlayer1 -> Page.Player1
+        testsOpen -> Page.Tests
         settingsOpen -> Page.Settings
         else -> Page.Main
     }
@@ -160,7 +162,11 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
                 onConfirm = viewModel::confirmPlayer1,
                 onClose = viewModel::closePlayer1Picker,
             )
-            Page.Settings -> AdditionalSettingsScreen(state, viewModel, active, onBack = { settingsOpen = false })
+            Page.Tests -> ControllerTestScreen(state, active, onBack = { testsOpen = false })
+            Page.Settings -> AdditionalSettingsScreen(
+                state, viewModel, active,
+                onOpenTests = { testsOpen = true }, onBack = { settingsOpen = false },
+            )
             Page.Main -> MainPage(state, viewModel, active, onOpenSettings = { settingsOpen = true })
         }
     }

@@ -35,6 +35,12 @@ app, retargeted to the AYN Thor and renamed Control Switch.
 <td align="center">Hold buttons together, then let go</td>
 <td align="center">Dark, Super dark or Light</td>
 </tr>
+<tr>
+<td colspan="2"><img src="control-switch-ui-tests.png" alt="Controller Tests: a live Switch-style drawing of the pad lights up as you press, and a checklist ticks off every button, stick circle and trigger"></td>
+</tr>
+<tr>
+<td colspan="2" align="center">Test every button and stick on any controller</td>
+</tr>
 </table>
 
 </div>
@@ -77,6 +83,11 @@ It runs without root, using a privileged service the stock firmware already ship
   Needs a pad whose driver supports rumble
 - **Gyro for emulators** — serves motion over DSU (cemuhook) on `127.0.0.1:26760`: the Thor's gyro
   handheld, your controller's gyro while mirroring (Switch-style pads)
+- **Controller tests** — a live drawing of the pad lights up as you press, and a checklist ticks
+  off every button, both sticks (a full circle, plus the click) and both triggers, for the Thor's
+  own pad or any controller; hold **B** to leave. **Y** tests motion instead: turn the pad about
+  each axis, with a ball that rolls to the low side and live deg/s (a controller's gyro needs
+  mirroring to be allowed, since the daemon reads it). The Thor's Home key can't be tested in-app
 - **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Guided button mapping** — press a button for each row, or let **Map all** walk the list; or pick
@@ -102,6 +113,9 @@ gyro while you play handheld, with its resting drift removed, and your controlle
 mirroring. Set an emulator up once and it follows whatever is in your hands. Controller gyro needs
 a Switch-style pad (Pro Controller, 8BitDo in Switch mode); the Thor's firmware never switches their
 motion sensors on, so Control Switch does.
+
+Before setting an emulator up, **Additional Settings → Controller tests → Y** shows the motion the
+port is serving right now, so you can tell a wiring problem from an emulator setting.
 
 | Emulator | DSU on Android | Setup |
 | --- | --- | --- |

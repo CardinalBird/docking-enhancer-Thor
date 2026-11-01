@@ -40,7 +40,13 @@ import kotlinx.coroutines.delay
  * without scrolling; the focused row's explanation shows in the footer instead, Switch-style.
  */
 @Composable
-internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorViewModel, active: Boolean, onBack: () -> Unit) {
+internal fun AdditionalSettingsScreen(
+    state: MirrorUiState,
+    viewModel: MirrorViewModel,
+    active: Boolean,
+    onOpenTests: () -> Unit,
+    onBack: () -> Unit,
+) {
     BackHandler(enabled = active, onBack = onBack)
     val context = LocalContext.current
     // A binder call; asked once, not on every recomposition.
@@ -73,13 +79,13 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
         Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 120.dp, vertical = 2.dp)) {
             MenuRow(
                 title = "Select + Start closes app",
-                minHeight = 44.dp,
+                minHeight = 40.dp,
                 onClick = { viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) },
                 modifier = Modifier.focusRequester(first).then(explains("Hold both for 3 seconds to close the game you're in.")),
             ) { RowSwitch(state.comboHoldKillApp, !state.busy) }
             MenuRow(
                 title = "Virtual mouse",
-                minHeight = 44.dp,
+                minHeight = 40.dp,
                 onClick = { viewModel.toggleVirtualMouse(!state.virtualMouse) },
                 modifier = explains("Select + R3 toggles · A click · B right-click · R1 shade"),
             ) { RowSwitch(state.virtualMouse, !state.busy) }
@@ -87,7 +93,7 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
             val flip = { viewModel.setMirrorWhenHandheld(!always) }
             MenuRow(
                 title = "Allow mirroring",
-                minHeight = 44.dp,
+                minHeight = 40.dp,
                 onClick = flip,
                 onLeft = flip,
                 onRight = flip,
@@ -103,7 +109,7 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
             }
             MenuRow(
                 title = "Rumble strength",
-                minHeight = 44.dp,
+                minHeight = 40.dp,
                 // A steps up and wraps to off after 100%, like the other ‹ › rows cycle.
                 onClick = { if (strength >= 100) viewModel.setRumbleStrength(0) else nudge(10) },
                 onLeft = { nudge(-10) },
@@ -114,7 +120,7 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
             val step = { by: Int -> viewModel.setTheme(themes[(state.theme.ordinal + by + themes.size) % themes.size]) }
             MenuRow(
                 title = "Theme",
-                minHeight = 44.dp,
+                minHeight = 40.dp,
                 onClick = { step(1) },
                 onLeft = { step(-1) },
                 onRight = { step(1) },
@@ -127,12 +133,18 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
                 }
                 RowValue("‹  $name  ›", accent = true)
             }
+            MenuRow(
+                title = "Controller tests",
+                minHeight = 40.dp,
+                onClick = onOpenTests,
+                modifier = explains("Check every button, stick and trigger on any connected controller."),
+            )
             // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
             // can ask to be pinned itself. Shown only when the home app takes pin requests.
             if (canPin) {
                 MenuRow(
                     title = "Add to home screen",
-                    minHeight = 44.dp,
+                    minHeight = 40.dp,
                     onClick = { context.pinToHome() },
                     modifier = explains("Pin this app to your launcher."),
                 )

@@ -166,11 +166,13 @@ class InputMirrorSupervisorService : Service() {
                     MirrorStateStore.awaitNextTick(sleepMs)
                     continue
                 }
-                if (MirrorStateStore.pickingPlayer1) {
+                if (MirrorStateStore.pickingPlayer1 || MirrorStateStore.testingPad) {
                     if (mirrorRunning) {
                         runCatching { graph.stopMirror() }
                     }
-                    updateSupervisorState(SupervisorState.PickingPlayer1)
+                    updateSupervisorState(
+                        if (MirrorStateStore.pickingPlayer1) SupervisorState.PickingPlayer1 else SupervisorState.TestingPad,
+                    )
                     MirrorStateStore.awaitNextTick(SUPERVISOR_INTERVAL_MS)
                     continue
                 }
@@ -375,6 +377,7 @@ class InputMirrorSupervisorService : Service() {
         WaitingForInternalController("Waiting for built-in controller"),
         WaitingForExternalController("Waiting for external controller"),
         PickingPlayer1("Press L + R on the controller you want to use"),
+        TestingPad("Paused for controller tests"),
         Starting("Starting mirroring"),
         Active("Controller mirroring enabled"),
         Restarting("Restarting mirroring"),
