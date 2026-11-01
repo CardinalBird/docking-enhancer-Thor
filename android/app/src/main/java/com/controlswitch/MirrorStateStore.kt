@@ -83,6 +83,19 @@ object MirrorStateStore {
         }
     }
 
+    // True while Controller Tests is open: the same stand-down, so the pad under test reports as itself.
+    @Volatile
+    var testingPad: Boolean = false
+        private set
+
+    fun setTestingPad(testing: Boolean) {
+        synchronized(tickMonitor) {
+            testingPad = testing
+            pendingWake = true
+            tickMonitor.notifyAll()
+        }
+    }
+
     /** The supervisor sleeps here between ticks so [setUiVisible] can cut the wait short. Spurious
      * wakeups only cost one early tick, which is harmless. Propagates interrupts for clean shutdown. */
     fun awaitNextTick(maxSleepMs: Long) {
