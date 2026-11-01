@@ -20,10 +20,13 @@ internal class InputMirrorFiles(
     private val isFifo: (String) -> Boolean = { path ->
         OsConstants.S_ISFIFO(Os.stat(path).st_mode)
     },
+    // The app's own APK, which the daemon hands to app_process to run RumbleBridge. Null in tests.
+    val apkPath: String? = null,
     private val openBinaryAsset: () -> InputStream,
 ) {
     constructor(context: Context) : this(
         filesDir = context.filesDir,
+        apkPath = context.applicationInfo.sourceDir,
         openBinaryAsset = { context.assets.open(BINARY_ASSET_PATH) },
     )
 

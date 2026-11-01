@@ -18,6 +18,7 @@
 #include "hide_nodes.h"
 #include "mapping.h"
 #include "mouse.h"
+#include "rumble.h"
 
 static volatile sig_atomic_t keep_running = 1;
 // The mask the main loop waits under (the stop signals open) while they stay blocked everywhere else.
@@ -316,6 +317,7 @@ struct mirror_state {
     // The pointer, when the user has summoned it. Owned by mouse.c: what is left here is only the
     // combo that toggles it and the one thing it cannot do for itself.
     struct mouse_state mouse;
+    struct rumble rumble;
     int mouse_combo_triggered;
     long long mouse_combo_pressed_at_ms;
     int shade_open;  // our view of whether R1 last opened the notification shade
@@ -941,7 +943,7 @@ int main(int argc, char **argv) {
     }
 
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
+        fprintf(stderr, "Usage: %s /dev/input/eventSOURCE /dev/input/eventTARGET [--home-mode 0|1|2] [--combo-hold-kill-app] [--virtual-mouse] [--hide-node PATH]... [--hidden-state-file PATH] [--config-file PATH] [--control-fifo PATH] [--capture-file PATH] [--pid-file PATH] [--heartbeat-file PATH] [--rumble-apk PATH]\n       %s --heal --hidden-state-file PATH\n", argv[0], argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -953,6 +955,7 @@ int main(int argc, char **argv) {
     const char *config_path = NULL;
     const char *control_fifo_path = NULL;
     const char *capture_file_path = NULL;
+    const char *rumble_apk_path = NULL;
     int home_mode = HOME_MODE_PASS;
     int combo_hold_kill_app = 0;
     int virtual_mouse = 0;
@@ -1004,6 +1007,11 @@ int main(int argc, char **argv) {
             continue;
         }
 
+        if (strcmp(argv[index], "--rumble-apk") == 0 && index + 1 < argc) {
+            rumble_apk_path = argv[++index];
+            continue;
+        }
+
         if (strcmp(argv[index], "--pid-file") == 0 && index + 1 < argc) {
             pid_file_path = argv[++index];
             continue;
@@ -1027,6 +1035,7 @@ int main(int argc, char **argv) {
     struct mirror_state s;
     memset(&s, 0, sizeof(s));
     mouse_init(&s.mouse);
+    rumble_init(&s.rumble);
     s.control_fd = -1;
     s.heartbeat_fd = -1;
     s.heartbeat_file_path = heartbeat_file_path;
@@ -1036,7 +1045,11 @@ int main(int argc, char **argv) {
     s.capture.first_axis = -1;
     s.capture.log_path = capture_file_path;
 
-    s.source_fd = open(source_path, O_RDONLY | O_CLOEXEC);
+    // Read-write so rumble can be played on it; a node we may only read still mirrors, silently.
+    s.source_fd = open(source_path, O_RDWR | O_CLOEXEC);
+    if (s.source_fd < 0) {
+        s.source_fd = open(source_path, O_RDONLY | O_CLOEXEC);
+    }
     if (s.source_fd < 0) {
         fprintf(stderr, "Failed to open source %s: %s\n", source_path, strerror(errno));
         return EXIT_FAILURE;
@@ -1171,6 +1184,8 @@ int main(int argc, char **argv) {
     }
     write_hidden_state(hidden_state_path, hidden, hide_count);
 
+    rumble_start(&s.rumble, s.source_fd, rumble_apk_path);
+
     // Block the stop signals everywhere except inside the wait. Left open, one landing between the
     // keep_running check and poll() went unnoticed until the poll timed out (up to a second), past the
     // app's 500 ms SIGKILL escalation, which then left the hidden node hidden. ppoll() opens them
@@ -1204,7 +1219,7 @@ int main(int argc, char **argv) {
         // Watch the source and the control fifo together. Adding the fifo here rather than checking
         // it on a timer is what keeps a settings change effectively instant while leaving the grab,
         // and the forwarding path, completely untouched.
-        struct pollfd fds[2];
+        struct pollfd fds[3];
         memset(fds, 0, sizeof(fds));
         fds[0].fd = s.source_fd;
         fds[0].events = POLLIN;
@@ -1216,6 +1231,12 @@ int main(int argc, char **argv) {
             control_index = 1;
             poll_count = 2;
         }
+        int rumble_index = -1;
+        if (s.rumble.from_bridge >= 0) {
+            fds[poll_count].fd = s.rumble.from_bridge;
+            fds[poll_count].events = POLLIN;
+            rumble_index = poll_count++;
+        }
 
         struct timespec timeout = {timeout_ms / 1000, (timeout_ms % 1000) * 1000000L};
         int poll_result = ppoll(fds, (nfds_t)poll_count, &timeout, &wait_mask);
@@ -1225,6 +1246,10 @@ int main(int argc, char **argv) {
             }
             fprintf(stderr, "Poll error from %s: %s\n", source_path, strerror(errno));
             break;
+        }
+
+        if (rumble_index >= 0 && (fds[rumble_index].revents & (POLLIN | POLLHUP))) {
+            rumble_on_readable(&s.rumble);
         }
 
         // The mouse toggle may complete on a poll timeout with no new event, so check it every loop.
@@ -1371,6 +1396,8 @@ int main(int argc, char **argv) {
     if (!s.mouse.mode) {
         release_target_holds(&s);
     }
+
+    rumble_stop(&s.rumble);
 
     if (ioctl(s.source_fd, EVIOCGRAB, 0) < 0) {
         fprintf(stderr, "Failed to release source %s: %s\n", source_path, strerror(errno));

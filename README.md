@@ -69,6 +69,8 @@ It runs without root, using a privileged service the stock firmware already ship
 - **Button combinations** — any button, Home and Back included, can be bound to 2–4 buttons held
   together. Hold them, let go, done; the held buttons show as icons while you do it. When a
   combination fires, its buttons don't also reach the game
+- **Rumble on the pad** — when a game vibrates the Thor, your controller rumbles instead (on/off at
+  one strength: Android reports no intensity). Needs a pad whose driver supports rumble
 - **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Guided button mapping** — press a button for each row, or let **Map all** walk the list; or pick
