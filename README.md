@@ -86,8 +86,8 @@ It runs without root, using a privileged service the stock firmware already ship
 - **Controller tests** — a live drawing of the pad lights up as you press, and a checklist ticks
   off every button, both sticks (a full circle, plus the click) and both triggers, for the Thor's
   own pad or any controller; hold **B** to leave. **Y** tests motion instead: turn the pad about
-  each axis, with a bubble level and live deg/s (a controller's gyro needs mirroring to be allowed,
-  since the daemon reads it). The Thor's Home key can't be tested in-app
+  each axis, with a ball that rolls to the low side and live deg/s (a controller's gyro needs
+  mirroring to be allowed, since the daemon reads it). The Thor's Home key can't be tested in-app
 - **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Guided button mapping** — press a button for each row, or let **Map all** walk the list; or pick
@@ -113,6 +113,9 @@ gyro while you play handheld, with its resting drift removed, and your controlle
 mirroring. Set an emulator up once and it follows whatever is in your hands. Controller gyro needs
 a Switch-style pad (Pro Controller, 8BitDo in Switch mode); the Thor's firmware never switches their
 motion sensors on, so Control Switch does.
+
+Before setting an emulator up, **Additional Settings → Controller tests → Y** shows the motion the
+port is serving right now, so you can tell a wiring problem from an emulator setting.
 
 | Emulator | DSU on Android | Setup |
 | --- | --- | --- |
