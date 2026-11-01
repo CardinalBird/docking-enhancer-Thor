@@ -45,11 +45,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.text.style.TextOverflow
@@ -157,6 +152,18 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
     fun InputDevice?.isPad() = this != null && !isVirtual &&
         (sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK)
     val activity = LocalContext.current.findMainActivity()
+    // Y on the picker starts the motion step. Taken at the activity rather than through Compose
+    // focus, which is still being re-anchored right after a step ends; an unhandled Y turns into
+    // Back and would close the page. Both halves are taken.
+    DisposableEffect(activity, testing, motion, ready, pad?.id) {
+        if (activity == null || testing || motion) return@DisposableEffect onDispose { }
+        activity.onPadCapture = { event: KeyEvent ->
+            (event.keyCode == KeyEvent.KEYCODE_BUTTON_Y).also { mine ->
+                if (mine && event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) startMotion()
+            }
+        }
+        onDispose { activity.onPadCapture = null }
+    }
     DisposableEffect(activity, testing, pad?.id) {
         if (activity == null || !testing || pad == null) return@DisposableEffect onDispose { }
         val axes = padAxes { pad.getMotionRange(it) != null }
@@ -223,13 +230,7 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
     }
     CompositionLocalProvider(LocalPadLayout provides layout) {
         Column(
-            Modifier.fillMaxSize().onFocusChanged { hasFocus = it.hasFocus }.windowInsetsPadding(WindowInsets.safeDrawing)
-                // Y on the picker starts the motion step. Both halves are taken: an unhandled Y turns into Back.
-                .onPreviewKeyEvent {
-                    if (it.key != Key.ButtonY || testing || motion) return@onPreviewKeyEvent false
-                    if (it.type == KeyEventType.KeyUp) startMotion()
-                    true
-                },
+            Modifier.fillMaxSize().onFocusChanged { hasFocus = it.hasFocus }.windowInsetsPadding(WindowInsets.safeDrawing),
         ) {
             Header(title = "Controller Tests")
             Rule(Modifier.padding(horizontal = 28.dp))
