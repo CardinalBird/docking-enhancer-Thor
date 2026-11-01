@@ -393,11 +393,77 @@ private fun Note(text: String) {
     Text(text, color = Palette.textMuted, fontSize = 13.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(4.dp))
 }
 
-/** Bottom of every page, on the page colour: a status line left, the button hints right. */
+/**
+ * Bottom of every page, on the page colour: a status line left, the button hints right. The hints
+ * take the width they need (four of them outgrow half the screen) and the status wraps in the rest.
+ */
 @Composable
 internal fun Footer(status: String, hints: List<HintAction>) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(status, color = Palette.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(start = 28.dp).weight(1f))
-        Box(Modifier.weight(1f)) { HintBar(hints) }
+        HintBar(hints)
+
     }
 }
+
+
+/**
+ * Shown while the mirror is coming up: a notice over the page that takes every pad press and Back.
+ * Before the daemon runs, the pad's buttons mean what Android says they mean, and that B is Back
+ * closed the app on more than one tester who thought mirroring was already on. Lifts itself after
+ * [STARTING_GUARD_MS] so a start that fails (the supervisor retries in a minute) never locks the
+ * screen; the footer still says what is happening.
+ */
+@Composable
+private fun StartingGuard(starting: Boolean) {
+    var gaveUp by remember { mutableStateOf(false) }
+    LaunchedEffect(starting) {
+        gaveUp = false
+        if (starting) {
+            delay(STARTING_GUARD_MS)
+            gaveUp = true
+        }
+    }
+    if (!starting || gaveUp) return
+    BackHandler { }
+    val activity = LocalContext.current.findMainActivity()
+    DisposableEffect(activity) {
+        val swallowKey: (KeyEvent) -> Boolean = { event ->
+            KeyEvent.isGamepadButton(event.keyCode) || event.keyCode == KeyEvent.KEYCODE_BACK ||
+                event.keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_CENTER
+        }
+        val swallowMotion: (MotionEvent) -> Boolean = { true }
+        val previousKey = activity?.onPadCapture
+        val previousMotion = activity?.onPadMotion
+        activity?.onPadCapture = swallowKey
+        activity?.onPadMotion = swallowMotion
+        onDispose {
+            // Only if still ours: another page may have installed its own hooks since.
+            if (activity?.onPadCapture === swallowKey) activity.onPadCapture = previousKey
+            if (activity?.onPadMotion === swallowMotion) activity.onPadMotion = previousMotion
+        }
+    }
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        Modifier.fillMaxSize().background(Palette.scrim)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            Modifier.clip(shape).background(Palette.surface).border(1.dp, Palette.border, shape)
+                .padding(horizontal = 32.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("Starting mirroring…", color = Palette.textPrimary, fontSize = 17.sp)
+            Spacer(Modifier.height(14.dp))
+            LinearProgressIndicator(modifier = Modifier.width(260.dp), color = Palette.cyan, trackColor = Palette.border)
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Please wait until mirroring is active before using your controller.",
+                color = Palette.textSecondary, fontSize = 13.sp, textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+private const val STARTING_GUARD_MS = 15_000L
