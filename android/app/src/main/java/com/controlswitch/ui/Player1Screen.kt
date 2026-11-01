@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -35,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -57,6 +59,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.controlswitch.R
 import com.controlswitch.domain.model.ControllerDevice
+import com.controlswitch.domain.model.PadBattery
 import com.controlswitch.domain.model.lockedPlayer1
 import com.controlswitch.ui.theme.Palette
 import kotlinx.coroutines.delay
@@ -73,8 +76,10 @@ import kotlinx.coroutines.delay
 fun Player1Screen(
     externals: List<ControllerDevice>,
     player1Name: String?,
+    player1Path: String?,
     pendingName: String?,
     pendingPath: String?,
+    levels: Map<String, PadBattery>,
     /** False while this page slides out: Back then belongs to the page arriving. */
     active: Boolean,
     onPick: (InputDevice) -> Unit,
@@ -97,7 +102,11 @@ fun Player1Screen(
     }
 
     val pending = remember(externals, pendingName, pendingPath) { externals.lockedPlayer1(pendingName, pendingPath) }
-    val pendingBattery = remember(pending) { padBattery(pending) }
+    val locked = remember(externals, player1Name, player1Path) { externals.lockedPlayer1(player1Name, player1Path) }
+    // The slot shows the pad just picked, else the saved player 1 (named even while it is away).
+    val shownPad = if (pendingName != null) pending else locked
+    val shownName = pendingName ?: player1Name
+    val others = externals.filter { it.path != shownPad?.path }
 
     // Nothing on this screen is focusable, and Compose routes keys to the focused node's ancestors
     // only, so A never arrived. The screen itself is the focus target. Both halves of A are taken
@@ -134,36 +143,27 @@ fun Player1Screen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
+            // Once a pad is picked the instruction becomes the confirm; L + R still re-picks.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Press  ", color = Palette.textPrimary, fontSize = 19.sp)
-                PadIcon(SlotIcon.LEFT_BUMPER, 34.dp)
-                Text("  +  ", color = Palette.textPrimary, fontSize = 19.sp)
-                PadIcon(SlotIcon.RIGHT_BUMPER, 34.dp)
-                Text("  on the controller you'd like to use.", color = Palette.textPrimary, fontSize = 19.sp)
-            }
-            Spacer(Modifier.height(20.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                PlayerOneSlot(pendingName, pendingBattery, Modifier.weight(1f))
-                for (slot in 2..4) {
-                    Slot(filled = false, Modifier.weight(1f)) {
-                        Text("$slot", color = Palette.textMuted, fontSize = 34.sp)
-                    }
+                if (pendingName != null) {
+                    Text("Press  ", color = Palette.textPrimary, fontSize = 19.sp)
+                    PadIcon(SlotIcon.A, 34.dp)
+                    Text("  when you're ready.", color = Palette.textPrimary, fontSize = 19.sp)
+                } else {
+                    Text("Press  ", color = Palette.textPrimary, fontSize = 19.sp)
+                    PadIcon(SlotIcon.LEFT_BUMPER, 34.dp)
+                    Text("  +  ", color = Palette.textPrimary, fontSize = 19.sp)
+                    PadIcon(SlotIcon.RIGHT_BUMPER, 34.dp)
+                    Text("  on the controller you'd like to use.", color = Palette.textPrimary, fontSize = 19.sp)
                 }
             }
-            Spacer(Modifier.height(20.dp))
-            if (pendingName != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Press  ", color = Palette.textPrimary, fontSize = 17.sp)
-                    PadIcon(SlotIcon.A, 32.dp)
-                    Text("  when you're ready.", color = Palette.textPrimary, fontSize = 17.sp)
+            Spacer(Modifier.height(16.dp))
+            PlayerOneSlot(shownName, shownPad, levels)
+            if (others.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    others.forEach { OtherPad(it, levels) }
                 }
-            } else {
-                Text(
-                    player1Name?.let { "Player 1 is $it." } ?: "No controller is player 1 yet.",
-                    color = Palette.textMuted,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                )
             }
         }
 
@@ -176,10 +176,23 @@ fun Player1Screen(
     }
 }
 
-/** Slot 1: empty until a pad presses L + R, then that pad scales and fades in, lamp lit. */
+/**
+ * The Player 1 slot: empty ("Press L + R") until a pad is picked or saved. A newly picked pad
+ * scales and fades in. A saved player 1 that is away keeps its name, marked not connected.
+ */
 @Composable
-private fun PlayerOneSlot(name: String?, battery: Int?, modifier: Modifier) {
-    Slot(filled = name != null, modifier) {
+private fun PlayerOneSlot(name: String?, pad: ControllerDevice?, levels: Map<String, PadBattery>) {
+    val connected = pad != null
+    val shape = RoundedCornerShape(14.dp)
+    Box(
+        modifier = Modifier
+            .size(width = 300.dp, height = 165.dp)
+            .clip(shape)
+            .background(if (name != null) Palette.surfaceRaised else Palette.screen)
+            .let { if (name != null) it.focusOutline(true, shape) else it.border(1.dp, Palette.borderStrong, shape) }
+            .padding(12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         AnimatedContent(
             targetState = name,
             transitionSpec = {
@@ -188,31 +201,45 @@ private fun PlayerOneSlot(name: String?, battery: Int?, modifier: Modifier) {
             label = "player1",
         ) { shown ->
             if (shown == null) {
-                Text("1", color = Palette.textMuted, fontSize = 34.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Press  ", color = Palette.textMuted, fontSize = 17.sp)
+                    PadIcon(SlotIcon.LEFT_BUMPER, 28.dp)
+                    Text("  +  ", color = Palette.textMuted, fontSize = 17.sp)
+                    PadIcon(SlotIcon.RIGHT_BUMPER, 28.dp)
+                }
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlayerLamps(lit = true)
-                    Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 60.dp, height = 46.dp))
-                    battery?.let { Battery(it) }
-                    Text(shown, color = Palette.textPrimary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    PlayerLamps(player = if (connected) 1 else 0)
+                    Image(
+                        painterResource(R.drawable.ic_controller),
+                        contentDescription = null,
+                        colorFilter = iconTint(),
+                        modifier = Modifier.size(width = 64.dp, height = 49.dp).alpha(if (connected) 1f else 0.4f),
+                    )
+                    if (connected) PadBatteryIndicator(pad, levels)
+                    Text(shown, color = Palette.textPrimary, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (!connected) Text("Not connected", color = Palette.textMuted, fontSize = 12.sp)
                 }
             }
         }
     }
 }
 
+/** Another connected pad, small: just so you can see what is plugged in. */
 @Composable
-private fun Slot(filled: Boolean, modifier: Modifier, content: @Composable () -> Unit) {
-    val shape = RoundedCornerShape(14.dp)
-    Box(
-        modifier = modifier
-            .height(160.dp)
-            .clip(shape)
-            .background(if (filled) Palette.surfaceRaised else Palette.screen)
-            .let { if (filled) it.focusOutline(true, shape) else it.border(1.dp, Palette.borderStrong, shape) }
-            .padding(10.dp),
-        contentAlignment = Alignment.Center,
-    ) { content() }
+private fun OtherPad(device: ControllerDevice, levels: Map<String, PadBattery>) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, Palette.border, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Image(painterResource(R.drawable.ic_controller), contentDescription = null, colorFilter = iconTint(), modifier = Modifier.size(width = 30.dp, height = 23.dp))
+        Text(device.name, color = Palette.textSecondary, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp))
+        PadBatteryIndicator(device, levels)
+    }
 }
 
 internal data class HintAction(val icon: SlotIcon, val label: String, val onClick: (() -> Unit)?)

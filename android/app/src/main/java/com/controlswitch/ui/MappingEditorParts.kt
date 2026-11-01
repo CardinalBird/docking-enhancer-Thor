@@ -36,7 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -51,6 +53,7 @@ import com.controlswitch.domain.model.ControlRef
 import com.controlswitch.domain.model.MappingSlot
 import com.controlswitch.domain.model.SlotIcon
 import com.controlswitch.domain.model.describeSource
+import com.controlswitch.ui.theme.FocusBrush
 import com.controlswitch.ui.theme.Palette
 import kotlinx.coroutines.delay
 
@@ -86,10 +89,10 @@ internal fun SlotRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = 46.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (focused) Palette.focusBg else Palette.screen)
-            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
+            .background(if (focused) Palette.focusBg else Palette.surface)
+            .focusOutline(focused, RoundedCornerShape(8.dp))
             .onPreviewKeyEvent {
                 // Both halves, even on an unbound row: Android turns an unhandled X press into a
                 // select, which opened a capture on the row instead of doing nothing.
@@ -114,32 +117,29 @@ internal fun SlotRow(
             )
         }
     }
-    Rule(Modifier.padding(horizontal = 8.dp))
 }
 
-/** A one-press action above the slots: an auto-map preset, or the reset. */
+/**
+ * A group tab. Moving the D-pad onto it shows its group, Switch-style, so no press is needed; a tap
+ * does the same.
+ */
 @Composable
-internal fun ActionRow(label: String, detail: String, onClick: () -> Unit) {
+internal fun GroupTab(label: String, selected: Boolean, onSelect: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 52.dp)
+    Box(
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (focused) Palette.focusBg else Palette.screen)
-            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
-            // Swallowed: Android turns an unhandled X into a select, which would apply the preset.
+            .background(if (selected) Palette.surfaceRaised else Palette.screen)
+            .focusOutline(focused, RoundedCornerShape(8.dp))
+            .onFocusChanged { if (it.isFocused) onSelect() }
+            // Swallowed: Android turns an unhandled X into a select.
             .onPreviewKeyEvent { it.key == Key.ButtonX }
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
-        Spacer(Modifier.width(44.dp))
-        Text(label, color = Palette.textPrimary, fontSize = 16.sp, modifier = Modifier.weight(1f))
-        Text(detail, color = Palette.textMuted, fontSize = 14.sp)
+        Text(label, color = if (selected) Palette.textPrimary else Palette.textMuted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
     }
-    Rule(Modifier.padding(horizontal = 8.dp))
 }
 
 /** Controls held together, as prompt icons joined by "+"; text for one the icon set has no picture of. */
@@ -282,7 +282,7 @@ internal fun EditorButton(
             .background(if (focused) Palette.focusBg else background)
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) Palette.focus else Palette.border,
+                brush = if (focused) FocusBrush else SolidColor(Palette.border),
                 shape = RoundedCornerShape(10.dp),
             )
             .clickable(interactionSource = interaction, indication = null) { onClick() }

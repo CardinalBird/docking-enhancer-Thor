@@ -3,17 +3,17 @@ package com.controlswitch.ui
 import com.controlswitch.domain.model.SlotIcon
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.InputMode
@@ -42,8 +43,9 @@ import com.controlswitch.ui.theme.Palette
 import kotlinx.coroutines.delay
 
 /**
- * The mapping editor: one flat list of every slot and what it currently reads, with the auto-map
- * presets above it and "Map all" (Y) to walk the whole list one press at a time.
+ * The mapping editor, sized to fit the Thor's screen with no scrolling: the presets in one row,
+ * the slots split into group tabs, and the chosen group's slots in two columns. "Map all" (Y, or
+ * Guided setup) still walks every slot one press at a time.
  *
  * A screen rather than a dialog because it is the only thing the user is doing, and the controller is
  * busy answering it rather than driving the app behind. Back leaves.
@@ -77,8 +79,8 @@ fun MappingEditorScreen(
     val rowFocus = remember(state.slots.size) { List(state.slots.size) { FocusRequester() } }
     var focusedRow by remember { mutableIntStateOf(0) }
     val inputModeManager = LocalInputModeManager.current
-    val listScroll = rememberScrollState()
-    var scrollWhenOpened by remember { mutableIntStateOf(0) }
+    val tabFocus = remember { SlotGroup.entries.associateWith { FocusRequester() } }
+    var group by remember { mutableStateOf(state.slots.firstOrNull()?.let { groupOf(it.icon) } ?: SlotGroup.FACE) }
 
     // Which row wants the focus back, if any. Asked for explicitly rather than inferred from the
     // state, because only some changes should move the focus: leaving the overlay and clearing a row
@@ -107,6 +109,8 @@ fun MappingEditorScreen(
 
     LaunchedEffect(restoreTo, state.slots.size) {
         val target = restoreTo ?: return@LaunchedEffect
+        // The row may sit in another tab (the walk crosses them all): show its group first.
+        state.slots.getOrNull(target)?.let { group = groupOf(it.icon) }
         repeat(12) {
             inputModeManager.requestInputMode(InputMode.Keyboard)
             rowFocus.getOrNull(target)?.let { runCatching { it.requestFocus() } }
@@ -114,10 +118,6 @@ fun MappingEditorScreen(
             // Judged by where focus went, not by requestFocus(), which reports success even when the
             // request was refused (touch mode, a node not yet placed) and ended the loop on try one.
             if (focusedSlot == target) {
-                // Put the list back exactly where it was. Taking focus drags the row into view, and
-                // "into view" means the nearest edge — so a row that sat comfortably mid-screen comes
-                // back pinned to the top or the bottom, and the list appears to jump on its own.
-                listScroll.scrollTo(scrollWhenOpened)
                 restoreTo = null
                 return@LaunchedEffect
             }
@@ -134,55 +134,70 @@ fun MappingEditorScreen(
         },
     ) {
         Column(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            Column(Modifier.padding(horizontal = 28.dp, vertical = 16.dp)) {
-                Text("Button mapping", color = Palette.textPrimary, fontSize = 26.sp)
+            Column(Modifier.padding(horizontal = 28.dp, vertical = 10.dp)) {
+                Text("Button mapping", color = Palette.textPrimary, fontSize = 22.sp)
                 Text(
                     if (state.seeded) {
                         // A known pad arrives already mapped from its profile; the editor's job then is
                         // adjustment, and saying so stops "why is everything filled in?" cold.
-                        "${state.controllerName} · set from its profile. Pick a button to change it, or map them all in turn."
+                        "${state.controllerName} · set from its profile. Pick a button to change it."
                     } else {
-                        "${state.controllerName} · buttons left unbound work as the controller reports them."
+                        "${state.controllerName} · unbound buttons work as the controller reports them."
                     },
                     color = Palette.textSecondary,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
+                    maxLines = 1,
                 )
             }
             Rule(Modifier.padding(horizontal = 28.dp))
 
             Column(
-                modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(listScroll)
-                    .padding(horizontal = 28.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 28.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (controller != null) {
-                    ActionRow("Auto-map: Xbox layout", "A B X Y as printed on an Xbox pad") { controller.autoMap(PadLayout.XBOX) }
-                    ActionRow("Auto-map: Nintendo layout", "A B X Y as printed on a Switch pad") { controller.autoMap(PadLayout.NINTENDO) }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (controller != null) {
+                        EditorButton("Guided setup", Palette.surface, controller::mapAll)
+                        EditorButton("Xbox layout", Palette.surface, { controller.autoMap(PadLayout.XBOX) })
+                        EditorButton("Nintendo layout", Palette.surface, { controller.autoMap(PadLayout.NINTENDO) })
+                    }
+                    EditorButton("Reset to profile", Palette.surface, onClearAll)
                 }
-                ActionRow("Reset to profile", "Back to how this controller came", onClearAll)
-                state.slots.forEachIndexed { index, slot ->
-                    SlotRow(
-                        slot = slot,
-                        source = state.bindings[slot.target],
-                        chord = state.chords[slot.target],
-                        axisLabels = state.sourceAxisLabels,
-                        onBind = {
-                            focusedRow = index
-                            // Recorded HERE, which is the whole trick: by the time the overlay closes
-                            // the list has already been scrolled by the focus move, so the position
-                            // worth returning to is the one from the instant before it opened.
-                            scrollWhenOpened = listScroll.value
-                            onBind(slot)
-                        },
-                        onClear = {
-                            focusedRow = index
-                            scrollWhenOpened = listScroll.value
-                            onClear(slot)
-                            restoreTo = index
-                        },
-                        modifier = Modifier
-                            .focusRequester(rowFocus[index])
-                            .onFocusChanged { if (it.isFocused) focusedSlot = index },
-                    )
+                val groups = SlotGroup.entries.filter { g -> state.slots.any { groupOf(it.icon) == g } }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    groups.forEach { g ->
+                        GroupTab(g.label, selected = g == group, onSelect = { group = g }, Modifier.focusRequester(tabFocus.getValue(g)))
+                    }
+                }
+                // Two columns of the chosen group's slots; the largest group (a stick) has five.
+                state.slots.withIndex().filter { groupOf(it.value.icon) == group }.chunked(2).forEachIndexed { rowIndex, pair ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        pair.forEach { (index, slot) ->
+                            SlotRow(
+                                slot = slot,
+                                source = state.bindings[slot.target],
+                                chord = state.chords[slot.target],
+                                axisLabels = state.sourceAxisLabels,
+                                onBind = {
+                                    focusedRow = index
+                                    onBind(slot)
+                                },
+                                onClear = {
+                                    focusedRow = index
+                                    onClear(slot)
+                                    restoreTo = index
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    // Up from the top row goes back to this group's own tab, not to
+                                    // whichever tab happens to sit above it.
+                                    .focusProperties { if (rowIndex == 0) up = tabFocus.getValue(group) }
+                                    .focusRequester(rowFocus[index])
+                                    .onFocusChanged { if (it.isFocused) focusedSlot = index },
+                            )
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
                 }
             }
 
@@ -225,4 +240,20 @@ fun MappingEditorScreen(
             )
         }
     }
+}
+
+/** The tabs the slots are split into, so every group fits the screen without scrolling. */
+private enum class SlotGroup(val label: String) {
+    FACE("Face"), SHOULDERS("Shoulders"), DPAD("D-pad"), LEFT_STICK("Left stick"), RIGHT_STICK("Right stick"), OTHER("Other"),
+}
+
+private fun groupOf(icon: SlotIcon): SlotGroup = when (icon) {
+    SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y -> SlotGroup.FACE
+    SlotIcon.LEFT_BUMPER, SlotIcon.RIGHT_BUMPER, SlotIcon.LEFT_TRIGGER, SlotIcon.RIGHT_TRIGGER -> SlotGroup.SHOULDERS
+    SlotIcon.DPAD_UP, SlotIcon.DPAD_DOWN, SlotIcon.DPAD_LEFT, SlotIcon.DPAD_RIGHT -> SlotGroup.DPAD
+    SlotIcon.LEFT_STICK_UP, SlotIcon.LEFT_STICK_DOWN, SlotIcon.LEFT_STICK_LEFT, SlotIcon.LEFT_STICK_RIGHT,
+    SlotIcon.LEFT_STICK_CLICK -> SlotGroup.LEFT_STICK
+    SlotIcon.RIGHT_STICK_UP, SlotIcon.RIGHT_STICK_DOWN, SlotIcon.RIGHT_STICK_LEFT, SlotIcon.RIGHT_STICK_RIGHT,
+    SlotIcon.RIGHT_STICK_CLICK -> SlotGroup.RIGHT_STICK
+    SlotIcon.VIEW, SlotIcon.MENU, SlotIcon.HOME, SlotIcon.BACK -> SlotGroup.OTHER
 }

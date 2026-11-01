@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -50,15 +51,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.controlswitch.R
 import com.controlswitch.domain.model.ControllerDevice
-import com.controlswitch.ui.theme.ControlSwitchLogo
+import com.controlswitch.domain.model.PadBattery
 import com.controlswitch.ui.theme.Palette
-import com.controlswitch.ui.theme.Teal
+import com.controlswitch.ui.theme.FocusBrush
 import kotlin.math.roundToInt
 
 // The pieces the pages lay out, Switch 2 "Controllers" style: a title with a rule under it, the
 // handheld and its pads on the left, plain menu rows on the right, button hints on the page.
 
-/** The page title with the controller icon, and a spinner while the first scan runs. */
+/** The page title, and a spinner while the first scan runs. */
 @Composable
 internal fun Header(title: String = stringResource(R.string.app_name), loading: Boolean = false) {
     Row(
@@ -66,8 +67,6 @@ internal fun Header(title: String = stringResource(R.string.app_name), loading: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // The app's own mark (the launcher icon's tile), so it reads the same on every theme.
-        Image(ControlSwitchLogo.Tile, contentDescription = null, modifier = Modifier.size(36.dp))
         Text(title, color = Palette.textPrimary, fontSize = 22.sp)
         if (loading) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Palette.cyan, strokeWidth = 2.dp)
@@ -80,21 +79,53 @@ internal fun Rule(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(Palette.border))
 }
 
-/** The focus outline every selectable item wears: thick, rounded, teal in every theme. */
+/** The focus outline every selectable item wears: thick, rounded, blue to green in every theme. */
 internal fun Modifier.focusOutline(focused: Boolean, shape: RoundedCornerShape): Modifier =
-    if (focused) border(3.dp, Teal, shape) else this
+    if (focused) border(3.dp, FocusBrush, shape) else this
+
+/**
+ * Tint for the white one-colour icons (the Kenney pad, the handheld drawings): the theme's secondary
+ * text colour, so they stay visible on Light as well as the dark themes.
+ */
+@Composable
+internal fun iconTint() = ColorFilter.tint(Palette.textSecondary)
 
 /** A battery outline filled to [percent], and the number. */
 @Composable
-internal fun Battery(percent: Int) {
-    val tint = if (percent <= 15) Palette.danger else Palette.textSecondary
+internal fun Battery(percent: Int) = BatteryIcon(percent.coerceIn(0, 100) / 100f, percent <= 15, "$percent%")
+
+/**
+ * A battery outline filled to [fill] (0–1), red when [low], with an optional [label] beside it.
+ * [charging] adds a bolt, for the pads that only report a level.
+ */
+@Composable
+internal fun BatteryIcon(fill: Float, low: Boolean, label: String?, charging: Boolean = false) {
+    val tint = if (low) Palette.danger else Palette.textSecondary
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 24.dp, height = 12.dp).border(1.5.dp, tint, RoundedCornerShape(3.dp)).padding(2.5.dp)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(percent.coerceIn(0, 100) / 100f).background(tint, RoundedCornerShape(1.dp)))
+            Box(Modifier.fillMaxHeight().fillMaxWidth(fill).background(tint, RoundedCornerShape(1.dp)))
         }
         Box(Modifier.size(width = 2.dp, height = 5.dp).background(tint))
-        Spacer(Modifier.width(6.dp))
-        Text("$percent%", color = Palette.textSecondary, fontSize = 12.sp)
+        if (charging) Text(" ⚡", color = Palette.textSecondary, fontSize = 12.sp)
+        if (label != null) {
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = Palette.textSecondary, fontSize = 12.sp)
+        }
+    }
+}
+
+/**
+ * A pad's charge: Android's percentage when it has one, else the level a Switch-protocol pad
+ * reports in [levels] as a bar with no number (the pad gives four steps, so a % would be made up),
+ * else nothing. Never 0%.
+ */
+@Composable
+internal fun PadBatteryIndicator(device: ControllerDevice?, levels: Map<String, PadBattery>) {
+    val percent = remember(device) { padBattery(device) }
+    val level = device?.let { levels[it.name] }
+    when {
+        percent != null && percent > 0 -> Battery(percent)
+        level != null -> BatteryIcon(level.level / 4f, level.level <= 1, null, level.charging)
     }
 }
 
@@ -140,6 +171,7 @@ internal fun HandheldTile(battery: Int?, hint: String?, onClick: (() -> Unit)?, 
         Image(
             painterResource(if (thor) R.drawable.ic_handheld_thor else R.drawable.ic_handheld_odin),
             contentDescription = null,
+            colorFilter = iconTint(),
             modifier = Modifier.height(if (thor) 84.dp else 56.dp),
         )
         Spacer(Modifier.height(6.dp))
@@ -150,18 +182,22 @@ internal fun HandheldTile(battery: Int?, hint: String?, onClick: (() -> Unit)?, 
     }
 }
 
-/** A pad: player lamps (the first lit on the mirrored one), the pad, its battery and name. */
+/**
+ * A connected pad: its player lamp, the pad, its battery and name. The mirrored pad is player 1;
+ * any other pad lights the lamp for the player number Android gave it, since games see it as that
+ * extra player.
+ */
 @Composable
-internal fun PadTile(device: ControllerDevice, player1: Boolean, battery: Int?, modifier: Modifier = Modifier) {
+internal fun PadTile(device: ControllerDevice, player1: Boolean, levels: Map<String, PadBattery>, modifier: Modifier = Modifier) {
     Column(modifier = modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        PlayerLamps(lit = player1)
+        PlayerLamps(player = if (player1) 1 else device.controllerNumber)
         Spacer(Modifier.height(6.dp))
-        Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 52.dp, height = 40.dp))
+        Image(painterResource(R.drawable.ic_controller), contentDescription = null, colorFilter = iconTint(), modifier = Modifier.size(width = 52.dp, height = 40.dp))
         Spacer(Modifier.height(4.dp))
-        battery?.let { Battery(it) }
+        PadBatteryIndicator(device, levels)
         Text(
             device.name,
-            color = if (player1) Palette.textPrimary else Palette.textSecondary,
+            color = Palette.textPrimary,
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -170,12 +206,12 @@ internal fun PadTile(device: ControllerDevice, player1: Boolean, battery: Int?, 
     }
 }
 
-/** The four player lamps, the first one green when [lit]. */
+/** The four player lamps, the [player]th (1–4) green; none lit outside that range. */
 @Composable
-internal fun PlayerLamps(lit: Boolean) {
+internal fun PlayerLamps(player: Int) {
     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         repeat(4) { lamp ->
-            Box(Modifier.size(8.dp).clip(RoundedCornerShape(1.dp)).background(if (lit && lamp == 0) Palette.custom else Palette.borderStrong))
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(1.dp)).background(if (lamp == player - 1) Palette.custom else Palette.borderStrong))
         }
     }
 }

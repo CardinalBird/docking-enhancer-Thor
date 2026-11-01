@@ -9,6 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -17,8 +18,11 @@ import androidx.compose.ui.text.font.FontWeight
 import com.controlswitch.R
 import com.controlswitch.domain.model.AppTheme
 
-/** Selection, focus borders and teal fills: the same in every theme. */
+/** Small fills and accent text: the same in every theme. Focus outlines use [FocusBrush]. */
 val Teal = Color(0xFF00C2D6)
+
+/** The focus outline, Cocoon Shell's highlight: blue on the left, teal, green on the right. */
+val FocusBrush = Brush.horizontalGradient(listOf(Color(0xFF0080B3), Color(0xFF008A90), Color(0xFF1DAC85)))
 
 /** One theme's colours. Read through [Palette], which follows the theme picked in Additional Settings. */
 @Immutable
@@ -46,8 +50,6 @@ data class AppPalette(
     val accent get() = Teal
     // Text and icons drawn on a teal fill.
     val onAccent get() = Color(0xFF001A1D)
-    // Solid focus outline for the items that don't use focusOutline.
-    val focus get() = Teal
     // Kept for callers that used to paint the header and hint bands; now the page colour.
     val band get() = screen
 }
