@@ -28,18 +28,19 @@
     <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.5"
         android:pathData="M48,60 H72 A2,2 0 0 1 74,62 V88 A2,2 0 0 1 72,90 H48 A2,2 0 0 1 46,88 V62 A2,2 0 0 1 48,60 Z" />
     <!-- Left stick, D-pad under it. Clear space between them, or at tile size they fuse into one glyph. -->
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2"
-        android:pathData="M29,64.5 A6,6 0 1 1 28.99,64.5 Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.5"
+        android:pathData="M29,65 A6,6 0 1 1 28.99,65 Z" />
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M29,62 A2.5,2.5 0 1 1 28.99,62 Z" />
+        android:pathData="M29,62.5 A2.5,2.5 0 1 1 28.99,62.5 Z" />
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M27.25,80.5 H30.75 V83.75 H34 V87.25 H30.75 V90.5 H27.25 V87.25 H24 V83.75 H27.25 Z" />
+        android:pathData="M27,78 H31 V82 H35 V86 H31 V90 H27 V86 H23 V82 H27 Z" />
     <!-- Face buttons, right stick under them -->
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M91,60.5 A2.4,2.4 0 1 1 90.99,60.5 Z M96,65.5 A2.4,2.4 0 1 1 95.99,65.5 Z M91,70.5 A2.4,2.4 0 1 1 90.99,70.5 Z M86,65.5 A2.4,2.4 0 1 1 85.99,65.5 Z" />
-    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2"
-        android:pathData="M91,85.5 A6,6 0 1 1 90.99,85.5 Z" />
+        android:pathData="M90,59 A2.7,2.7 0 1 1 89.99,59 Z M95.5,64.5 A2.7,2.7 0 1 1 95.49,64.5 Z M90,70 A2.7,2.7 0 1 1 89.99,70 Z M84.5,64.5 A2.7,2.7 0 1 1 84.49,64.5 Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.5"
+        android:pathData="M90,84.5 A6,6 0 1 1 89.99,84.5 Z" />
     <path android:fillColor="#FFFFFFFF"
-        android:pathData="M91,83 A2.5,2.5 0 1 1 90.99,83 Z" />
+        android:pathData="M90,82 A2.5,2.5 0 1 1 89.99,82 Z" />
+
 
 </vector>
