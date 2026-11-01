@@ -18,7 +18,7 @@ class ControllerTestTest {
         SlotIcon.LEFT_STICK_UP, SlotIcon.LEFT_STICK_CLICK, SlotIcon.RIGHT_STICK_UP, SlotIcon.RIGHT_STICK_CLICK,
         SlotIcon.VIEW, SlotIcon.MENU, SlotIcon.HOME,
     )
-    private fun fresh(analog: Boolean = true) = PadTest(all, analogTriggers = analog)
+    private fun fresh() = PadTest(all)
     private fun PadTest.tap(icon: SlotIcon) = button(icon, true).button(icon, false)
 
     @Test
@@ -87,8 +87,7 @@ class ControllerTestTest {
     }
 
     @Test
-    fun `an analog trigger passes on a full pull, never on its digital click`() {
-        assertFalse(fresh().tap(SlotIcon.LEFT_TRIGGER).passed(SlotIcon.LEFT_TRIGGER))
+    fun `a trigger passes on a full pull`() {
         val part = fresh().trigger(false, 0.89f)
         assertFalse(part.passed(SlotIcon.LEFT_TRIGGER))
         assertTrue(part.lit(SlotIcon.LEFT_TRIGGER))
@@ -99,8 +98,9 @@ class ControllerTestTest {
     }
 
     @Test
-    fun `a digital-only trigger passes by its button`() {
-        assertTrue(fresh(analog = false).tap(SlotIcon.RIGHT_TRIGGER).passed(SlotIcon.RIGHT_TRIGGER))
+    fun `a trigger also passes by its button, which is all a Switch pad sends`() {
+        assertTrue(fresh().tap(SlotIcon.RIGHT_TRIGGER).passed(SlotIcon.RIGHT_TRIGGER))
+        assertFalse(fresh().button(SlotIcon.RIGHT_TRIGGER, true).passed(SlotIcon.RIGHT_TRIGGER))
     }
 
     @Test
@@ -122,7 +122,7 @@ class ControllerTestTest {
 
     @Test
     fun `passedCount counts checklist rows only`() {
-        val t = PadTest(listOf(SlotIcon.A, SlotIcon.LEFT_STICK_UP), analogTriggers = false)
+        val t = PadTest(listOf(SlotIcon.A, SlotIcon.LEFT_STICK_UP))
             .tap(SlotIcon.A).tap(SlotIcon.B).tap(SlotIcon.X)
         assertEquals(1, t.passedCount)
         assertEquals(2, circle(t, right = false).passedCount)

@@ -82,7 +82,7 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
     var testingRaw by remember { mutableStateOf(false) }
     // A pad that drops out mid-test ends the test rather than lighting a ghost.
     val testing = testingRaw && pad != null && pad.id == padId
-    var test by remember { mutableStateOf(PadTest(emptyList(), analogTriggers = false)) }
+    var test by remember { mutableStateOf(PadTest(emptyList())) }
     val builtIn = pad != null && pad.name.equals(internalName, ignoreCase = true)
     val layout = if (builtIn) PadLayout.NINTENDO else state.padLayout
     // The mirror is still being stood down: until it is, an external pad's presses arrive as the
@@ -97,7 +97,6 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
         val axes = padAxes { chosen.getMotionRange(it) != null }
         test = PadTest(
             items = padItems(hasKey = { chosen.hasKeys(it)[0] }, hasAxis = { chosen.getMotionRange(it) != null }, axes = axes, builtIn = builtIn),
-            analogTriggers = axes.leftTrigger != null || axes.rightTrigger != null,
         )
         padId = chosen.id
         testingRaw = true
@@ -319,20 +318,20 @@ private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: 
                 if (test.passed(icon)) drawCircle(good, radius * u, Offset(center.x * u, center.y * u), style = Stroke(2f * u))
             }
             // Body and grips.
-            drawRoundRect(body, Offset(40f * u, 38f * u), Size(280f * u, 90f * u), CornerRadius(40f * u))
+            drawRoundRect(body, Offset(40f * u, 42f * u), Size(280f * u, 88f * u), CornerRadius(40f * u))
             drawOval(body, Offset(74f * u, 100f * u), Size(52f * u, 70f * u))
             drawOval(body, Offset(234f * u, 100f * u), Size(52f * u, 70f * u))
             // Triggers: the bar fills with the pull. Bumpers: lit while held.
             for ((icon, x, value) in listOf(
                 Triple(SlotIcon.LEFT_TRIGGER, 52f, test.leftTrigger), Triple(SlotIcon.RIGHT_TRIGGER, 228f, test.rightTrigger),
             )) {
-                drawRoundRect(idle, Offset(x * u, 4f * u), Size(80f * u, 14f * u), CornerRadius(7f * u))
-                if (value > 0f) drawRoundRect(Teal, Offset(x * u, 4f * u), Size(80f * value * u, 14f * u), CornerRadius(7f * u))
-                if (test.passed(icon)) drawRoundRect(good, Offset(x * u, 4f * u), Size(80f * u, 14f * u), CornerRadius(7f * u), style = Stroke(2f * u))
+                drawRoundRect(idle, Offset(x * u, 2f * u), Size(80f * u, 18f * u), CornerRadius(9f * u))
+                if (value > 0f) drawRoundRect(Teal, Offset(x * u, 2f * u), Size(80f * value * u, 18f * u), CornerRadius(9f * u))
+                if (test.passed(icon)) drawRoundRect(good, Offset(x * u, 2f * u), Size(80f * u, 18f * u), CornerRadius(9f * u), style = Stroke(2f * u))
             }
             for ((icon, x) in listOf(SlotIcon.LEFT_BUMPER to 48f, SlotIcon.RIGHT_BUMPER to 220f)) {
-                drawRoundRect(fill(icon), Offset(x * u, 22f * u), Size(92f * u, 12f * u), CornerRadius(6f * u))
-                if (test.passed(icon)) drawRoundRect(good, Offset(x * u, 22f * u), Size(92f * u, 12f * u), CornerRadius(6f * u), style = Stroke(2f * u))
+                drawRoundRect(fill(icon), Offset(x * u, 23f * u), Size(92f * u, 16f * u), CornerRadius(8f * u))
+                if (test.passed(icon)) drawRoundRect(good, Offset(x * u, 23f * u), Size(92f * u, 16f * u), CornerRadius(8f * u), style = Stroke(2f * u))
             }
             // Sticks: eight arc segments go green as the stick reaches them, the dot follows the stick.
             for ((stick, center, click) in listOf(
@@ -374,15 +373,15 @@ private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: 
             }
         }
         for ((icon, spot) in faces) Prompt(faceLabel(icon, layout, builtIn), spot, 22.dp, tint)
-        Prompt(SlotIcon.LEFT_TRIGGER, Spot(92f, 11f), 14.dp, tint)
-        Prompt(SlotIcon.RIGHT_TRIGGER, Spot(268f, 11f), 14.dp, tint)
-        Prompt(SlotIcon.LEFT_BUMPER, Spot(94f, 28f), 12.dp, tint)
-        Prompt(SlotIcon.RIGHT_BUMPER, Spot(266f, 28f), 12.dp, tint)
+        Prompt(SlotIcon.LEFT_TRIGGER, Spot(92f, 11f), 18.dp, tint)
+        Prompt(SlotIcon.RIGHT_TRIGGER, Spot(268f, 11f), 18.dp, tint)
+        Prompt(SlotIcon.LEFT_BUMPER, Spot(94f, 31f), 16.dp, tint)
+        Prompt(SlotIcon.RIGHT_BUMPER, Spot(266f, 31f), 16.dp, tint)
         Prompt(SlotIcon.VIEW, MINUS, 16.dp, tint)
         Prompt(SlotIcon.MENU, PLUS, 16.dp, tint)
         if (showHome) Prompt(SlotIcon.HOME, HOME, 16.dp, tint)
-        StickReadout(test.left, Spot(LEFT_STICK.x, LEFT_STICK.y + 40f))
-        StickReadout(test.right, Spot(RIGHT_STICK.x, RIGHT_STICK.y + 40f))
+        StickReadout(test.left, Spot(LEFT_STICK.x, READOUT_Y))
+        StickReadout(test.right, Spot(RIGHT_STICK.x, READOUT_Y))
     }
 }
 
@@ -396,6 +395,8 @@ private val DPAD = Spot(140f, 132f)
 private val MINUS = Spot(152f, 56f)
 private val PLUS = Spot(208f, 56f)
 private val HOME = Spot(180f, 80f)
+// Both stick readouts on one line under the grips, clear of the D-pad.
+private const val READOUT_Y = 186f
 
 /** A prompt icon centred on [spot] of the drawing. */
 @Composable

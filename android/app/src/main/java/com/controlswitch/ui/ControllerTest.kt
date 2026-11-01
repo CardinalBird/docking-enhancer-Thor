@@ -33,9 +33,6 @@ internal fun octant(x: Float, y: Float): Int? {
  */
 internal data class PadTest(
     val items: List<SlotIcon>,
-    // Analog ZL/ZR: their click at the end of the travel (the Thor declares TL2 beside BRAKE) is not
-    // the test, the pull is.
-    val analogTriggers: Boolean,
     val down: Set<SlotIcon> = emptySet(),
     val done: Set<SlotIcon> = emptySet(),
     val left: StickState = StickState(),
@@ -45,10 +42,11 @@ internal data class PadTest(
     private val hatX: Float = 0f,
     private val hatY: Float = 0f,
 ) {
+    // A trigger passes on its button too: the handheld republishes every pad with its own analog
+    // trigger axes, and a Switch pad's ZL/ZR only ever arrive as presses through that twin.
     fun button(icon: SlotIcon, pressed: Boolean): PadTest = when {
         pressed -> copy(down = down + icon)
         icon !in down -> this
-        analogTriggers && (icon == SlotIcon.LEFT_TRIGGER || icon == SlotIcon.RIGHT_TRIGGER) -> copy(down = down - icon)
         else -> copy(down = down - icon, done = done + icon)
     }
 
