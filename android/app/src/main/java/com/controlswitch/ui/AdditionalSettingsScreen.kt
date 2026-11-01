@@ -40,7 +40,13 @@ import kotlinx.coroutines.delay
  * without scrolling; the focused row's explanation shows in the footer instead, Switch-style.
  */
 @Composable
-internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorViewModel, active: Boolean, onBack: () -> Unit) {
+internal fun AdditionalSettingsScreen(
+    state: MirrorUiState,
+    viewModel: MirrorViewModel,
+    active: Boolean,
+    onOpenTests: () -> Unit,
+    onBack: () -> Unit,
+) {
     BackHandler(enabled = active, onBack = onBack)
     val context = LocalContext.current
     // A binder call; asked once, not on every recomposition.
@@ -127,6 +133,12 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
                 }
                 RowValue("‹  $name  ›", accent = true)
             }
+            MenuRow(
+                title = "Controller tests",
+                minHeight = 44.dp,
+                onClick = onOpenTests,
+                modifier = explains("Check every button, stick and trigger on any connected controller."),
+            )
             // Game frontends (Cocoon Shell on the Thor) often hide the Android app list, so the app
             // can ask to be pinned itself. Shown only when the home app takes pin requests.
             if (canPin) {
