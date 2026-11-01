@@ -78,7 +78,20 @@ data class MirrorUiState(
     // controller and the user can re-pick it manually.
     val hasKnownInternalProfile: Boolean
         get() = devices.any { it.isKnownInternal }
+
+    /**
+     * The supervisor is about to start the mirror, or is starting it: everything it needs is here
+     * and the daemon is not up yet. Until it is, the pad's presses reach the app as themselves, and
+     * its B is Back, which on the main page closes the app. The screen blocks input while this holds.
+     */
+    val starting: Boolean
+        get() = autoMirrorEnabled && !enabled && !loading && (docked || mirrorWhenHandheld) &&
+            devices.any { it.isInternal } &&
+            devices.filter { !it.isInternal }.let { externals ->
+                if (player1Name == null) externals.isNotEmpty() else externals.lockedPlayer1(player1Name, player1Path) != null
+            }
 }
+
 
 class MirrorViewModel(private val appContext: Context) : ViewModel() {
     /**

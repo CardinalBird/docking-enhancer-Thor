@@ -8,6 +8,15 @@ import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
+import android.view.KeyEvent
+import android.view.MotionEvent
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clip
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -25,6 +34,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
@@ -127,6 +137,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
     }
 
     CompositionLocalProvider(LocalPadLayout provides if (editorState.open) editorState.layout else state.padLayout) {
+    Box(Modifier.fillMaxSize()) {
     AnimatedContent(
         targetState = page,
         modifier = Modifier.fillMaxSize().background(Palette.screen),
@@ -170,7 +181,11 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             Page.Main -> MainPage(state, viewModel, active, onOpenSettings = { settingsOpen = true })
         }
     }
+    // Not over the tests or the picker: those stand the mirror down on purpose and read the pad raw.
+    if (page == Page.Main || page == Page.Settings) StartingGuard(state.starting)
     }
+    }
+
 
     if (state.unsupported) {
         UnsupportedDeviceDialog(serviceUnresponsive = state.serviceUnresponsive)
