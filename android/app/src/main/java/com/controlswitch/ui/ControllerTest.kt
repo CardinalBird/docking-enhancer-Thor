@@ -2,7 +2,6 @@ package com.controlswitch.ui
 
 import android.view.KeyEvent
 import android.view.MotionEvent
-import com.controlswitch.domain.model.NINTENDO_FACES
 import com.controlswitch.domain.model.PadLayout
 import com.controlswitch.domain.model.SlotIcon
 import kotlin.math.PI
@@ -164,23 +163,18 @@ private val FACE_KEYS = listOf(
     KeyEvent.KEYCODE_BUTTON_L1 to SlotIcon.LEFT_BUMPER, KeyEvent.KEYCODE_BUTTON_R1 to SlotIcon.RIGHT_BUMPER,
 )
 
-/**
- * The letter printed on a face button. A Nintendo pad reports its faces by position, so through
- * this handheld's key layout its printed B arrives as BUTTON_A; the handheld's own pad reports by
- * label and needs no relabelling. Same rule as the mapping editor ([NINTENDO_FACES]).
- */
-internal fun faceLabel(icon: SlotIcon, layout: PadLayout, builtIn: Boolean): SlotIcon =
-    if (layout == PadLayout.NINTENDO && !builtIn) NINTENDO_FACES[icon] ?: icon else icon
+// Faces need no relabelling: the handheld republishes every pad through its own twin device, and
+// that twin reports face buttons by their printed letter (a Switch pad's A arrives as BUTTON_A, by
+// label, not by position as hid-nintendo would), the same as the handheld's own pad.
 
-/** The control to hold to leave the test: whichever one is printed B. */
-internal fun exitIcon(layout: PadLayout, builtIn: Boolean): SlotIcon =
-    if (layout == PadLayout.NINTENDO && !builtIn) SlotIcon.A else SlotIcon.B
+/** The control to hold to leave the test: the button printed B. */
+internal val EXIT_ICON = SlotIcon.B
 
 /** The checklist's name for a control, in the console's own words. */
-internal fun itemLabel(icon: SlotIcon, layout: PadLayout, builtIn: Boolean): String {
+internal fun itemLabel(icon: SlotIcon, layout: PadLayout): String {
     val nintendo = layout == PadLayout.NINTENDO
     return when (icon) {
-        SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y -> faceLabel(icon, layout, builtIn).name
+        SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y -> icon.name
         SlotIcon.LEFT_BUMPER -> if (nintendo) "L" else "LB"
         SlotIcon.RIGHT_BUMPER -> if (nintendo) "R" else "RB"
         SlotIcon.LEFT_TRIGGER -> if (nintendo) "ZL" else "LT"

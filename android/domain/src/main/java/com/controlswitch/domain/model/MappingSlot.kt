@@ -367,7 +367,7 @@ fun presetBindings(layout: PadLayout, slots: List<MappingSlot>, source: TargetTr
 }
 
 /** The Xbox-named control that sits where a Nintendo pad prints this letter. */
-val NINTENDO_FACES = mapOf(
+private val NINTENDO_FACES = mapOf(
     SlotIcon.A to SlotIcon.B, SlotIcon.B to SlotIcon.A,
     SlotIcon.X to SlotIcon.Y, SlotIcon.Y to SlotIcon.X,
 )

@@ -103,6 +103,12 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
         testingRaw = true
     }
 
+    // Every physical pad feeds the test, not only the picked one: with an external pad connected
+    // this handheld routes presses through that pad's twin device, so filtering by device id would
+    // miss them. The pick decides the checklist and the labels. Keys that are not pad buttons (the
+    // handheld's own Back and Home) go on as normal, so there is always a way out.
+    fun InputDevice?.isPad() = this != null && !isVirtual &&
+        (sources and InputDevice.SOURCE_GAMEPAD == InputDevice.SOURCE_GAMEPAD || sources and InputDevice.SOURCE_JOYSTICK == InputDevice.SOURCE_JOYSTICK)
     val activity = LocalContext.current.findMainActivity()
     DisposableEffect(activity, testing, pad?.id) {
         if (activity == null || !testing || pad == null) return@DisposableEffect onDispose { }
@@ -114,14 +120,13 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
             return if (range.range > 0f) ((value - range.min) / range.range).coerceIn(0f, 1f) else 0f
         }
         activity.onPadCapture = { event: KeyEvent ->
-            (event.deviceId == pad.id).also { mine ->
-                if (mine && event.repeatCount == 0) {
-                    PAD_KEYS[event.keyCode]?.let { test = test.button(it, event.action == KeyEvent.ACTION_DOWN) }
-                }
+            val icon = PAD_KEYS[event.keyCode]
+            (icon != null && event.device.isPad()).also { mine ->
+                if (mine && event.repeatCount == 0) test = test.button(icon!!, event.action == KeyEvent.ACTION_DOWN)
             }
         }
         activity.onPadMotion = { event: MotionEvent ->
-            (event.deviceId == pad.id && event.isFromSource(InputDevice.SOURCE_JOYSTICK)).also { mine ->
+            (event.device.isPad() && event.isFromSource(InputDevice.SOURCE_JOYSTICK)).also { mine ->
                 if (mine) {
                     var next = test
                         .stick(right = false, event.getAxisValue(MotionEvent.AXIS_X), event.getAxisValue(MotionEvent.AXIS_Y))
@@ -141,13 +146,14 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
 
     // Holding the button printed B fills the ring and then ends the test; letting go earlier was a
     // test press like any other. The animation is the timer.
-    val exit = exitIcon(layout, builtIn)
     val hold = remember { Animatable(0f) }
-    val holding = testing && exit in test.down
+    val holding = testing && EXIT_ICON in test.down
     LaunchedEffect(holding) {
         hold.snapTo(0f)
         if (!holding) return@LaunchedEffect
         hold.animateTo(1f, tween(HOLD_MS, easing = LinearEasing))
+        // The releases land after the hooks are gone, so nothing would ever come back up.
+        test = test.copy(down = emptySet())
         testingRaw = false
     }
 
@@ -198,7 +204,7 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
                     PadDiagram(test, layout, builtIn, dim = !testing)
                 }
                 Spacer(Modifier.width(32.dp))
-                Checklist(test, layout, builtIn, Modifier.width(300.dp).padding(top = 8.dp))
+                Checklist(test, layout, Modifier.width(300.dp).padding(top = 8.dp))
             }
             if (testing) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -250,7 +256,7 @@ private fun HoldHint(progress: Float) {
 
 /** "N/N passed" and one line per control, two columns. */
 @Composable
-private fun Checklist(test: PadTest, layout: PadLayout, builtIn: Boolean, modifier: Modifier = Modifier) {
+private fun Checklist(test: PadTest, layout: PadLayout, modifier: Modifier = Modifier) {
     Column(modifier) {
         Text(
             if (test.items.isEmpty()) "Not started" else "${test.passedCount}/${test.items.size} passed",
@@ -262,10 +268,10 @@ private fun Checklist(test: PadTest, layout: PadLayout, builtIn: Boolean, modifi
                 for (icon in pair) {
                     val passed = test.passed(icon)
                     Row(Modifier.weight(1f).height(26.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PadIcon(faceLabel(icon, layout, builtIn), 20.dp, tint = if (test.lit(icon)) Teal else Palette.textPrimary)
+                        PadIcon(icon, 20.dp, tint = if (test.lit(icon)) Teal else Palette.textPrimary)
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            itemLabel(icon, layout, builtIn), color = Palette.textSecondary, fontSize = 13.sp,
+                            itemLabel(icon, layout), color = Palette.textSecondary, fontSize = 13.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                         )
                         val stick = when (icon) {
@@ -330,7 +336,7 @@ private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: 
         SlotIcon.X -> if (nintendo) NORTH else WEST
         else -> if (nintendo) WEST else NORTH
     }
-    val faces = listOf(SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y).map { it to at(faceLabel(it, layout, builtIn)) }
+    val faces = listOf(SlotIcon.A, SlotIcon.B, SlotIcon.X, SlotIcon.Y).map { it to at(it) }
     val body = Palette.borderStrong
     val hole = Palette.screen
     val good = Palette.custom
@@ -415,7 +421,7 @@ private fun PadDiagram(test: PadTest, layout: PadLayout, builtIn: Boolean, dim: 
                 passRing(SlotIcon.HOME, HOME, 2f * S)
             }
         }
-        for ((icon, spot) in faces) Prompt(faceLabel(icon, layout, builtIn), spot, (3.6f * S).dp, tint)
+        for ((icon, spot) in faces) Prompt(icon, spot, (3.6f * S).dp, tint)
         Prompt(SlotIcon.LEFT_TRIGGER, Spot(19.5f, PAD_TOP - SHOULDERS / S + 4.5f / S), 18.dp, tint)
         Prompt(SlotIcon.RIGHT_TRIGGER, Spot(44.5f, PAD_TOP - SHOULDERS / S + 4.5f / S), 18.dp, tint)
         Prompt(SlotIcon.LEFT_BUMPER, Spot(19.5f, PAD_TOP - SHOULDERS / S + 16f / S), 16.dp, tint)

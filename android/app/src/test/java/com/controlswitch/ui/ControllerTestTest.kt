@@ -172,16 +172,11 @@ class ControllerTestTest {
     }
 
     @Test
-    fun `faces are relabelled for an external Nintendo pad only, and B is the way out`() {
-        assertEquals(SlotIcon.B, faceLabel(SlotIcon.A, PadLayout.NINTENDO, builtIn = false))
-        assertEquals(SlotIcon.A, faceLabel(SlotIcon.A, PadLayout.NINTENDO, builtIn = true))
-        assertEquals(SlotIcon.A, faceLabel(SlotIcon.A, PadLayout.XBOX, builtIn = false))
-        assertEquals(SlotIcon.A, exitIcon(PadLayout.NINTENDO, builtIn = false))
-        assertEquals(SlotIcon.B, exitIcon(PadLayout.NINTENDO, builtIn = true))
-        assertEquals(SlotIcon.B, exitIcon(PadLayout.XBOX, builtIn = false))
-        assertEquals("B", itemLabel(SlotIcon.A, PadLayout.NINTENDO, builtIn = false))
-        assertEquals("ZL", itemLabel(SlotIcon.LEFT_TRIGGER, PadLayout.NINTENDO, builtIn = false))
-        assertEquals("LT", itemLabel(SlotIcon.LEFT_TRIGGER, PadLayout.XBOX, builtIn = false))
+    fun `labels follow the console, faces keep their printed letter`() {
+        assertEquals("A", itemLabel(SlotIcon.A, PadLayout.NINTENDO))
+        assertEquals("ZL", itemLabel(SlotIcon.LEFT_TRIGGER, PadLayout.NINTENDO))
+        assertEquals("LT", itemLabel(SlotIcon.LEFT_TRIGGER, PadLayout.XBOX))
+        assertEquals(SlotIcon.B, EXIT_ICON)
     }
 
     @Test
