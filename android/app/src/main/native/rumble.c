@@ -13,11 +13,16 @@
 #include <sys/sysmacros.h>
 #include <unistd.h>
 
-// Android tells vibrator listeners only on/off, never strength, so every rumble plays at this
-// level on both motors. Tuning knob: lower it if a pad buzzes harder than the Thor ever did.
-#define RUMBLE_MAGNITUDE 0xC000
+// Android tells vibrator listeners only on/off, never strength, so every rumble plays at the one
+// level the user picked (Rumble strength in Additional Settings), on both motors.
+static unsigned short magnitude(int percent) {
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+    return (unsigned short)(percent * 0xFFFF / 100);
+}
 
 static void play(struct rumble *r, int on) {
+    if (on && r->strength <= 0) return;
     if (r->effect_id < 0 || r->on == on) return;
     struct input_event ev;
     memset(&ev, 0, sizeof(ev));
@@ -93,6 +98,22 @@ void rumble_init(struct rumble *r) {
     r->from_bridge = -1;
     r->to_bridge = -1;
     r->own_fd = -1;
+    r->strength = 80;
+}
+
+void rumble_set_strength(struct rumble *r, int percent) {
+    if (percent == r->strength) return;
+    r->strength = percent;
+    if (r->effect_id < 0) return;
+    if (percent <= 0) play(r, 0);
+    // Same id: the kernel updates the loaded effect in place.
+    struct ff_effect effect;
+    memset(&effect, 0, sizeof(effect));
+    effect.type = FF_RUMBLE;
+    effect.id = (short)r->effect_id;
+    effect.u.rumble.strong_magnitude = magnitude(percent);
+    effect.u.rumble.weak_magnitude = magnitude(percent);
+    if (ioctl(r->pad_fd, EVIOCSFF, &effect) < 0) fprintf(stderr, "Rumble: strength update failed: %s\n", strerror(errno));
 }
 
 void rumble_start(struct rumble *r, int pad_fd, const char *apk_path) {
@@ -110,8 +131,8 @@ void rumble_start(struct rumble *r, int pad_fd, const char *apk_path) {
     memset(&effect, 0, sizeof(effect));
     effect.type = FF_RUMBLE;
     effect.id = -1;
-    effect.u.rumble.strong_magnitude = RUMBLE_MAGNITUDE;
-    effect.u.rumble.weak_magnitude = RUMBLE_MAGNITUDE;
+    effect.u.rumble.strong_magnitude = magnitude(r->strength);
+    effect.u.rumble.weak_magnitude = magnitude(r->strength);
     // replay.length 0 = until stopped; the helper always follows a 1 with a 0, and its exit stops it.
     if (ioctl(pad_fd, EVIOCSFF, &effect) < 0) {
         fprintf(stderr, "Rumble: effect upload failed: %s\n", strerror(errno));
@@ -185,5 +206,7 @@ void rumble_stop(struct rumble *r) {
     if (r->to_bridge >= 0) close(r->to_bridge);
     if (r->from_bridge >= 0) close(r->from_bridge);
     if (r->own_fd >= 0) close(r->own_fd);
+    int strength = r->strength;
     rumble_init(r);
+    r->strength = strength;
 }

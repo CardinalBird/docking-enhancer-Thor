@@ -10,6 +10,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import com.controlswitch.ui.theme.Palette
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,16 +70,16 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
     ) {
         Header(title = "Additional Settings")
         Rule(Modifier.padding(horizontal = 28.dp))
-        Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 120.dp, vertical = 8.dp)) {
+        Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 120.dp, vertical = 2.dp)) {
             MenuRow(
                 title = "Select + Start closes app",
-                minHeight = 52.dp,
+                minHeight = 44.dp,
                 onClick = { viewModel.toggleComboHoldKillApp(!state.comboHoldKillApp) },
                 modifier = Modifier.focusRequester(first).then(explains("Hold both for 3 seconds to close the game you're in.")),
             ) { RowSwitch(state.comboHoldKillApp, !state.busy) }
             MenuRow(
                 title = "Virtual mouse",
-                minHeight = 52.dp,
+                minHeight = 44.dp,
                 onClick = { viewModel.toggleVirtualMouse(!state.virtualMouse) },
                 modifier = explains("Select + R3 toggles · A click · B right-click · R1 shade"),
             ) { RowSwitch(state.virtualMouse, !state.busy) }
@@ -78,7 +87,7 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
             val flip = { viewModel.setMirrorWhenHandheld(!always) }
             MenuRow(
                 title = "Allow mirroring",
-                minHeight = 52.dp,
+                minHeight = 44.dp,
                 onClick = flip,
                 onLeft = flip,
                 onRight = flip,
@@ -87,11 +96,25 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
                     else "Only when docked.",
                 ),
             ) { RowValue("‹  " + (if (always) "Always" else "Only when docked") + "  ›", accent = true) }
+            val strength = state.rumbleStrength
+            // Steps land on tens: up to the next ten, down to the one below.
+            val nudge = { by: Int ->
+                viewModel.setRumbleStrength(if (by > 0) (strength / 10 + 1) * 10 else ((strength + 9) / 10 - 1) * 10)
+            }
+            MenuRow(
+                title = "Rumble strength",
+                minHeight = 44.dp,
+                // A steps up and wraps to off after 100%, like the other ‹ › rows cycle.
+                onClick = { if (strength >= 100) viewModel.setRumbleStrength(0) else nudge(10) },
+                onLeft = { nudge(-10) },
+                onRight = { nudge(10) },
+                modifier = explains("How hard your controller rumbles when a game vibrates. 0% turns it off."),
+            ) { RumbleValue(strength) }
             val themes = AppTheme.entries
             val step = { by: Int -> viewModel.setTheme(themes[(state.theme.ordinal + by + themes.size) % themes.size]) }
             MenuRow(
                 title = "Theme",
-                minHeight = 52.dp,
+                minHeight = 44.dp,
                 onClick = { step(1) },
                 onLeft = { step(-1) },
                 onRight = { step(1) },
@@ -109,12 +132,24 @@ internal fun AdditionalSettingsScreen(state: MirrorUiState, viewModel: MirrorVie
             if (canPin) {
                 MenuRow(
                     title = "Add to home screen",
-                    minHeight = 52.dp,
+                    minHeight = 44.dp,
                     onClick = { context.pinToHome() },
                     modifier = explains("Pin this app to your launcher."),
                 )
             }
         }
         Footer(status = help, hints = listOf(HintAction(SlotIcon.B, "Back", onBack), HintAction(SlotIcon.A, "OK", null)))
+    }
+}
+
+/** The strength as a small bar plus the number, inside the row's ‹ › arrows. */
+@Composable
+private fun RumbleValue(percent: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        RowValue("‹  ", accent = true)
+        Box(Modifier.size(width = 80.dp, height = 8.dp).clip(RoundedCornerShape(4.dp)).background(Palette.border)) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(percent / 100f).background(Palette.cyan))
+        }
+        RowValue("  ${if (percent == 0) "Off" else "$percent%"}  ›", accent = true)
     }
 }

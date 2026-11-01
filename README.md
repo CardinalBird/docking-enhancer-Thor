@@ -39,12 +39,15 @@ app, retargeted to the AYN Thor and renamed Control Switch.
 
 </div>
 
-## New in 0.4.0
+## New in 0.5.0
 
-- **Button combinations** — bind Home, Back or any button to 2–4 controller buttons held together
-- **Themes** — Dark, Super dark and Light, with a teal focus outline you can follow from the couch
-- **Console-matched button prompts** — Xbox icons, or Switch icons once you pick the Nintendo layout
-- **New app icon**
+- **Rumble on your controller** — when a game vibrates the Thor, your pad rumbles, with a
+  **Rumble strength** setting (0–100%)
+- **Gyro in emulators** — one motion source that follows what you hold: the Thor's gyro handheld
+  (with its resting drift removed), your controller's gyro docked. See [Gyro in emulators](#gyro-in-emulators)
+- **Controller battery** for Switch-style pads (Pro Controller, 8BitDo in Switch mode, Joy-Cons)
+- **Redesigned screens** — one Player 1 slot in Change Input Order, Button Mapping on one screen
+  with group tabs, new Thor and controller icons, and the blue-to-green focus outline is back
 
 ## What it does
 
@@ -69,8 +72,11 @@ It runs without root, using a privileged service the stock firmware already ship
 - **Button combinations** — any button, Home and Back included, can be bound to 2–4 buttons held
   together. Hold them, let go, done; the held buttons show as icons while you do it. When a
   combination fires, its buttons don't also reach the game
-- **Rumble on the pad** — when a game vibrates the Thor, your controller rumbles instead (on/off at
-  one strength: Android reports no intensity). Needs a pad whose driver supports rumble
+- **Rumble on the pad** — when a game vibrates the Thor, your controller rumbles instead, at the
+  **Rumble strength** you pick (Android reports no intensity, so every rumble plays at that one level).
+  Needs a pad whose driver supports rumble
+- **Gyro for emulators** — serves motion over DSU (cemuhook) on `127.0.0.1:26760`: the Thor's gyro
+  handheld, your controller's gyro while mirroring (Switch-style pads)
 - **Select + Start** — hold it (3s) to close the current app
 - **Hides the external pad** while mirroring, so games see one controller instead of a phantom player 2
 - **Guided button mapping** — press a button for each row, or let **Map all** walk the list; or pick
@@ -88,6 +94,21 @@ It runs without root, using a privileged service the stock firmware already ship
 - **Add to home screen** — for game frontends like Cocoon Shell that hide the Android app list
 - **~0.04 ms of added latency** (median) — a fraction of one 60Hz frame
   ([measured](docs/TECHNICAL.md#latency); re-measured on a Thor, see [Building](#building))
+
+## Gyro in emulators
+
+Control Switch serves motion over DSU (the cemuhook protocol) on `127.0.0.1:26760`: the Thor's own
+gyro while you play handheld, with its resting drift removed, and your controller's gyro while
+mirroring. Set an emulator up once and it follows whatever is in your hands. Controller gyro needs
+a Switch-style pad (Pro Controller, 8BitDo in Switch mode); the Thor's firmware never switches their
+motion sensors on, so Control Switch does.
+
+| Emulator | DSU on Android | Setup |
+| --- | --- | --- |
+| Eden | yes | In `config.ini`: `enable_udp_controller=true`, and `player_0_motionleft` / `player_0_motionright` = `"engine:cemuhookudp,guid:0000000000000000000000007f000001,motion:0,pad:0,port:26760"` |
+| Dolphin | yes | `DSUClient.ini`: `[Server] Enabled = True`, `Entries = Control Switch:127.0.0.1:26760;`. Map the Wii Remote's motion to `DSUClient/0/DualShock 4` |
+| Azahar | yes | Motion source "cemuhookudp", address `127.0.0.1`, port `26760` |
+| Cemu | no | The Android build has no DSU client; it reads the Thor's own sensors |
 
 ## Install
 

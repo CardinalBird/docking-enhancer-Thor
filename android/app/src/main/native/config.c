@@ -250,6 +250,7 @@ int parse_config(const char *path, const struct config *current, struct config *
     out->home_mode = (int)json_number(buffer, "home_mode", current->home_mode);
     out->combo_hold_kill_app = json_bool(buffer, "combo_hold_kill_app", current->combo_hold_kill_app);
     out->virtual_mouse = json_bool(buffer, "virtual_mouse", current->virtual_mouse);
+    out->rumble_strength = (int)json_number(buffer, "rumble_strength", current->rumble_strength);
     parse_mapping(buffer, out);
     parse_chords(buffer, out);
     return 0;

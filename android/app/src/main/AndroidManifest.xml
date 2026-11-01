@@ -1,5 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Any socket needs it, even one on loopback: the DSU motion server (ThorMotionServer) listens
+         on 127.0.0.1 only and never talks to the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- The supervisor's foreground-service notification is the only place its state is reported.

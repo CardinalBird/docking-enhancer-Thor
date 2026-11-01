@@ -19,6 +19,7 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
             homeMode = readHomeMode(),
             comboHoldKillApp = prefs.getBoolean(KEY_COMBO_HOLD_KILL_APP, false),
             virtualMouse = prefs.getBoolean(KEY_VIRTUAL_MOUSE, false),
+            rumbleStrength = prefs.getInt(KEY_RUMBLE_STRENGTH, 80),
             autoMirrorEnabled = prefs.getBoolean(KEY_AUTO_MIRROR_ENABLED, true),
             mirrorWhenHandheld = prefs.getBoolean(KEY_MIRROR_WHEN_HANDHELD, false),
             theme = AppTheme.entries.firstOrNull { it.name == prefs.getString(KEY_THEME, null) } ?: AppTheme.DARK,
@@ -66,6 +67,13 @@ class AndroidMirrorSettingsRepository(context: Context) : MirrorSettingsReposito
     override fun setComboHoldKillAppEnabled(enabled: Boolean) = setLiveOption(KEY_COMBO_HOLD_KILL_APP, enabled)
 
     override fun setVirtualMouseEnabled(enabled: Boolean) = setLiveOption(KEY_VIRTUAL_MOUSE, enabled)
+
+    override fun setRumbleStrength(percent: Int) = synchronized(generationLock) {
+        prefs.edit()
+            .putInt(KEY_RUMBLE_STRENGTH, percent.coerceIn(0, 100))
+            .putLong(KEY_CONFIG_GENERATION, prefs.getLong(KEY_CONFIG_GENERATION, 0L) + 1)
+            .apply()
+    }
 
     // Options the running daemon can adopt without being restarted. The generation advances in the
     // same commit as the value: it is the number the daemon acknowledges once it has adopted the

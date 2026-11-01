@@ -11,6 +11,8 @@ data class MirrorSettings(
     val homeMode: HomeButtonMode = HomeButtonMode.HOME,
     val comboHoldKillApp: Boolean = false,
     val virtualMouse: Boolean = false,
+    // How hard the pad rumbles when a game vibrates the Thor, 0 (off) to 100 percent.
+    val rumbleStrength: Int = 80,
     val autoMirrorEnabled: Boolean = true,
     // Mirror whenever an external pad is connected, docked or not. Off means docked only.
     val mirrorWhenHandheld: Boolean = false,
