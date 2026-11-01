@@ -100,7 +100,9 @@ internal class ThorMotionServer(context: Context) : SensorEventListener {
                 }
             }
             Dsu.MSG_DATA -> {
-                clients[from] = SystemClock.elapsedRealtime() + SUBSCRIPTION_MS
+                if (clients.put(from, SystemClock.elapsedRealtime() + SUBSCRIPTION_MS) == null) {
+                    Log.i(TAG, "DSU client subscribed: $from")
+                }
                 startListening()
             }
         }
