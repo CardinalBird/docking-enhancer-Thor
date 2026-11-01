@@ -1,4 +1,4 @@
-package com.odininputmirror.ui.theme
+package com.controlswitch.ui.theme
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush

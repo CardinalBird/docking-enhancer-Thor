@@ -270,7 +270,7 @@ def kpath(name, data, ftype, color, alpha):
             f'            pathFillType = {ft},\n            fill = SolidColor(Color({color})),\n'
             f'            fillAlpha = {alpha}f,\n        )\n')
 
-w("compose/ControlSwitchLogo.kt", f"""package com.odininputmirror.ui.theme
+w("compose/ControlSwitchLogo.kt", f"""package com.controlswitch.ui.theme
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
