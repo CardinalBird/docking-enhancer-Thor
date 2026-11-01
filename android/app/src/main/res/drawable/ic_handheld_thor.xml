@@ -13,9 +13,11 @@
         android:pathData="M18,4 H102 A6,6 0 0 1 108,10 V40 A6,6 0 0 1 102,46 H18 A6,6 0 0 1 12,40 V10 A6,6 0 0 1 18,4 Z" />
     <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.5"
         android:pathData="M20,10 H100 A2,2 0 0 1 102,12 V38 A2,2 0 0 1 100,40 H20 A2,2 0 0 1 18,38 V12 A2,2 0 0 1 20,10 Z" />
-    <!-- Hinge: a solid band the full width of the body, flush with both outlines, so lid, hinge
-         and deck read as one piece with no gaps -->
-    <path android:fillColor="#FFFFFFFF" android:pathData="M10.5,46.5 H109.5 V53.5 H10.5 Z" />
+    <!-- Hinge: a solid rounded band almost the width of the body, flush with both outlines, so lid,
+         hinge and deck read as one piece with no gaps -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M17.5,46.5 H102.5 A2,2 0 0 1 104.5,48.5 V51.5 A2,2 0 0 1 102.5,53.5 H17.5 A2,2 0 0 1 15.5,51.5 V48.5 A2,2 0 0 1 17.5,46.5 Z" />
+
 
 
 
