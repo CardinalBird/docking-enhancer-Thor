@@ -67,7 +67,6 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
-import kotlin.math.roundToInt
 
 /**
  * Controller Tests: pick a pad, then press everything and watch the drawing light up while the
@@ -273,7 +272,9 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
                         waiting && !state.docked && !state.mirrorWhenHandheld -> "Motion needs mirroring: dock, or set Allow mirroring to Always."
                         waiting -> "Starting mirroring…"
                         motionWaited && motionTest.samples == 0 -> "No motion data from this controller."
-                        else -> "Turn the controller about each axis: tip it forward, twist it flat, roll it sideways."
+                        motionTest.samples == 0 -> "Connecting to the gyro…"
+                        motionBuiltIn -> "Reading this handheld's gyro. Tip it forward, twist it flat, roll it on its side."
+                        else -> "Reading the controller's gyro through the mirror. Tip it forward, twist it flat, roll it on its side."
                     },
                     hints = listOf(HintAction(SlotIcon.B, "Done") { motion = false }),
                 )
@@ -346,7 +347,7 @@ private fun MotionChecklist(test: MotionTest, modifier: Modifier = Modifier) {
             Row(Modifier.fillMaxWidth().height(32.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(axis.label, color = Palette.textSecondary, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 Text(
-                    "${test.rates[axis.ordinal].roundToInt()}°/s",
+                    String.format(Locale.ROOT, "%.1f°/s", test.rates[axis.ordinal]),
                     color = if (abs(test.rates[axis.ordinal]) >= 90f) Teal else Palette.textMuted, fontSize = 13.sp,
                 )
                 Spacer(Modifier.width(12.dp))
