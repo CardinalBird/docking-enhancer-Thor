@@ -207,7 +207,7 @@ private fun PlayerOneSlot(name: String?, connected: Boolean, battery: Int?) {
                 }
             } else {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PlayerLamps(lit = connected)
+                    PlayerLamps(player = if (connected) 1 else 0)
                     Image(
                         painterResource(R.drawable.ic_controller),
                         contentDescription = null,

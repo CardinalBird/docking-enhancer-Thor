@@ -147,18 +147,22 @@ internal fun HandheldTile(battery: Int?, hint: String?, onClick: (() -> Unit)?, 
     }
 }
 
-/** A pad: player lamps (the first lit on the mirrored one), the pad, its battery and name. */
+/**
+ * A connected pad: its player lamp, the pad, its battery and name. The mirrored pad is player 1;
+ * any other pad lights the lamp for the player number Android gave it, since games see it as that
+ * extra player.
+ */
 @Composable
 internal fun PadTile(device: ControllerDevice, player1: Boolean, battery: Int?, modifier: Modifier = Modifier) {
     Column(modifier = modifier.padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        PlayerLamps(lit = player1)
+        PlayerLamps(player = if (player1) 1 else device.controllerNumber)
         Spacer(Modifier.height(6.dp))
         Image(painterResource(R.drawable.ic_controller), contentDescription = null, modifier = Modifier.size(width = 52.dp, height = 40.dp))
         Spacer(Modifier.height(4.dp))
         battery?.let { Battery(it) }
         Text(
             device.name,
-            color = if (player1) Palette.textPrimary else Palette.textSecondary,
+            color = Palette.textPrimary,
             fontSize = 11.sp,
             textAlign = TextAlign.Center,
             maxLines = 1,
@@ -167,12 +171,12 @@ internal fun PadTile(device: ControllerDevice, player1: Boolean, battery: Int?, 
     }
 }
 
-/** The four player lamps, the first one green when [lit]. */
+/** The four player lamps, the [player]th (1–4) green; none lit outside that range. */
 @Composable
-internal fun PlayerLamps(lit: Boolean) {
+internal fun PlayerLamps(player: Int) {
     Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         repeat(4) { lamp ->
-            Box(Modifier.size(8.dp).clip(RoundedCornerShape(1.dp)).background(if (lit && lamp == 0) Palette.custom else Palette.borderStrong))
+            Box(Modifier.size(8.dp).clip(RoundedCornerShape(1.dp)).background(if (lamp == player - 1) Palette.custom else Palette.borderStrong))
         }
     }
 }
