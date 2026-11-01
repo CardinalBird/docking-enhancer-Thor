@@ -138,6 +138,7 @@ fun MirrorScreen(viewModel: MirrorViewModel) {
             Page.Player1 -> Player1Screen(
                 externals = state.devices.filter { !it.isInternal },
                 player1Name = state.player1Name,
+                player1Path = state.player1Path,
                 pendingName = state.pendingPlayer1Name,
                 pendingPath = state.pendingPlayer1Path,
                 active = active,
