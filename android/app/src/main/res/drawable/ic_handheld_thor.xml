@@ -30,8 +30,7 @@
     <!-- Left stick, D-pad under it. Clear space between them, or at tile size they fuse into one glyph. -->
     <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.5"
         android:pathData="M29,62.5 A5,5 0 1 1 28.99,62.5 Z" />
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M29,60.5 A2,2 0 1 1 28.99,60.5 Z" />
+
     <path android:fillColor="#FFFFFFFF"
         android:pathData="M27.25,79 H30.75 V82.25 H34 V85.75 H30.75 V89 H27.25 V85.75 H24 V82.25 H27.25 Z" />
     <!-- Face buttons, right stick under them -->
@@ -39,8 +38,7 @@
         android:pathData="M90,58.75 A2.5,2.5 0 1 1 89.99,58.75 Z M95.25,64 A2.5,2.5 0 1 1 95.24,64 Z M90,69.25 A2.5,2.5 0 1 1 89.99,69.25 Z M84.75,64 A2.5,2.5 0 1 1 84.74,64 Z" />
     <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.5"
         android:pathData="M90,84 A5,5 0 1 1 89.99,84 Z" />
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M90,82 A2,2 0 1 1 89.99,82 Z" />
+
 
 
 
