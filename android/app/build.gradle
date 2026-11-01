@@ -17,7 +17,7 @@ android {
         abortOnError = true
         disable += ["GradleDependency", "AndroidGradlePluginVersion"]
     }
-    namespace = "com.odininputmirror"
+    namespace = "com.controlswitch"
     // Compose 1.12 / core 1.19 / activity 1.13 / lifecycle 2.11 refuse to build against less
     // than 37. Compile-only; targetSdk below still decides runtime behaviour.
     compileSdk 37

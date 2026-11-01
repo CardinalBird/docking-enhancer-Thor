@@ -1,0 +1,73 @@
+package com.controlswitch.domain.repository
+
+import com.controlswitch.domain.model.CaptureKind
+import com.controlswitch.domain.model.CaptureRead
+import com.controlswitch.domain.model.ControllerMapping
+import com.controlswitch.domain.model.MirrorSettings
+import com.controlswitch.domain.model.MirrorStartRequest
+
+interface MirrorProcessRepository {
+    /**
+     * Put the daemon this build ships in place. True when it differed from what was installed, which
+     * means a daemon still running is the previous one.
+     */
+    fun refreshBinary(): Boolean = false
+
+    /**
+     * Launch the mirror daemon. Throws when the privileged backend could not even deliver the
+     * launch command (so callers can surface/back off a failed start); a delivered launch that
+     * then dies is detected later via [isRunning].
+     */
+    fun start(request: MirrorStartRequest)
+
+    /** Stop the mirror daemon. Throws when the backend could not deliver the stop command. */
+    fun stop()
+    fun isRunning(): Boolean
+    fun clearProcessFiles()
+
+    /**
+     * Restore any /dev/input node a crashed or killed daemon left hidden (unlinked but never
+     * restored). A cheap no-op when there is nothing to heal; call it when the mirror is not running
+     * so a lingering hidden node can't keep the external controller invisible.
+     */
+    fun healOrphanedHideNodes()
+
+    /**
+     * Hand the live options to a running daemon without restarting it — which matters because a
+     * restart has to release the exclusive grab, leaving the controller visible to the whole system
+     * for about a second. Returns whether the request was delivered; the daemon confirms that it
+     * actually adopted them through [appliedConfigGeneration].
+     */
+    fun applyLiveSettings(settings: MirrorSettings, mapping: ControllerMapping): Boolean
+
+    /**
+     * Generation of the config the running daemon has adopted, or null when it cannot be read — no
+     * fresh heartbeat, or a daemon predating the ack. Callers treat null as "nothing to correct yet"
+     * (see ResolveAutoMirrorDecisionUseCase): pushing on silence would fire on every tick of the
+     * startup window.
+     */
+    fun appliedConfigGeneration(): Long?
+
+    /**
+     * Open a capture step on the running daemon.
+     *
+     * The app cannot listen for these events itself: the mirror holds an exclusive grab on the
+     * controller and has unlinked its /dev/input node, so nothing it does reaches the framework.
+     * While a step is open the daemon forwards nothing, so pressing A to map it does not also press
+     * A in whatever is on screen. Returns whether the request was delivered.
+     */
+    fun beginCapture(kind: CaptureKind): Boolean
+
+    /**
+     * Close capture and resume forwarding. The daemon does this on its own 30 seconds after the last
+     * command, so a crashed wizard cannot leave the controller mute — but say so explicitly when the
+     * wizard finishes or is cancelled.
+     */
+    fun endCapture(): Boolean
+
+    /** Read whatever the daemon has appended to the capture log past [offset]. */
+    fun readCaptures(offset: Long): CaptureRead
+
+    /** Drop anything left in the capture log, so a new wizard run starts from a clean slate. */
+    fun clearCaptures()
+}

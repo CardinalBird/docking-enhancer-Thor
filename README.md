@@ -95,7 +95,7 @@ Coming from Docking Enhancer v0.2.0? Uninstall it first. The app id changed (now
 `com.controlswitch`), so the new version installs as a separate app instead of upgrading, and two
 copies would fight over the controller. Settings don't carry over.
 
-1. Install the APK from this fork's [Releases](https://github.com/CardinalBird/docking-enhancer-Thor/releases)
+1. Install the APK from this fork's [Releases](https://github.com/CardinalBird/control-switch/releases)
    (allow "unknown sources" if prompted), or build it yourself — see [Building](#building).
    Upstream's releases don't include the Thor changes.
 2. Open it once and allow notifications. Under **Additional Settings → Allow mirroring**, choose

@@ -24,7 +24,7 @@ drop in. Design canvas (for reference only): https://claude.ai/artifact/5R6yZs2s
 
 ## Task for Claude Code
 
-Repo: `docking-enhancer-Thor` (Kotlin/Compose, see `AGENTS.md`). Branch off `main` first
+Repo: `control-switch` (Kotlin/Compose, see `AGENTS.md`). Branch off `main` first
 (e.g. `feat/launcher-icon-v2`); commit only when the user asks.
 
 1. **Replace the launcher icon** — copy these over `android/app/src/main/res/`:
@@ -61,7 +61,7 @@ Repo: `docking-enhancer-Thor` (Kotlin/Compose, see `AGENTS.md`). Branch off `mai
 | `svg/control-switch-glyph.svg` | Glyph only, transparent |
 | `svg/control-switch-glyph-mono.svg` | One-colour glyph (alpha only), no shadow |
 | `css/control-switch-logo.css` | Colour tokens + `.cs-logo` (whole icon) and `.cs-logo-tile` (glyph on a CSS gradient tile) |
-| `compose/ControlSwitchLogo.kt` | Compose `ImageVector`, package `com.odininputmirror.ui.theme` |
+| `compose/ControlSwitchLogo.kt` | Compose `ImageVector`, package `com.controlswitch.ui.theme` |
 | `png/control-switch-icon-{512,1024}.png` | Rounded tile renders; `-fullbleed-512` is unmasked |
 
 ## Regenerating
