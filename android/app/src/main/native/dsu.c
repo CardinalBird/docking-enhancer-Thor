@@ -211,19 +211,29 @@ void dsu_start(struct dsu *d, int source_fd) {
         fprintf(stderr, "DSU: IMU enable failed: %s\n", strerror(errno));
     }
 
-    d->sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    d->server_id = (uint32_t)getpid() ^ (uint32_t)now_ms();
+    fprintf(stderr, "DSU: %s found; IMU on\n", name);
+    dsu_tick(d);
+}
+
+void dsu_tick(struct dsu *d) {
+    if (d->hid_fd < 0 || d->sock >= 0) return;
+    long long now = now_ms();
+    if (now < d->next_bind_ms) return;
+    d->next_bind_ms = now + 1000;
+    int sock = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+    if (sock < 0) return;
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(DSU_PORT);
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    if (d->sock < 0 || bind(d->sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        fprintf(stderr, "DSU: cannot serve on 127.0.0.1:%d: %s\n", DSU_PORT, strerror(errno));
-        dsu_stop(d);
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        close(sock);  // still the app's; retried in a second
         return;
     }
-    d->server_id = (uint32_t)getpid() ^ (uint32_t)now_ms();
-    fprintf(stderr, "DSU: serving %s's motion on 127.0.0.1:%d\n", name, DSU_PORT);
+    d->sock = sock;
+    fprintf(stderr, "DSU: serving the pad's motion on 127.0.0.1:%d\n", DSU_PORT);
 }
 
 void dsu_on_hid(struct dsu *d) {

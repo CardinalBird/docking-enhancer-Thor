@@ -1266,6 +1266,7 @@ int main(int argc, char **argv) {
         if (rumble_index >= 0 && (fds[rumble_index].revents & (POLLIN | POLLHUP))) {
             rumble_on_readable(&s.rumble);
         }
+        dsu_tick(&s.dsu);
         if (dsu_index >= 0 && (fds[dsu_index].revents & POLLIN)) {
             dsu_on_sock(&s.dsu);
         }

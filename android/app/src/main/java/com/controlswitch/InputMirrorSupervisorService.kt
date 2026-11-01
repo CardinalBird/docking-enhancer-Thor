@@ -23,6 +23,7 @@ class InputMirrorSupervisorService : Service() {
     private var running = false
     private var worker: Thread? = null
     private lateinit var graph: InputMirrorGraph
+    private lateinit var motion: ThorMotionServer
     private lateinit var notificationManager: NotificationManager
     private var supervisorState = SupervisorState.WaitingForDock
     private val displayWake = object : DisplayManager.DisplayListener {
@@ -35,6 +36,7 @@ class InputMirrorSupervisorService : Service() {
         super.onCreate()
         graph = InputMirrorGraph.of(this, forceDockMode = BuildConfig.FORCE_DOCK_MODE_FOR_DEV)
         notificationManager = getSystemService(NotificationManager::class.java)
+        motion = ThorMotionServer(this)
         ensureNotificationChannel()
         // Guarded because this is a hard crash otherwise: a foreground start the framework refuses
         // (ForegroundServiceStartNotAllowedException) throws right here, and the runCatching around
@@ -58,6 +60,7 @@ class InputMirrorSupervisorService : Service() {
     override fun onDestroy() {
         getSystemService(DisplayManager::class.java)?.unregisterDisplayListener(displayWake)
         running = false
+        motion.serve(false)
         worker?.interrupt()
         worker = null
         super.onDestroy()
@@ -128,6 +131,9 @@ class InputMirrorSupervisorService : Service() {
                 val dockActive = graph.dockStateRepository.isDockActive()
                 val mirrorAllowed = dockActive || settings.mirrorWhenHandheld
                 val mirrorRunning = graph.processRepository.isRunning()
+                // The Thor's gyro over DSU while the mirror is off; docked, the daemon serves the
+                // controller's on the same port instead.
+                motion.serve(!mirrorRunning)
                 // Enumerate controllers only when the result is actually consumed: docked (the
                 // auto-mirror decision below reads the list) or the UI is on-screen (it renders the
                 // list for setup). Undocked with the UI hidden, this is the one privileged PServer
@@ -311,6 +317,8 @@ class InputMirrorSupervisorService : Service() {
     }
 
     private fun startMirror(request: MirrorStartRequest): Boolean {
+        // Hand the DSU port to the daemon, which serves the controller's gyro once it is up.
+        motion.serve(false)
         return runCatching {
             graph.startMirror(request)
             true

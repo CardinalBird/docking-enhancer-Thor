@@ -19,6 +19,7 @@ struct dsu {
     uint32_t server_id;
     uint32_t packet;
     uint8_t battery;  // DSU battery code
+    long long next_bind_ms;  // when to retry the port while the app still holds it
     struct dsu_client clients[DSU_MAX_CLIENTS];
 };
 
@@ -27,6 +28,9 @@ void dsu_init(struct dsu *d);
 // starts serving. A no-op for any other pad.
 void dsu_start(struct dsu *d, int source_fd);
 void dsu_on_hid(struct dsu *d);   // hid_fd readable
+// Call every loop: takes the port once the app has let it go (the app serves the Thor's own gyro
+// there while the mirror is off and releases it as the mirror starts).
+void dsu_tick(struct dsu *d);
 void dsu_on_sock(struct dsu *d);  // sock readable
 void dsu_stop(struct dsu *d);
 

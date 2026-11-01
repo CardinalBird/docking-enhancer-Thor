@@ -19,6 +19,9 @@ int main(int argc, char **argv) {
     to.sin_port = htons(26760);
     to.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     uint8_t req[28] = {'D', 'S', 'U', 'C', 0xe9, 0x03, 12, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0x02, 0x00, 0x10, 0x00, 1, 0};
+    if (argc > 2) {  // "info": ask for slot 0's info instead and print the reply size
+        req[16] = 0x01; req[20] = 1; req[21] = 0; req[22] = 0; req[23] = 0; req[24] = 0;
+    }
     uint32_t crc = dsu_crc32(req, 28);
     memcpy(req + 8, &crc, 4);
     sendto(s, req, sizeof req, 0, (struct sockaddr *)&to, sizeof to);
@@ -26,6 +29,7 @@ int main(int argc, char **argv) {
         uint8_t b[128];
         ssize_t n = recv(s, b, sizeof b, 0);
         if (n < 0) { puts("no reply"); return 1; }
+        if (argc > 2) { printf("info reply: %zd bytes, slot state %d\n", n, b[21]); return 0; }
         if (n != 100) continue;
         float m[6];
         memcpy(m, b + 20 + 56, sizeof m);
