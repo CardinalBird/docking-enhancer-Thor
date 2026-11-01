@@ -37,6 +37,8 @@ internal class ThorMotionServer(context: Context) : SensorEventListener {
     private val clients = ConcurrentHashMap<SocketAddress, Long>()
     private val serverId = Random.nextInt()
     private val accel = FloatArray(3)
+    // Kept for the service's life, so the offset learned in one session holds in the next.
+    private val bias = GyroBias()
     private val sensorHandler by lazy { Handler(HandlerThread("thor-motion-sensors").apply { start() }.looper) }
     private var packet = 0
 
@@ -131,7 +133,7 @@ internal class ThorMotionServer(context: Context) : SensorEventListener {
             return
         }
         val s = socket ?: return
-        val bytes = Dsu.data(serverId, packet++, event.timestamp / 1000, Dsu.thorAccel(accel), Dsu.thorGyro(event.values))
+        val bytes = Dsu.data(serverId, packet++, event.timestamp / 1000, Dsu.thorAccel(accel), Dsu.thorGyro(bias.correct(event.values, accel)))
         clients.keys.forEach { send(s, bytes, it) }
     }
 
