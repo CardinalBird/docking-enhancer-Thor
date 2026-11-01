@@ -18,6 +18,7 @@
 #include "hide_nodes.h"
 #include "mapping.h"
 #include "mouse.h"
+#include "dsu.h"
 #include "rumble.h"
 
 static volatile sig_atomic_t keep_running = 1;
@@ -318,6 +319,7 @@ struct mirror_state {
     // combo that toggles it and the one thing it cannot do for itself.
     struct mouse_state mouse;
     struct rumble rumble;
+    struct dsu dsu;
     int mouse_combo_triggered;
     long long mouse_combo_pressed_at_ms;
     int shade_open;  // our view of whether R1 last opened the notification shade
@@ -1036,6 +1038,7 @@ int main(int argc, char **argv) {
     memset(&s, 0, sizeof(s));
     mouse_init(&s.mouse);
     rumble_init(&s.rumble);
+    dsu_init(&s.dsu);
     s.control_fd = -1;
     s.heartbeat_fd = -1;
     s.heartbeat_file_path = heartbeat_file_path;
@@ -1185,6 +1188,7 @@ int main(int argc, char **argv) {
     write_hidden_state(hidden_state_path, hidden, hide_count);
 
     rumble_start(&s.rumble, s.source_fd, rumble_apk_path);
+    dsu_start(&s.dsu, s.source_fd);
 
     // Block the stop signals everywhere except inside the wait. Left open, one landing between the
     // keep_running check and poll() went unnoticed until the poll timed out (up to a second), past the
@@ -1219,7 +1223,7 @@ int main(int argc, char **argv) {
         // Watch the source and the control fifo together. Adding the fifo here rather than checking
         // it on a timer is what keeps a settings change effectively instant while leaving the grab,
         // and the forwarding path, completely untouched.
-        struct pollfd fds[3];
+        struct pollfd fds[5];
         memset(fds, 0, sizeof(fds));
         fds[0].fd = s.source_fd;
         fds[0].events = POLLIN;
@@ -1237,6 +1241,17 @@ int main(int argc, char **argv) {
             fds[poll_count].events = POLLIN;
             rumble_index = poll_count++;
         }
+        int hid_index = -1, dsu_index = -1;
+        if (s.dsu.hid_fd >= 0) {
+            fds[poll_count].fd = s.dsu.hid_fd;
+            fds[poll_count].events = POLLIN;
+            hid_index = poll_count++;
+        }
+        if (s.dsu.sock >= 0) {
+            fds[poll_count].fd = s.dsu.sock;
+            fds[poll_count].events = POLLIN;
+            dsu_index = poll_count++;
+        }
 
         struct timespec timeout = {timeout_ms / 1000, (timeout_ms % 1000) * 1000000L};
         int poll_result = ppoll(fds, (nfds_t)poll_count, &timeout, &wait_mask);
@@ -1250,6 +1265,12 @@ int main(int argc, char **argv) {
 
         if (rumble_index >= 0 && (fds[rumble_index].revents & (POLLIN | POLLHUP))) {
             rumble_on_readable(&s.rumble);
+        }
+        if (dsu_index >= 0 && (fds[dsu_index].revents & POLLIN)) {
+            dsu_on_sock(&s.dsu);
+        }
+        if (hid_index >= 0 && (fds[hid_index].revents & (POLLIN | POLLHUP | POLLERR))) {
+            dsu_on_hid(&s.dsu);
         }
 
         // The mouse toggle may complete on a poll timeout with no new event, so check it every loop.
@@ -1398,6 +1419,7 @@ int main(int argc, char **argv) {
     }
 
     rumble_stop(&s.rumble);
+    dsu_stop(&s.dsu);
 
     if (ioctl(s.source_fd, EVIOCGRAB, 0) < 0) {
         fprintf(stderr, "Failed to release source %s: %s\n", source_path, strerror(errno));
