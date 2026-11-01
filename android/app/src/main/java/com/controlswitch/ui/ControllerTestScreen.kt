@@ -348,7 +348,7 @@ private fun MotionChecklist(test: MotionTest, modifier: Modifier = Modifier) {
                 Text(axis.label, color = Palette.textSecondary, fontSize = 15.sp, modifier = Modifier.weight(1f))
                 Text(
                     String.format(Locale.ROOT, "%.1f°/s", test.rates[axis.ordinal]),
-                    color = if (abs(test.rates[axis.ordinal]) >= 90f) Teal else Palette.textMuted, fontSize = 13.sp,
+                    color = if (abs(test.rates[axis.ordinal]) >= 60f) Teal else Palette.textMuted, fontSize = 13.sp,
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(if (passed) "✓" else "·", color = if (passed) Palette.custom else Palette.textMuted, fontSize = 15.sp, modifier = Modifier.padding(end = 8.dp))

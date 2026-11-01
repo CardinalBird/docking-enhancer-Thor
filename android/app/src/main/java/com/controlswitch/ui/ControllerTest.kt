@@ -221,5 +221,5 @@ internal data class MotionTest(
     val passedCount: Int get() = done.size
 }
 
-/** A turn this fast about an axis is a deliberate one. */
-private const val TURN = 90f
+/** A turn this fast about an axis is a deliberate one: a quarter turn in well under a second. */
+private const val TURN = 60f

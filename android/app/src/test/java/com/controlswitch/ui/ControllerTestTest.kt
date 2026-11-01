@@ -190,10 +190,10 @@ class ControllerTestTest {
     fun `an axis passes once turned fast enough, either way round`() {
         val g = { p: Float, y: Float, r: Float -> floatArrayOf(p, y, r) }
         val a = floatArrayOf(0f, 1f, 0f)
-        val slow = MotionTest().feed(g(60f, -89f, 10f), a)
+        val slow = MotionTest().feed(g(40f, -59f, 10f), a)
         assertEquals(0, slow.passedCount)
-        assertEquals(listOf(60f, -89f, 10f), slow.rates)
-        val turned = slow.feed(g(0f, -90f, 0f), a).feed(g(95f, 0f, 0f), a)
+        assertEquals(listOf(40f, -59f, 10f), slow.rates)
+        val turned = slow.feed(g(0f, -60f, 0f), a).feed(g(65f, 0f, 0f), a)
         assertTrue(turned.passed(Axis.YAW) && turned.passed(Axis.PITCH))
         assertFalse(turned.passed(Axis.ROLL))
         assertEquals(2, turned.passedCount)
