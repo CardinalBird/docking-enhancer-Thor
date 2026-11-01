@@ -45,15 +45,15 @@ app, retargeted to the AYN Thor and renamed Control Switch.
 
 </div>
 
-## New in 0.5.0
+## New in 0.6.0
 
-- **Rumble on your controller** — when a game vibrates the Thor, your pad rumbles, with a
-  **Rumble strength** setting (0–100%)
-- **Gyro in emulators** — one motion source that follows what you hold: the Thor's gyro handheld
-  (with its resting drift removed), your controller's gyro docked. See [Gyro in emulators](#gyro-in-emulators)
-- **Controller battery** for Switch-style pads (Pro Controller, 8BitDo in Switch mode, Joy-Cons)
-- **Redesigned screens** — one Player 1 slot in Change Input Order, Button Mapping on one screen
-  with group tabs, new Thor and controller icons, and the blue-to-green focus outline is back
+- **Controller tests** — pick the Thor's own pad or any controller and press everything: a live
+  drawing lights up, and a checklist ticks off every button, both sticks (a full circle plus the
+  click) and both triggers. Hold **B** to leave
+- **Motion test** — **Y** on the same page turns the pad's gyro into three rows (pitch, yaw, roll)
+  with a rolling ball and live deg/s, reading whichever gyro the DSU port is serving
+- **Steadier gyro** — the Thor's drift filter was sized for 50 Hz and was absorbing smooth turns at
+  200 Hz; emulators now get the full turn
 
 ## What it does
 
