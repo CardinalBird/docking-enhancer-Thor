@@ -216,7 +216,13 @@ internal fun ControllerTestScreen(state: MirrorUiState, active: Boolean, onBack:
                 }
             } else {
                 Footer(
-                    status = if (ready) "Choose a controller, then press A." else "Waiting for the mirror to pause.",
+                    status = when {
+                        !ready -> "Waiting for the mirror to pause."
+                        // With another pad connected the handheld's presses come through that pad, so
+                        // the two can't be told apart.
+                        builtIn && pads.size > 1 -> "Turn off other controllers to test this handheld alone."
+                        else -> "Choose a controller, then press A."
+                    },
                     hints = listOf(HintAction(SlotIcon.B, "Back", onBack), HintAction(SlotIcon.A, "Start", null)),
                 )
             }
