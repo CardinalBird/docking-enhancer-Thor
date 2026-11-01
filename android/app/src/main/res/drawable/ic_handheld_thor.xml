@@ -37,7 +37,8 @@
     <path android:fillColor="#FFFFFFFF"
         android:pathData="M90,58.75 A2.5,2.5 0 1 1 89.99,58.75 Z M95.25,64 A2.5,2.5 0 1 1 95.24,64 Z M90,69.25 A2.5,2.5 0 1 1 89.99,69.25 Z M84.75,64 A2.5,2.5 0 1 1 84.74,64 Z" />
     <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2.5"
-        android:pathData="M90,84 A5,5 0 1 1 89.99,84 Z" />
+        android:pathData="M90,82.25 A5,5 0 1 1 89.99,82.25 Z" />
+
 
 
 
