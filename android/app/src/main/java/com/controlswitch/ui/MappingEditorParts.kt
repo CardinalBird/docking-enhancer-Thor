@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -51,6 +52,7 @@ import com.controlswitch.domain.model.ControlRef
 import com.controlswitch.domain.model.MappingSlot
 import com.controlswitch.domain.model.SlotIcon
 import com.controlswitch.domain.model.describeSource
+import com.controlswitch.ui.theme.FocusBrush
 import com.controlswitch.ui.theme.Palette
 import kotlinx.coroutines.delay
 
@@ -89,7 +91,7 @@ internal fun SlotRow(
             .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (focused) Palette.focusBg else Palette.screen)
-            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
+            .focusOutline(focused, RoundedCornerShape(8.dp))
             .onPreviewKeyEvent {
                 // Both halves, even on an unbound row: Android turns an unhandled X press into a
                 // select, which opened a capture on the row instead of doing nothing.
@@ -128,7 +130,7 @@ internal fun ActionRow(label: String, detail: String, onClick: () -> Unit) {
             .heightIn(min = 52.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(if (focused) Palette.focusBg else Palette.screen)
-            .border(if (focused) 3.dp else 0.dp, if (focused) Palette.focus else Palette.screen, RoundedCornerShape(8.dp))
+            .focusOutline(focused, RoundedCornerShape(8.dp))
             // Swallowed: Android turns an unhandled X into a select, which would apply the preset.
             .onPreviewKeyEvent { it.key == Key.ButtonX }
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
@@ -282,7 +284,7 @@ internal fun EditorButton(
             .background(if (focused) Palette.focusBg else background)
             .border(
                 width = if (focused) 2.dp else 1.dp,
-                color = if (focused) Palette.focus else Palette.border,
+                brush = if (focused) FocusBrush else SolidColor(Palette.border),
                 shape = RoundedCornerShape(10.dp),
             )
             .clickable(interactionSource = interaction, indication = null) { onClick() }

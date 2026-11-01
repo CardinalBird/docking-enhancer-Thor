@@ -50,15 +50,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.controlswitch.R
 import com.controlswitch.domain.model.ControllerDevice
-import com.controlswitch.ui.theme.ControlSwitchLogo
 import com.controlswitch.ui.theme.Palette
-import com.controlswitch.ui.theme.Teal
+import com.controlswitch.ui.theme.FocusBrush
 import kotlin.math.roundToInt
 
 // The pieces the pages lay out, Switch 2 "Controllers" style: a title with a rule under it, the
 // handheld and its pads on the left, plain menu rows on the right, button hints on the page.
 
-/** The page title with the controller icon, and a spinner while the first scan runs. */
+/** The page title, and a spinner while the first scan runs. */
 @Composable
 internal fun Header(title: String = stringResource(R.string.app_name), loading: Boolean = false) {
     Row(
@@ -66,8 +65,6 @@ internal fun Header(title: String = stringResource(R.string.app_name), loading: 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // The app's own mark (the launcher icon's tile), so it reads the same on every theme.
-        Image(ControlSwitchLogo.Tile, contentDescription = null, modifier = Modifier.size(36.dp))
         Text(title, color = Palette.textPrimary, fontSize = 22.sp)
         if (loading) {
             CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Palette.cyan, strokeWidth = 2.dp)
@@ -80,9 +77,9 @@ internal fun Rule(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxWidth().height(1.dp).background(Palette.border))
 }
 
-/** The focus outline every selectable item wears: thick, rounded, teal in every theme. */
+/** The focus outline every selectable item wears: thick, rounded, blue to green in every theme. */
 internal fun Modifier.focusOutline(focused: Boolean, shape: RoundedCornerShape): Modifier =
-    if (focused) border(3.dp, Teal, shape) else this
+    if (focused) border(3.dp, FocusBrush, shape) else this
 
 /** A battery outline filled to [percent], and the number. */
 @Composable
